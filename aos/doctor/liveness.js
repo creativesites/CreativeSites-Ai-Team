@@ -38,10 +38,17 @@ const SOCK_DIR = '/tmp/cc-socks';
 /** Running sessions with their working directory. Pure observation. */
 function observedSessions(sockDir = SOCK_DIR) {
     let files;
-    try { files = fs.readdirSync(sockDir).filter((f) => f.endsWith('.sock')); }
-    catch { return []; }
+    try {
+        files = fs.readdirSync(sockDir).filter((f) => f.endsWith('.sock'));
+    } catch (err) {
+        // "I could not look" is not "there is nothing there". Returning []
+        // here would make every agent read as absent and accuse an accurate
+        // registry of over-claiming — a confident negative produced by a
+        // failure to observe. A verifier must fail toward "I don't know".
+        return { ok: false, reason: `cannot read ${sockDir}: ${err.code || err.message}`, sessions: [] };
+    }
 
-    return files.map((f) => {
+    const sessions = files.map((f) => {
         const pid = path.basename(f, '.sock');
         let cwd = null;
         try {
@@ -50,6 +57,7 @@ function observedSessions(sockDir = SOCK_DIR) {
         } catch { /* process may exit between readdir and lsof */ }
         return { socket: f, pid, cwd, since: safeMtime(path.join(sockDir, f)) };
     });
+    return { ok: true, reason: null, sessions };
 }
 
 function safeMtime(p) { try { return fs.statSync(p).mtime.toISOString(); } catch { return null; } }
@@ -93,7 +101,12 @@ function agentsForCwd(cwd, agents, repoPaths = {}) {
  * @returns {{online: Map<string,object>, sessions: Array, ambiguous: Array, unmapped: Array}}
  */
 function resolveLiveness(agents, sockDir = SOCK_DIR, repoPaths = {}) {
-    const sessions = observedSessions(sockDir);
+    const probe = observedSessions(sockDir);
+    if (!probe.ok) {
+        // Abstain. No online set, no absences, no assessment.
+        return { ok: false, reason: probe.reason, online: new Map(), sessions: [], ambiguous: [], unmapped: [] };
+    }
+    const sessions = probe.sessions;
     const online = new Map();
     const ambiguous = [];
     const unmapped = [];
@@ -104,26 +117,62 @@ function resolveLiveness(agents, sockDir = SOCK_DIR, repoPaths = {}) {
         else if (cands.length > 1) ambiguous.push({ ...s, candidates: cands });
         else unmapped.push(s);
     }
-    return { online, sessions, ambiguous, unmapped };
+    return { ok: true, reason: null, online, sessions, ambiguous, unmapped };
 }
 
 /** Compare a claimed status against observation. Never trusts the claim. */
 function reconcile(agents, sockDir = SOCK_DIR, repoPaths = {}) {
-    const { online, ambiguous, unmapped } = resolveLiveness(agents, sockDir, repoPaths);
+    const live = resolveLiveness(agents, sockDir, repoPaths);
+    if (!live.ok) {
+        // Every agent's observed state is genuinely unknown. Emit that, and
+        // flag nothing as an over-claim — we have no standing to accuse.
+        return {
+            ok: false, reason: live.reason, onlineCount: null, contested: [], ambiguous: [], unmapped: [],
+            rows: agents.map((a) => ({
+                name: a.name, claimed: (a.status || a.observed?.state || 'unknown').toString(),
+                observed: 'UNKNOWN', pid: null, cwd: null, sharesWith: [], overclaim: false,
+            })),
+        };
+    }
+    const { online, ambiguous, unmapped } = live;
     const rows = agents.map((a) => {
         const seen = online.get(a.name) || null;
+        // A session in this agent's repo that could not be attributed uniquely
+        // is NOT evidence of absence. Reporting "not observed" there would be
+        // the same error this module exists to catch: an unknown rendered as a
+        // confident answer. Ambiguity gets its own state and never counts as an
+        // over-claim.
+        const amb = seen ? null : ambiguous.find((x) => (x.candidates || []).includes(a.name)) || null;
         const claimed = (a.status || a.observed?.state || 'unknown').toString();
         const claimsPresent = /active|available|working|reviewing|online/i.test(claimed);
+
+        let observed = 'NOT OBSERVED';
+        if (seen) observed = 'ONLINE';
+        else if (amb) observed = 'AMBIGUOUS';
+
         return {
             name: a.name,
             claimed,
-            observed: seen ? 'ONLINE' : 'not observed',
-            pid: seen ? seen.pid : null,
-            cwd: seen ? seen.cwd : null,
-            overclaim: !seen && claimsPresent,
+            observed,
+            pid: seen ? seen.pid : amb ? amb.pid : null,
+            cwd: seen ? seen.cwd : amb ? amb.cwd : null,
+            sharesWith: amb ? amb.candidates.filter((n) => n !== a.name) : [],
+            overclaim: !seen && !amb && claimsPresent,
         };
     });
-    return { rows, ambiguous, unmapped, onlineCount: online.size };
+    // Ambiguity is honest but weak evidence. Six agents declaring one repo and
+    // one session running means at most one of them is present — the registry's
+    // repo declarations are too coarse to attribute anyone in that repo. State
+    // the arithmetic rather than letting six AMBIGUOUS rows read as six agents.
+    const contested = ambiguous.map((x) => ({
+        pid: x.pid,
+        cwd: x.cwd,
+        candidates: x.candidates,
+        note: `1 session, ${x.candidates.length} candidates — at most one of these is present. `
+            + `Narrow by giving each agent a distinct repos[].path (e.g. their owned subdirectory).`,
+    }));
+
+    return { ok: true, reason: null, rows, ambiguous, contested, unmapped, onlineCount: online.size };
 }
 
 module.exports = { observedSessions, agentsForCwd, resolveLiveness, reconcile, SOCK_DIR };
