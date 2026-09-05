@@ -1,115 +1,274 @@
 const fs = require('fs');
 const path = require('path');
-const { spawn, execSync } = require('child_process');
-
-const SOCK_DIR = '/tmp/cc-socks';
+const IdeAdapter = require('./runtime/adapters/ideAdapter');
+const ProcessAdapter = require('./runtime/adapters/processAdapter');
+const TmuxAdapter = require('./runtime/adapters/tmuxAdapter');
+const { EVIDENCE_CLASSES } = require('./provenance');
 
 class RuntimeController {
   constructor(registry, inboxManager, eventBus, options = {}) {
     this.registry = registry;
     this.inboxManager = inboxManager;
     this.eventBus = eventBus;
-    this.sockDir = options.sockDir || SOCK_DIR;
-    this.activeWorkers = new Map();
-  }
+    this.baseDir = options.baseDir || path.resolve(__dirname, '..');
+    this.provenance = options.provenance || null;
 
-  /**
-   * Machine-observe active runtime sessions via Unix domain sockets.
-   * Returns { ok: boolean, sessions: Array } or { ok: false, reason: string }
-   */
-  observedSessions() {
-    try {
-      if (!fs.existsSync(this.sockDir)) {
-        return { ok: true, sessions: [] };
-      }
-      const files = fs.readdirSync(this.sockDir).filter(f => f.endsWith('.sock'));
-      const sessions = files.map(f => {
-        const fullPath = path.join(this.sockDir, f);
-        const stat = fs.statSync(fullPath);
-        const pidMatch = f.match(/^(\d+)\.sock$/);
-        const pid = pidMatch ? parseInt(pidMatch[1], 10) : null;
-        let cwd = null;
+    // Initialize adapters
+    this.ideAdapter = new IdeAdapter({ sockDir: options.sockDir || '/tmp/cc-socks' });
+    this.processAdapter = new ProcessAdapter({ baseDir: this.baseDir });
+    this.tmuxAdapter = new TmuxAdapter();
 
-        if (pid) {
-          try {
-            // Machine-inspect working directory of the PID
-            const out = execSync(`lsof -a -d cwd -p ${pid} -Fn 2>/dev/null`, { encoding: 'utf8' });
-            const match = out.match(/n(.*)/);
-            if (match) cwd = match[1].trim();
-          } catch (e) {
-            cwd = null; // Process may have exited or permissions restricted
-          }
-        }
-
-        return {
-          socket: f,
-          path: fullPath,
-          pid,
-          cwd,
-          mtime: stat.mtime
-        };
-      });
-
-      return { ok: true, sessions };
-    } catch (err) {
-      return { ok: false, reason: err.message, sessions: [] };
-    }
-  }
-
-  /**
-   * Map an agent to an observed live session based on repository working directory
-   */
-  findLiveSessionForAgent(agentName) {
-    const probe = this.observedSessions();
-    if (!probe.ok || probe.sessions.length === 0) return null;
-
-    const clean = agentName.toLowerCase().trim();
-    const repoHints = {
-      'atlas': 'Myavana-Chatbot',
-      'iris': 'Myavana-Chatbot-Dashboard',
-      'vela': 'myavana-hair-journey',
-      'astra': 'packages/widget'
+    this.adapters = {
+      ide: this.ideAdapter,
+      process: this.processAdapter,
+      tmux: this.tmuxAdapter
     };
-
-    const hint = repoHints[clean];
-    if (!hint) return null;
-
-    return probe.sessions.find(s => s.cwd && s.cwd.toLowerCase().includes(hint.toLowerCase())) || null;
   }
 
   /**
-   * Wake an agent. Enforces the strict distinction:
-   * WAKE_REQUESTED != AGENT_ACTIVE.
-   * Never reports an agent as WORKING merely because a token was dropped.
+   * Observe machine state for an agent or all agents across all adapters
+   */
+  async observe(agentName = null) {
+    const ideObservation = await this.ideAdapter.observe(agentName);
+    const processObservation = await this.processAdapter.observe();
+    const tmuxObservation = await this.tmuxAdapter.observe(agentName);
+
+    return {
+      timestamp: new Date().toISOString(),
+      agent: agentName,
+      adapters: {
+        ide: ideObservation,
+        process: processObservation,
+        tmux: tmuxObservation
+      }
+    };
+  }
+
+  /**
+   * Get machine-observed status of an agent
+   */
+  async status(agentName) {
+    if (!agentName) throw new Error('Agent name required for status()');
+    const clean = agentName.toLowerCase().trim();
+
+    // 1. Check process adapter (real child processes)
+    const procStatus = await this.processAdapter.status(clean);
+    if (procStatus.status === 'ACTIVE' || procStatus.status === 'REGISTERED' || procStatus.status === 'SLEEPING') {
+      return {
+        agent: clean,
+        status: procStatus.status,
+        adapter: 'process',
+        session: procStatus.session,
+        evidence_class: EVIDENCE_CLASSES.OBSERVED
+      };
+    }
+
+    // 2. Check IDE adapter (interactive sockets)
+    const ideStatus = await this.ideAdapter.status(clean);
+    if (ideStatus.status === 'ACTIVE') {
+      return {
+        agent: clean,
+        status: 'ACTIVE',
+        adapter: 'ide',
+        session: ideStatus.session,
+        evidence_class: EVIDENCE_CLASSES.OBSERVED
+      };
+    }
+
+    return {
+      agent: clean,
+      status: 'OFFLINE',
+      adapter: null,
+      session: null,
+      evidence_class: EVIDENCE_CLASSES.OBSERVED
+    };
+  }
+
+  /**
+   * Start an agent runtime
+   */
+  async start(agentName, options = {}) {
+    const clean = agentName.toLowerCase().trim();
+    return await this.processAdapter.start(clean, options);
+  }
+
+  /**
+   * Stop an agent runtime
+   */
+  async stop(agentName, options = {}) {
+    const clean = agentName.toLowerCase().trim();
+    return await this.processAdapter.stop(clean, options);
+  }
+
+  /**
+   * Wake an agent according to the strict lifecycle:
+   * WAKE_REQUESTED -> RUNTIME_STARTING -> RUNTIME_STARTED -> SESSION_REGISTERED -> AGENT_ACTIVE
+   *
+   * Invariant: Dropping a wake token is NOT proof an agent is ACTIVE.
+   */
+  async wake(agentName, task = null, payload = {}) {
+    const clean = agentName.toLowerCase().trim();
+    const agent = this.registry ? this.registry.getAgent(clean) : null;
+    const resolvedName = agent ? (agent.name || agent.identity?.name || clean) : clean;
+
+    // Step 1: WAKE_REQUESTED
+    if (this.eventBus) {
+      this.eventBus.emit('agent.wake_requested', 'RuntimeController', {
+        agent: resolvedName,
+        task,
+        payload
+      });
+    }
+
+    // Queue wake token in inbox (durable message, not proof of liveness)
+    let wakeTokenFile = null;
+    if (this.inboxManager) {
+      try {
+        const { dir } = this.inboxManager.getAgentInboxDir(resolvedName);
+        wakeTokenFile = path.join(dir, '.wake_signal');
+        fs.writeFileSync(wakeTokenFile, JSON.stringify({
+          timestamp: new Date().toISOString(),
+          target_agent: resolvedName,
+          task,
+          payload
+        }, null, 2), 'utf8');
+      } catch (e) {}
+    }
+
+    // Step 2 & 3: Check for existing live runtime session
+    const currentObserved = await this.status(resolvedName);
+    if (currentObserved.status === 'ACTIVE') {
+      // Agent already has an active machine session!
+      if (this.registry) {
+        try { this.registry.updateAgentStatus(resolvedName, 'WORKING'); } catch (e) {}
+      }
+      return {
+        success: true,
+        agent: resolvedName,
+        status: 'AGENT_ACTIVE',
+        adapter: currentObserved.adapter,
+        session: currentObserved.session,
+        wake_signal_path: wakeTokenFile
+      };
+    }
+
+    // If options allow auto-spawning a process worker:
+    if (payload.autoSpawn) {
+      const startResult = await this.processAdapter.start(resolvedName);
+      if (startResult.success) {
+        if (this.registry) {
+          try { this.registry.updateAgentStatus(resolvedName, 'WORKING'); } catch (e) {}
+        }
+        return {
+          success: true,
+          agent: resolvedName,
+          status: 'AGENT_ACTIVE',
+          adapter: 'process',
+          session: startResult.session,
+          wake_signal_path: wakeTokenFile
+        };
+      }
+    }
+
+    // If no active session and not spawned, do NOT claim ACTIVE!
+    if (this.registry) {
+      try { this.registry.updateAgentStatus(resolvedName, 'WAKE_REQUESTED'); } catch (e) {}
+    }
+
+    return {
+      success: false,
+      agent: resolvedName,
+      status: 'WAKE_REQUESTED_OFFLINE',
+      live_session_observed: false,
+      session: null,
+      wake_signal_path: wakeTokenFile,
+      reason: 'Wake token created, but no active machine runtime or socket was observed.'
+    };
+  }
+
+  /**
+   * Put agent to sleep
+   */
+  async sleep(agentName, reason = 'IDLE') {
+    const clean = agentName.toLowerCase().trim();
+    await this.processAdapter.sleep(clean, reason);
+
+    if (this.inboxManager) {
+      try {
+        const { dir } = this.inboxManager.getAgentInboxDir(clean);
+        const wakeTokenFile = path.join(dir, '.wake_signal');
+        if (fs.existsSync(wakeTokenFile)) fs.unlinkSync(wakeTokenFile);
+      } catch (e) {}
+    }
+
+    if (this.registry) {
+      try { this.registry.updateAgentStatus(clean, 'SLEEPING'); } catch (e) {}
+    }
+
+    if (this.eventBus) {
+      this.eventBus.emit('agent.sleeping', 'RuntimeController', {
+        agent: clean,
+        reason
+      });
+    }
+
+    return {
+      success: true,
+      agent: clean,
+      status: 'SLEEPING'
+    };
+  }
+
+  /**
+   * Synchronous / backward-compatible aliases for existing calls
    */
   wakeAgent(agentName, wakeReason = 'MANUAL_TRIGGER', payload = {}) {
     const agent = this.registry ? this.registry.getAgent(agentName) : null;
     if (!agent && this.registry) {
       throw new Error(`Cannot wake unknown agent: ${agentName}`);
     }
+    const resolvedName = agent ? (agent.name || agent.identity?.name || agentName) : agentName;
 
-    const resolvedName = agent ? (agent.name || agent.identity?.name) : agentName;
-    const liveSession = this.findLiveSessionForAgent(resolvedName);
-    const hasLiveSession = Boolean(liveSession);
+    // Check IDE sockets synchronously
+    let liveSession = null;
+    try {
+      const sockDir = this.ideAdapter.sockDir;
+      if (fs.existsSync(sockDir)) {
+        const files = fs.readdirSync(sockDir).filter(f => f.endsWith('.sock'));
+        if (files.length > 0) {
+          liveSession = this.ideAdapter.matchSessionForAgent(resolvedName, files.map(f => {
+            const pidMatch = f.match(/^(\d+)\.sock$/);
+            return {
+              socket: f,
+              pid: pidMatch ? parseInt(pidMatch[1], 10) : null,
+              cwd: process.cwd(),
+              isAlive: true
+            };
+          }));
+        }
+      }
+    } catch (e) {}
 
-    // 1. Queue wake token durably in inbox
     let wakeTokenFile = null;
     if (this.inboxManager) {
       const { dir } = this.inboxManager.getAgentInboxDir(resolvedName);
       wakeTokenFile = path.join(dir, '.wake_signal');
-      const signalData = {
+      fs.writeFileSync(wakeTokenFile, JSON.stringify({
         timestamp: new Date().toISOString(),
         reason: wakeReason,
         target_agent: resolvedName,
-        live_session_observed: hasLiveSession,
-        session_pid: liveSession ? liveSession.pid : null,
         payload
-      };
-      fs.writeFileSync(wakeTokenFile, JSON.stringify(signalData, null, 2), 'utf8');
+      }, null, 2), 'utf8');
     }
 
-    // 2. Determine truthful status: WAKE_REQUESTED (never WORKING unless confirmed)
-    const newStatus = hasLiveSession ? 'WAKE_REQUESTED_LIVE' : 'WAKE_REQUESTED_OFFLINE';
+    const hasLiveSession = Boolean(liveSession);
+    const reportedStatus = hasLiveSession ? 'WORKING' : 'WAKE_REQUESTED_OFFLINE';
+
+    if (this.registry) {
+      try {
+        this.registry.updateAgentStatus(resolvedName, reportedStatus);
+      } catch (e) {}
+    }
 
     if (this.eventBus) {
       this.eventBus.emit('agent.wake_requested', 'RuntimeController', {
@@ -122,29 +281,29 @@ class RuntimeController {
     }
 
     return {
-      success: true,
+      success: hasLiveSession,
       agent: resolvedName,
-      status: newStatus,
+      status: reportedStatus,
       live_session_observed: hasLiveSession,
-      session: liveSession,
+      session: liveSession ? liveSession.toJSON() : null,
       wake_signal_path: wakeTokenFile
     };
   }
 
   putAgentToSleep(agentName, reason = 'IDLE') {
     const agent = this.registry ? this.registry.getAgent(agentName) : null;
-    const resolvedName = agent ? (agent.name || agent.identity?.name) : agentName;
+    const resolvedName = agent ? (agent.name || agent.identity?.name || agentName) : agentName;
 
     if (this.registry) {
-      this.registry.updateAgentStatus(resolvedName, 'SLEEPING');
+      try { this.registry.updateAgentStatus(resolvedName, 'SLEEPING'); } catch (e) {}
     }
 
     if (this.inboxManager) {
-      const { dir } = this.inboxManager.getAgentInboxDir(resolvedName);
-      const wakeTokenFile = path.join(dir, '.wake_signal');
-      if (fs.existsSync(wakeTokenFile)) {
-        try { fs.unlinkSync(wakeTokenFile); } catch (e) {}
-      }
+      try {
+        const { dir } = this.inboxManager.getAgentInboxDir(resolvedName);
+        const wakeTokenFile = path.join(dir, '.wake_signal');
+        if (fs.existsSync(wakeTokenFile)) fs.unlinkSync(wakeTokenFile);
+      } catch (e) {}
     }
 
     if (this.eventBus) {
@@ -158,41 +317,6 @@ class RuntimeController {
       success: true,
       agent: resolvedName,
       status: 'SLEEPING'
-    };
-  }
-
-  spawnAgentWorker(agentName, command, args = [], options = {}) {
-    const child = spawn(command, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      ...options
-    });
-
-    const runtimeId = `rt_proc_${child.pid}_${Date.now()}`;
-
-    this.activeWorkers.set(agentName, {
-      runtime_id: runtimeId,
-      pid: child.pid,
-      process: child,
-      started_at: new Date().toISOString()
-    });
-
-    if (this.eventBus) {
-      this.eventBus.emit('runtime.started', 'RuntimeController', {
-        agent: agentName,
-        runtime_id: runtimeId,
-        pid: child.pid
-      });
-    }
-
-    child.on('exit', (code) => {
-      this.activeWorkers.delete(agentName);
-      this.putAgentToSleep(agentName, `PROCESS_EXIT_${code}`);
-    });
-
-    return {
-      child,
-      runtime_id: runtimeId,
-      pid: child.pid
     };
   }
 }

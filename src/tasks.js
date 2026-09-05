@@ -1,12 +1,14 @@
 const fs = require('fs');
 const path = require('path');
+const { EVIDENCE_CLASSES } = require('./provenance');
 
 class TaskManager {
-  constructor(tasksFilePath, registry, inboxManager, eventBus) {
+  constructor(tasksFilePath, registry, inboxManager, eventBus, options = {}) {
     this.tasksFilePath = tasksFilePath || path.resolve(__dirname, '../community/tasks.json');
     this.registry = registry;
     this.inboxManager = inboxManager;
     this.eventBus = eventBus;
+    this.provenance = options.provenance || null;
     this.data = this.load();
   }
 
@@ -61,6 +63,16 @@ class TaskManager {
     this.data.tasks.push(task);
     this.save();
 
+    if (this.provenance) {
+      this.provenance.record({
+        actor: task.creator,
+        operation: 'CREATE_TASK',
+        reason: `Task ${task.id} created`,
+        evidence_class: EVIDENCE_CLASSES.DECLARED,
+        evidence: { taskId: task.id, title: task.title }
+      });
+    }
+
     if (this.eventBus) {
       this.eventBus.emit('task.created', task.creator, { task });
     }
@@ -79,7 +91,9 @@ class TaskManager {
     this.save();
 
     if (this.registry && agent) {
-      this.registry.updateAgentStatus(agent.name, 'AVAILABLE', task.id);
+      try {
+        this.registry.updateAgentStatus(agent.name, 'AVAILABLE', task.id);
+      } catch (e) {}
     }
 
     if (this.inboxManager && agent) {
@@ -91,6 +105,17 @@ class TaskManager {
         body: `You have been assigned task **${task.id}**:\n\n**${task.title}**\n\n${task.description}\n\nRequired capabilities: ${task.required_capabilities.join(', ')}`,
         priority: task.priority,
         relatedTask: task.id
+      });
+    }
+
+    if (this.provenance) {
+      this.provenance.record({
+        actor: 'TaskManager',
+        agent: task.assignee,
+        operation: 'ASSIGN_TASK',
+        reason: `Assigned ${task.id} to @${task.assignee}`,
+        evidence_class: EVIDENCE_CLASSES.DECLARED,
+        evidence: { taskId: task.id, assignee: task.assignee }
       });
     }
 
@@ -123,11 +148,26 @@ class TaskManager {
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
     task.status = 'IN_PROGRESS';
+    task.worker = agentName;
     task.updated_at = new Date().toISOString();
     this.save();
 
     if (this.registry) {
-      this.registry.updateAgentStatus(agentName, 'WORKING', task.id);
+      const agent = this.registry.getAgent(agentName);
+      if (agent) {
+        try { this.registry.updateAgentStatus(agent.name, 'WORKING', task.id); } catch (e) {}
+      }
+    }
+
+    if (this.provenance) {
+      this.provenance.record({
+        actor: agentName,
+        agent: agentName,
+        operation: 'START_TASK',
+        reason: `Started work on ${task.id}`,
+        evidence_class: EVIDENCE_CLASSES.DECLARED,
+        evidence: { taskId: task.id }
+      });
     }
 
     if (this.eventBus) {
@@ -143,14 +183,26 @@ class TaskManager {
 
     task.status = 'VERIFICATION';
     task.artifacts = artifacts;
+    task.worker = agentName;
     task.updated_at = new Date().toISOString();
     this.save();
 
     if (this.registry) {
       const agent = this.registry.getAgent(agentName);
       if (agent) {
-        this.registry.updateAgentStatus(agentName, 'AVAILABLE', null);
+        try { this.registry.updateAgentStatus(agent.name, 'AVAILABLE', null); } catch (e) {}
       }
+    }
+
+    if (this.provenance) {
+      this.provenance.record({
+        actor: agentName,
+        agent: agentName,
+        operation: 'COMPLETE_TASK',
+        reason: `Claimed completion for ${task.id}`,
+        evidence_class: EVIDENCE_CLASSES.DECLARED,
+        evidence: { taskId: task.id, artifacts }
+      });
     }
 
     if (this.eventBus) {
@@ -171,7 +223,8 @@ class TaskManager {
       verified_by: verifierName,
       timestamp: new Date().toISOString(),
       passed: evidence.passed === true,
-      test_suite: evidence.test_suite || 'automated',
+      status: evidence.status || 'UNKNOWN',
+      resolution: evidence.resolution || 'UNRESOLVED',
       exit_code: evidence.exit_code !== undefined ? evidence.exit_code : 0,
       details: evidence.details || evidence.reason || 'Verification recorded'
     };
@@ -186,6 +239,16 @@ class TaskManager {
 
     task.updated_at = new Date().toISOString();
     this.save();
+
+    if (this.provenance) {
+      this.provenance.record({
+        actor: verifierName,
+        operation: 'RECORD_VERIFICATION',
+        reason: `Verification for ${task.id}: ${task.status}`,
+        evidence_class: evidence.evidenceClass || EVIDENCE_CLASSES.UNKNOWN,
+        evidence: task.verification_evidence
+      });
+    }
 
     if (this.eventBus) {
       this.eventBus.emit(evidence.passed ? 'verification.passed' : 'verification.failed', verifierName, {

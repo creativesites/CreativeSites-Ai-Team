@@ -25,27 +25,37 @@ class Orchestrator {
       }
     });
 
-    // 2. When a task is completed, wake the Lead Verifier (Kael)!
+    // 2. When a task is completed, select an independent verifier (prevent self-verification)
     this.eventBus.on('task.completed', (event) => {
       const { taskId, artifacts } = event.payload;
-      const verifier = 'Kael';
-      console.log(`[Orchestrator] Task ${taskId} completed by @${event.sender}. Triggering verification by @${verifier}...`);
+      const worker = event.sender;
+      
+      // Determine independent verifier (must not be the worker)
+      let verifier = 'Kael';
+      if (worker && worker.toLowerCase() === 'kael') {
+        verifier = 'Iris'; // Fallback independent verifier
+      }
 
-      this.inboxManager.send({
-        from: 'Orchestrator',
-        to: verifier,
-        type: 'VERIFICATION_REQUEST',
-        subject: `Verification Required: ${taskId}`,
-        body: `Task **${taskId}** was completed by @${event.sender}.\nArtifacts created: ${artifacts.join(', ')}.\nPlease run automated test suite and record verification evidence.`,
-        priority: 'HIGH',
-        relatedTask: taskId
-      });
+      console.log(`[Orchestrator] Task ${taskId} completed by @${worker}. Triggering independent verification by @${verifier}...`);
 
-      const verifierAgent = this.registry ? this.registry.getAgent(verifier) : null;
-      if (verifierAgent) {
-        this.runtime.wakeAgent(verifier, 'VERIFICATION_DISPATCH', { taskId });
-      } else {
-        console.log(`[Orchestrator] Designated verifier @${verifier} not registered in this environment. Verification remains UNASSIGNED.`);
+      if (this.inboxManager) {
+        this.inboxManager.send({
+          from: 'Orchestrator',
+          to: verifier,
+          type: 'VERIFICATION_REQUEST',
+          subject: `Verification Required: ${taskId}`,
+          body: `Task **${taskId}** was completed by @${worker}.\nArtifacts created: ${(artifacts || []).join(', ')}.\nPlease run automated test suite and record verification evidence.`,
+          priority: 'HIGH',
+          relatedTask: taskId
+        });
+      }
+
+      if (this.runtime) {
+        try {
+          this.runtime.wakeAgent(verifier, 'VERIFICATION_DISPATCH', { taskId, worker });
+        } catch (err) {
+          console.warn(`[Orchestrator] Note: Verifier @${verifier} wake notice: ${err.message}`);
+        }
       }
     });
 
@@ -67,8 +77,10 @@ class Orchestrator {
             t.status = 'TODO';
             this.taskManager.save();
             console.log(`[Orchestrator] Unblocked downstream task ${t.id}!`);
-            if (t.assignee) {
-              this.runtime.wakeAgent(t.assignee, 'DEPENDENCY_RESOLVED', { taskId: t.id });
+            if (t.assignee && this.runtime) {
+              try {
+                this.runtime.wakeAgent(t.assignee, 'DEPENDENCY_RESOLVED', { taskId: t.id });
+              } catch (e) {}
             }
           }
         }

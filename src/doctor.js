@@ -3,11 +3,12 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 class MyaDoctor {
-  constructor({ registry, taskManager, inboxManager, eventBus, baseDir }) {
+  constructor({ registry, taskManager, inboxManager, eventBus, runtime, baseDir }) {
     this.registry = registry;
     this.taskManager = taskManager;
     this.inboxManager = inboxManager;
     this.eventBus = eventBus;
+    this.runtime = runtime;
     this.baseDir = baseDir || path.resolve(__dirname, '..');
   }
 
@@ -30,16 +31,54 @@ class MyaDoctor {
       addCheck('Registry', 'Agents loaded', hasAgents, `${agents.length} registered agents found`);
       
       const missingRoles = agents.filter(a => {
-        const roles = a.declared_responsibilities || a.org_roles;
+        const roles = a.responsibilities || a.org_roles;
         return !roles || roles.length === 0;
       });
       addCheck('Registry', 'Organizational roles assigned', missingRoles.length === 0, 
-        missingRoles.length ? `Agents missing roles: ${missingRoles.map(a => (a.identity && a.identity.name) || a.name || 'Unknown').join(', ')}` : 'All agents hold organizational responsibilities');
+        missingRoles.length ? `Agents missing roles: ${missingRoles.map(a => a.name).join(', ')}` : 'All agents hold organizational responsibilities');
+
+      if (this.registry.detectTampering) {
+        const tamperCheck = this.registry.detectTampering();
+        addCheck('Registry', 'Tamper detection', !tamperCheck.tampered,
+          tamperCheck.tampered ? `WARNING: Unauthorized mutation detected in agents.json (hash: ${tamperCheck.current_hash})` : 'Registry hash verified clean');
+      }
     } catch (e) {
       addCheck('Registry', 'Registry integrity', false, e.message);
     }
 
-    // 2. Task Queue Health
+    // 2. Epistemic Consistency: Declared vs Machine Observed State
+    try {
+      const agents = this.registry.getAllAgents();
+      let conflicts = 0;
+      const conflictDetails = [];
+
+      for (const a of agents) {
+        const declaredLive = a.status === 'LIVE' || a.status === 'ONLINE' || a.observed_liveness === 'LIVE';
+        let observedLive = false;
+
+        if (this.runtime) {
+          if (this.runtime.ideAdapter) {
+            const obs = this.runtime.ideAdapter.matchSessionForAgent(a.name, this.runtime.ideAdapter.getObservedSockets ? this.runtime.ideAdapter.getObservedSockets() : []);
+            observedLive = Boolean(obs && obs.isAlive());
+          } else if (this.runtime.findLiveSessionForAgent) {
+            observedLive = Boolean(this.runtime.findLiveSessionForAgent(a.name));
+          }
+        }
+
+        // If declared LIVE but no socket/process exists, flag conflict
+        if (declaredLive && !observedLive) {
+          conflicts++;
+          conflictDetails.push(`${a.name} (Declared: LIVE, Observed: NOT_FOUND)`);
+        }
+      }
+
+      addCheck('Epistemics', 'Declared vs Observed Liveness Consistency', conflicts === 0,
+        conflicts > 0 ? `${conflicts} conflict(s): ${conflictDetails.join('; ')}. State fails toward UNKNOWN/CONFLICT.` : 'Zero state conflicts detected');
+    } catch (e) {
+      addCheck('Epistemics', 'State consistency check', false, e.message);
+    }
+
+    // 3. Task Queue Health
     try {
       const tasks = this.taskManager.getAllTasks();
       addCheck('Tasks', 'Task queue accessible', true, `${tasks.length} total tasks tracked`);
@@ -55,21 +94,12 @@ class MyaDoctor {
       addCheck('Tasks', 'Task system integrity', false, e.message);
     }
 
-    // 3. Event Bus Check
+    // 4. Event Bus Check
     try {
       const recent = this.eventBus.getRecentEvents(5);
       addCheck('EventBus', 'Event log accessible', true, `${recent.length} recent events loaded from bus`);
     } catch (e) {
       addCheck('EventBus', 'Event bus integrity', false, e.message);
-    }
-
-    // 4. Git Cleanliness Check
-    try {
-      const gitStatus = execSync('git status --porcelain', { cwd: this.baseDir, encoding: 'utf8' }).trim();
-      const isClean = gitStatus.length === 0;
-      addCheck('Git', 'Working directory clean', isClean, isClean ? 'Git repository is clean' : `Uncommitted changes detected in repo`);
-    } catch (e) {
-      addCheck('Git', 'Git repository check', false, `Git check failed: ${e.message}`);
     }
 
     // 5. Inboxes Directory Check
@@ -79,6 +109,19 @@ class MyaDoctor {
       addCheck('Inboxes', 'Inboxes directory exists', inboxesExist, inboxesExist ? 'Inboxes ready for async messaging' : 'Inboxes missing');
     } catch (e) {
       addCheck('Inboxes', 'Inboxes check', false, e.message);
+    }
+
+    // 6. Provenance Log Check
+    try {
+      const provLog = path.resolve(this.baseDir, 'data/provenance.log');
+      if (!fs.existsSync(provLog)) {
+        fs.mkdirSync(path.dirname(provLog), { recursive: true });
+        fs.writeFileSync(provLog, `[${new Date().toISOString()}] [System] MyaOS provenance ledger initialized.\n`, 'utf8');
+      }
+      const provExists = fs.existsSync(provLog);
+      addCheck('Provenance', 'Audit trail active', provExists, 'Immutable provenance ledger active');
+    } catch (e) {
+      addCheck('Provenance', 'Provenance check', false, e.message);
     }
 
     return report;

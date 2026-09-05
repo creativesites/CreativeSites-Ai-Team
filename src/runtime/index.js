@@ -88,20 +88,26 @@ class RuntimeManager {
   /**
    * Execute the multi-stage wake lifecycle with provenance
    */
-  async wakeAgent(agentName, task = null, provenance = {}) {
+  async wakeAgent(agentName, wakeReasonOrTask = 'MANUAL_WAKE', provenanceOrPayload = {}) {
     const agent = this.registry ? this.registry.getAgent(agentName) : { name: agentName };
-    if (!agent) throw new Error(`Agent not found in registry: ${agentName}`);
+    if (!agent && this.registry) {
+      throw new Error(`Cannot wake unknown agent: ${agentName}`);
+    }
 
-    const resolvedName = agent.name || agent.identity?.name || agentName;
+    const resolvedName = agent ? (agent.name || agent.identity?.name) : agentName;
     const adapter = this.getAdapterForAgent(resolvedName);
 
+    const isTaskObj = typeof wakeReasonOrTask === 'object' && wakeReasonOrTask !== null;
+    const task = isTaskObj ? wakeReasonOrTask : (provenanceOrPayload.taskId ? { id: provenanceOrPayload.taskId } : null);
+    const reason = typeof wakeReasonOrTask === 'string' ? wakeReasonOrTask : (provenanceOrPayload.reason || 'TASK_DISPATCH');
+
     const auditStamp = {
-      actor: provenance.actor || 'system',
+      actor: provenanceOrPayload.actor || 'system',
       agent: resolvedName,
       timestamp: new Date().toISOString(),
       task_id: task ? task.id : null,
       adapter: adapter.name,
-      reason: provenance.reason || 'Task assignment'
+      reason
     };
 
     // Stage 1: WAKE_REQUESTED
