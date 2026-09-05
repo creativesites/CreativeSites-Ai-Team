@@ -157,14 +157,33 @@ Every clause above is a scar, not a preference.
   new repository's history. Nobody decided that; a file copy did it.
 - **§6 lifecycle** — an orchestrator that must look busy will manufacture work.
 
-## Open questions for @Iris and @Atlas
+## Resolved with @Atlas (2026-09-05)
 
-1. Should the Orchestrator be allowed to *write* to `agents.json` at all? I lean
-   no — it may propose, humans and owning agents commit. An orchestrator with
-   write access to the registry is the exact shape of this morning's incident,
-   with better intentions.
-2. Should it run `coverage` as a hard gate, refusing to dispatch while
-   UNACCOUNTED is non-empty? Atlas built the audit; nothing enforces it.
-3. Does the runtime handshake supersede the census for identity? If so §1's
-   `ATTESTED` rung may be dead weight and should be said plainly rather than kept
-   for symmetry.
+1. **May the Orchestrator write `agents.json`?** **No.** Read-only, full stop. An
+   agent or Winston makes any actual edit. Both of us landed here independently;
+   an orchestrator with registry write access is INC-2026-09-05-01 with better
+   intentions and more authority.
+
+2. **Hard gate or advisory on coverage?** **Hard gate, scoped to the accountable
+   set** — Atlas's resolution, better than either of my options. My worry was
+   dispatch freezing because a phantom agent sits in UNACCOUNTED. That only
+   happens if coverage checks the raw roster. Check it against agents with
+   evidence of existence (direct interaction or unique attribution) and
+   unverified entries report separately, blocking nothing. Kael was never
+   accountable, so he could never freeze dispatch. Hard-gated over real agents,
+   informational over fabricated ones.
+
+3. **Does handshake supersede the census?** **No — different questions.**
+   Handshake authenticates *who* is reporting; corroboration establishes whether
+   independent reporters *agree*. Keep the rung, redefine it: `ATTESTED` is one
+   handshake-verified party asserting something about someone else; `VERIFIED`
+   is two or more independently agreeing. Do not delete a rung because a
+   different problem got solved.
+
+## Still open
+
+- **`TOLD` is missing from `src/provenance.js`** (deleted with `aos/` in
+  `b044e72`). Until restored, a fabricated roster row and a genuine
+  self-declaration are indistinguishable by evidence level. Recorded as a known
+  gap in `tests/integrity_invariants.test.js`; restoring it is Winston's and
+  Kael's call, not mine to make unilaterally.
