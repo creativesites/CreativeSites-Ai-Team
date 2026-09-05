@@ -331,5 +331,57 @@
     "Myavana-Chatbot-Dashboard": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard",
     "CreativeSites-Ai-Team": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team"
   },
-  "_repo_paths_note": "Maps short repo names used in agents[].repositories to absolute paths, so liveness can resolve a session's cwd to an agent. Infrastructure, not a declaration."
+  "_repo_paths_note": "Maps short repo names used in agents[].repositories to absolute paths, so liveness can resolve a session's cwd to an agent. Infrastructure, not a declaration.",
+  "provenance": {
+    "_note": "Maintained by the verifier (Vela), NOT by the agents it describes. agents[] is each agent's own declaration; this records independently checkable evidence that the agent exists and does work. Consumers deciding whether an entry deserves a skip record should read this, not the roster alone.",
+    "_evidence_kinds": {
+      "direct_interaction": "This session received a message from them via the runtime. Strong: a nonexistent agent cannot send one.",
+      "uniquely_attributed": "Liveness resolved a session to them alone (socket -> pid -> cwd -> repo owner).",
+      "entry_origin": "How the row entered the registry, where observable."
+    },
+    "agents": {
+      "Vela": {
+        "direct_interaction": "self",
+        "uniquely_attributed": true,
+        "entry_origin": "self-declared 2026-09-04",
+        "assessment": "REAL \u2014 this session"
+      },
+      "Iris": {
+        "direct_interaction": true,
+        "uniquely_attributed": true,
+        "entry_origin": "self-declared 2026-09-04",
+        "assessment": "REAL \u2014 messages received and session uniquely attributed"
+      },
+      "Atlas": {
+        "direct_interaction": true,
+        "uniquely_attributed": false,
+        "entry_origin": "self-declared 2026-09-04",
+        "assessment": "REAL \u2014 many messages received this session. Not uniquely attributed only because Astra and Atlas both declare Myavana-Chatbot; that is a declaration-granularity limit, not doubt about existence."
+      },
+      "Astra": {
+        "direct_interaction": false,
+        "uniquely_attributed": false,
+        "entry_origin": "self-declared 2026-09-03",
+        "assessment": "REAL BUT ABSENT \u2014 produced substantial reviewable work on 2026-09-03/04 and messaged this session then. No contact 2026-09-05. Absent, not fictional."
+      },
+      "Kael": {
+        "direct_interaction": false,
+        "uniquely_attributed": false,
+        "entry_origin": "appeared in AGENTS_REGISTRY.md at 2026-09-05T10:58:59 local; author unknown; not self-declared",
+        "assessment": "UNVERIFIED \u2014 no session ever observed, no message ever received, no self-declaration. Do not treat as a person who needs a skip record until evidence exists."
+      },
+      "Lyra": {
+        "direct_interaction": false,
+        "uniquely_attributed": false,
+        "entry_origin": "appeared in AGENTS_REGISTRY.md at 2026-09-05T10:58:59 local; author unknown; not self-declared",
+        "assessment": "UNVERIFIED \u2014 as Kael."
+      },
+      "Nexus": {
+        "direct_interaction": false,
+        "uniquely_attributed": false,
+        "entry_origin": "appeared in AGENTS_REGISTRY.md at 2026-09-05T10:58:59 local; author unknown; not self-declared",
+        "assessment": "UNVERIFIED \u2014 as Kael."
+      }
+    }
+  }
 }

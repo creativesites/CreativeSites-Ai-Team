@@ -358,7 +358,64 @@ function routingEligibility(rec) {
     };
 }
 
+/**
+ * The roster a coverage/dispatch check should read.
+ *
+ * Atlas's `mya coverage` parsed AGENTS_REGISTRY.md — a file fabricated twice
+ * today. An exclusion audit inherits the integrity of the roster it reads, so an
+ * invented agent would demand a skip record and a deleted real one would drop
+ * out of coverage silently. This is the same data with provenance and observed
+ * liveness attached.
+ *
+ * The distinction that matters to a dispatcher is NOT present/absent. It is
+ * whether an entry describes someone who exists at all:
+ *
+ *   accountable  — evidence they are real. Absence needs contact or a skip record.
+ *   unverified   — never observed, never heard from, not self-declared. Owes
+ *                  nobody a skip record; requiring one would mean writing
+ *                  justifications to agents that may not exist, which is how a
+ *                  fabricated roster launders itself into a real process.
+ *
+ * Callers should size UNACCOUNTED against `accountable`, and report `unverified`
+ * separately as a registry-integrity problem rather than a coverage gap.
+ */
+function rosterForCoverage(agentsFile) {
+    const raw = JSON.parse(fs.readFileSync(agentsFile, 'utf8'));
+    const prov = (raw.provenance && raw.provenance.agents) || {};
+    let rec = null;
+    try { rec = reconcile(raw.agents, undefined, raw.repo_paths || {}); } catch { /* observation optional */ }
+
+    const observedOf = (name) => {
+        if (!rec || !rec.ok) return 'UNKNOWN';
+        const row = rec.rows.find((r) => r.name === name);
+        return row ? row.observed : 'UNKNOWN';
+    };
+
+    const agents = raw.agents.map((a) => {
+        const p = prov[a.name] || {};
+        const real = p.direct_interaction === true || p.direct_interaction === 'self'
+                  || p.uniquely_attributed === true
+                  || /^REAL/.test(p.assessment || '');
+        return {
+            name: a.name,
+            accountable: !!real,
+            evidence: p.assessment || 'no provenance recorded',
+            observed: observedOf(a.name),
+            capabilities: a.capabilities || {},
+            owns: a.owns || a.owned_paths || [],
+        };
+    });
+
+    return {
+        source: agentsFile,
+        accountable: agents.filter((a) => a.accountable),
+        unverified: agents.filter((a) => !a.accountable),
+        note: 'Size coverage against `accountable`. `unverified` entries are a registry-integrity '
+            + 'problem, not agents owed a skip record.',
+    };
+}
+
 module.exports = {
     observedSessions, agentsForCwd, resolveLiveness, reconcile, readCensus,
-    routingEligibility, SOCK_DIR, CENSUS_DIR,
+    routingEligibility, rosterForCoverage, SOCK_DIR, CENSUS_DIR,
 };
