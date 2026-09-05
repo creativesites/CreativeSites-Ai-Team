@@ -38,16 +38,42 @@ class VerificationEngine {
       }
     }
 
-    const passed = missingFiles.length === 0 && commandResult.exit_code === 0;
+    const hasMachineEvidence = (requiredFiles.length > 0) || Boolean(testCommand);
+    let status = 'UNKNOWN';
+    let resolution = 'UNRESOLVED';
+    let passed = false;
+    let reason = '';
+
+    if (!hasMachineEvidence) {
+      status = 'UNKNOWN';
+      resolution = 'UNRESOLVED';
+      passed = false;
+      reason = 'INSUFFICIENT_EVIDENCE: Neither artifact existence nor test command provided for verification. System refuses to infer state.';
+    } else if (missingFiles.length > 0 || (testCommand && commandResult.exit_code !== 0)) {
+      status = 'FAILED';
+      resolution = 'RESOLVED_FAIL';
+      passed = false;
+      reason = 'Machine-observed verification checks failed.';
+    } else {
+      status = 'VERIFIED';
+      resolution = 'RESOLVED_PASS';
+      passed = true;
+      reason = 'All machine-observed verification checks passed with exit code 0 and valid artifacts.';
+    }
+
     const duration = Date.now() - startTime;
 
     const evidence = {
+      status,
+      resolution,
       passed,
+      reason,
       exit_code: commandResult.exit_code,
       duration_ms: duration,
       verified_files: verifiedFiles,
       missing_files: missingFiles,
-      command_output: commandResult.output.slice(0, 1000)
+      command_output: commandResult.output.slice(0, 1000),
+      evidenceClass: hasMachineEvidence ? 'OBSERVED_MACHINE' : 'INSUFFICIENT'
     };
 
     this.taskManager.recordVerification(taskId, verifierName, evidence);

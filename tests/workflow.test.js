@@ -90,3 +90,60 @@ test('End-to-End Vertical Slice: Registration -> Capability Routing -> Execution
   assert.ok(eventTypes.includes('task.completed'));
   assert.ok(eventTypes.includes('verification.passed'));
 });
+
+test('Integrity & False-State Rejection: Insufficient evidence yields UNKNOWN/UNRESOLVED', async (t) => {
+  const tmpDir = path.resolve(__dirname, '../tmp_test_env_integrity_' + Date.now());
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  t.after(() => {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch (e) {}
+  });
+
+  const myaos = initMyaOS({ baseDir: tmpDir });
+
+  myaos.registry.registerAgent({
+    id: 'agent-atlas',
+    name: 'Atlas',
+    capabilities: ['security', 'platform'],
+    org_roles: ['Security Lead']
+  });
+
+  // 1. Create a task
+  const task = myaos.taskManager.createTask({
+    id: 'TASK_INTEGRITY_001',
+    title: 'Unverified Claimed Completion',
+    description: 'Agent claims completion with zero machine-verifiable artifacts',
+    required_capabilities: ['security'],
+    priority: 'HIGH'
+  });
+
+  myaos.taskManager.completeTask(task.id, 'Atlas', []);
+  assert.equal(myaos.taskManager.getTask(task.id).status, 'VERIFICATION');
+
+  // 2. Run verifier with empty evidence (no command, no files)
+  const emptyEvidence = myaos.verifier.verifyTaskArtifacts(task.id, 'Kael', {
+    requiredFiles: [],
+    testCommand: null,
+    cwd: tmpDir
+  });
+
+  // Must yield UNKNOWN / UNRESOLVED, NEVER infer pass!
+  assert.equal(emptyEvidence.status, 'UNKNOWN');
+  assert.equal(emptyEvidence.resolution, 'UNRESOLVED');
+  assert.equal(emptyEvidence.passed, false);
+  assert.equal(myaos.taskManager.getTask(task.id).status, 'UNRESOLVED');
+
+  // 3. Test failure case: non-zero exit code
+  const failEvidence = myaos.verifier.verifyTaskArtifacts(task.id, 'Kael', {
+    testCommand: 'node -e "process.exit(1)"',
+    cwd: tmpDir
+  });
+
+  assert.equal(failEvidence.status, 'FAILED');
+  assert.equal(failEvidence.resolution, 'RESOLVED_FAIL');
+  assert.equal(failEvidence.passed, false);
+  assert.equal(myaos.taskManager.getTask(task.id).status, 'BLOCKED');
+});
+

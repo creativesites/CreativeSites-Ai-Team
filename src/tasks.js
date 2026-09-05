@@ -170,11 +170,13 @@ class TaskManager {
       passed: evidence.passed === true,
       test_suite: evidence.test_suite || 'automated',
       exit_code: evidence.exit_code !== undefined ? evidence.exit_code : 0,
-      details: evidence.details || 'Passed automated verification checks'
+      details: evidence.details || evidence.reason || 'Verification recorded'
     };
 
-    if (evidence.passed) {
+    if (evidence.passed === true && evidence.status === 'VERIFIED') {
       task.status = 'DONE';
+    } else if (evidence.status === 'UNKNOWN' || evidence.resolution === 'UNRESOLVED') {
+      task.status = 'UNRESOLVED';
     } else {
       task.status = 'BLOCKED';
     }
