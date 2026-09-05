@@ -3,51 +3,33 @@ const path = require('path');
 const { execSync } = require('child_process');
 const BaseAdapter = require('./baseAdapter');
 const RuntimeSession = require('../session');
+const { EXECUTION_CLASSES, ATTRIBUTION_STATES } = require('../session');
 
 class IdeAdapter extends BaseAdapter {
   constructor(options = {}) {
     super('ide', options);
     this.sockDir = options.sockDir || '/tmp/cc-socks';
-  }
-
-  getObservedSockets() {
-    if (!fs.existsSync(this.sockDir)) return [];
-    try {
-      const files = fs.readdirSync(this.sockDir).filter(f => f.endsWith('.sock'));
-      const sessions = [];
-      for (const f of files) {
-        const fullPath = path.join(this.sockDir, f);
-        const pidMatch = f.match(/^(\d+)\.sock$/);
-        const pid = pidMatch ? parseInt(pidMatch[1], 10) : null;
-        let cwd = null;
-        if (pid) {
-          try {
-            const out = execSync(`lsof -a -d cwd -p ${pid} -Fn 2>/dev/null`, { encoding: 'utf8' });
-            const match = out.match(/n(.*)/);
-            if (match) cwd = match[1].trim();
-          } catch (e) {}
-        }
-        let isProcessAlive = false;
-        if (pid) {
-          try {
-            process.kill(pid, 0);
-            isProcessAlive = true;
-          } catch (e) {}
-        }
-        sessions.push({ socket: f, path: fullPath, pid, cwd, isAlive: isProcessAlive });
-      }
-      return sessions;
-    } catch (e) {
-      return [];
-    }
+    this.boundSessions = new Map(); // socket -> agent_id (only when explicitly bound)
   }
 
   /**
-   * Directly observe the machine's IDE domain sockets and processes
+   * Bind a specific socket to an agent identity when trustworthy evidence/handshake is supplied
+   */
+  bindSession(socketName, agentId) {
+    this.boundSessions.set(socketName, agentId.toLowerCase().trim());
+  }
+
+  /**
+   * Directly observe the machine's IDE domain sockets and processes.
+   *
+   * STRICT INVARIANT:
+   * Do not infer agent identity from CWD, socket name, or assumptions.
+   * If identity cannot be proven with trustworthy binding, report:
+   * IDENTITY: UNATTRIBUTED
    */
   async observe(agentName = null) {
     if (!fs.existsSync(this.sockDir)) {
-      return { ok: true, sessions: [], observed_agents: [] };
+      return { ok: true, sessions: [], unattributed_count: 0, attributed_count: 0 };
     }
 
     try {
@@ -88,69 +70,78 @@ class IdeAdapter extends BaseAdapter {
           }
         }
 
-        sessions.push({
-          socket: f,
-          path: fullPath,
+        // Check if an explicit binding exists for this socket
+        const boundAgent = this.boundSessions.get(f) || null;
+
+        const sessionObj = new RuntimeSession({
+          runtime_id: `rt_ide_${pid || f}_${stat.mtimeMs}`,
+          agent_id: boundAgent || null,
           pid,
           cwd,
-          mtime: stat.mtime,
-          isAlive: isProcessAlive
+          runtime_type: 'ide',
+          execution_class: EXECUTION_CLASSES.REAL_IDE_SESSION,
+          session_id: f,
+          status: isProcessAlive ? 'ACTIVE' : 'TERMINATED',
+          attribution_state: boundAgent ? ATTRIBUTION_STATES.ATTRIBUTED : ATTRIBUTION_STATES.UNATTRIBUTED
         });
+
+        sessions.push(sessionObj.toJSON());
       }
+
+      const unattributed = sessions.filter(s => !s.attributed);
+      const attributed = sessions.filter(s => s.attributed);
 
       if (agentName) {
-        const matched = this.matchSessionForAgent(agentName, sessions);
-        return { ok: true, sessions, matched_session: matched };
+        const clean = agentName.toLowerCase().trim();
+        const matched = sessions.find(s => s.agent_id === clean);
+        return {
+          ok: true,
+          sessions,
+          unattributed_count: unattributed.length,
+          attributed_count: attributed.length,
+          matched_session: matched || null
+        };
       }
 
-      return { ok: true, sessions };
+      return {
+        ok: true,
+        sessions,
+        unattributed_count: unattributed.length,
+        attributed_count: attributed.length
+      };
     } catch (err) {
       return { ok: false, reason: err.message, sessions: [] };
     }
   }
 
-  /**
-   * Helper: Map known project working directories to agent identities,
-   * but explicitly annotate as ATTESTED/INFERRED from directory, not verified identity.
-   */
-  matchSessionForAgent(agentName, sessions) {
-    const clean = agentName.toLowerCase().trim();
-    const repoHints = {
-      'atlas': 'myavana-chatbot',
-      'iris': 'myavana-chatbot-dashboard',
-      'vela': 'myavana-hair-journey',
-      'astra': 'packages/widget',
-      'nexus': 'creativesites-ai-team'
-    };
-
-    const hint = repoHints[clean];
-    if (!hint) return null;
-
-    const matched = sessions.find(s => s.cwd && s.cwd.toLowerCase().includes(hint) && s.isAlive);
-    if (!matched) return null;
-
-    return new RuntimeSession({
-      agent_id: clean,
-      pid: matched.pid,
-      cwd: matched.cwd,
-      runtime_type: 'ide',
-      session_id: matched.socket,
-      status: 'ACTIVE'
-    });
-  }
-
   async status(agentName) {
+    if (!agentName) {
+      return { status: 'UNKNOWN', reason: 'agentName required' };
+    }
+
     const observation = await this.observe(agentName);
     if (!observation.ok) {
       return { status: 'UNKNOWN', reason: observation.reason };
     }
-    if (observation.matched_session && observation.matched_session.isAlive()) {
+
+    if (observation.matched_session && observation.matched_session.machine_alive) {
       return {
         status: 'ACTIVE',
-        session: observation.matched_session.toJSON(),
+        identity: observation.matched_session.agent_id,
+        session: observation.matched_session,
         evidence_class: 'OBSERVED'
       };
     }
+
+    // Check if sockets exist but are unattributed
+    if (observation.unattributed_count > 0) {
+      return {
+        status: 'NOT_ATTRIBUTED',
+        note: `${observation.unattributed_count} live IDE session(s) observed, but identity is UNATTRIBUTED (no trustworthy handshake binding).`,
+        evidence_class: 'OBSERVED'
+      };
+    }
+
     return {
       status: 'NOT_OBSERVED',
       session: null,
@@ -164,7 +155,8 @@ class IdeAdapter extends BaseAdapter {
       success: status.status === 'ACTIVE',
       agent: agentName,
       status: status.status === 'ACTIVE' ? 'WAKE_NOTIFIED' : 'WAKE_REQUESTED_OFFLINE',
-      live_session: status.session
+      live_session: status.session || null,
+      identity_resolution: status.status === 'ACTIVE' ? 'VERIFIED' : 'UNATTRIBUTED'
     };
   }
 
@@ -177,11 +169,11 @@ class IdeAdapter extends BaseAdapter {
   }
 
   async send(agentName, message) {
-    return { delivered: false, reason: 'IDE adapter relies on inbox files for delivery' };
+    return { delivered: false, reason: 'IDE adapter relies on inbox files or host communication' };
   }
 
   async start(agentName) {
-    return { success: false, reason: 'Interactive IDE sessions cannot be started programmatically without an IDE process.' };
+    return { success: false, reason: 'Interactive IDE sessions cannot be started programmatically without an IDE host process.' };
   }
 
   async stop(agentName) {

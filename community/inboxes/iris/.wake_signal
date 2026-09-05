@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-09-05T10:39:23.575Z",
+  "reason": "DEPENDENCY_RESOLVED",
+  "target_agent": "Iris",
+  "payload": {
+    "taskId": "TASK_LIVE_3415"
+  }
+}

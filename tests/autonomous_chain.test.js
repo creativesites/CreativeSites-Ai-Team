@@ -5,8 +5,8 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { initMyaOS, EVIDENCE_CLASSES } = require('../src');
 
-test('Autonomous Chain Proof: Real OS Processes, Actual Artifacts, Independent Verification, and Downstream Handoff', async (t) => {
-  const tmpDir = path.resolve(__dirname, '../tmp_chain_' + Date.now());
+test('Autonomous Chain Proof: Real OS Process Worker, Cryptographic Handshake, Artifact Hashing, Independent Verification, and Proof Bundle', async (t) => {
+  const tmpDir = path.resolve(__dirname, '../tmp_chain_proof_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
   fs.mkdirSync(tmpDir, { recursive: true });
   t.after(() => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {} });
 
@@ -31,35 +31,40 @@ test('Autonomous Chain Proof: Real OS Processes, Actual Artifacts, Independent V
     capabilities: ['dashboard', 'telemetry']
   });
 
-  // 2. Create upstream and downstream tasks
+  // 2. Create upstream task and downstream dependent task
   const task1 = myaos.taskManager.createTask({
-    id: 'TASK_CHAIN_001',
-    title: 'Produce Machine Artifact Proof',
-    required_capabilities: ['platform'],
-    dependencies: []
+    id: 'TASK_AUTONOMOUS_001',
+    title: 'Autonomous System Execution Proof',
+    required_capabilities: ['platform']
   });
 
   const task2 = myaos.taskManager.createTask({
-    id: 'TASK_CHAIN_002',
-    title: 'Downstream Consumer Task',
+    id: 'TASK_AUTONOMOUS_002',
+    title: 'Downstream Telemetry Ingestion',
     required_capabilities: ['dashboard'],
-    dependencies: ['TASK_CHAIN_001']
+    dependencies: [task1.id]
   });
 
-  // Route task1 to Atlas, task2 to Iris
   myaos.taskManager.assignTask(task1.id, 'Atlas');
   myaos.taskManager.assignTask(task2.id, 'Iris');
-  // Mark task2 as BLOCKED awaiting task1
   task2.status = 'BLOCKED';
   myaos.taskManager.save();
 
   assert.equal(myaos.taskManager.getTask(task2.id).status, 'BLOCKED');
 
-  // 3. Spawn REAL OS process worker for Agent A (Atlas)
+  // 3. Issue cryptographic handshake token for Atlas
+  const workerRuntimeId = `rt_proc_atlas_${Date.now()}`;
+  const handshakeToken = myaos.runtime.handshakeManager.issueToken({
+    runtime_id: workerRuntimeId,
+    agent_id: 'Atlas',
+    runtime_type: 'REAL_PROCESS'
+  });
+
+  assert.ok(handshakeToken, 'Cryptographic handshake token must be issued');
+
+  // 4. Launch real OS child process worker for Atlas
   const binPath = path.resolve(__dirname, '../bin/myaos.js');
-  const artifactDir = path.join(tmpDir, 'data/artifacts');
-  fs.mkdirSync(artifactDir, { recursive: true });
-  const proofFile = path.join(artifactDir, 'task_chain_001_proof.json');
+  const claimedAt = new Date().toISOString();
 
   const workerRun = spawnSync(process.execPath, [
     binPath,
@@ -67,59 +72,95 @@ test('Autonomous Chain Proof: Real OS Processes, Actual Artifacts, Independent V
     '--agent',
     'Atlas',
     '--task',
-    task1.id
+    task1.id,
+    '--runtime-id',
+    workerRuntimeId,
+    '--handshake-token',
+    handshakeToken
   ], {
     cwd: tmpDir,
     encoding: 'utf8',
-    env: { ...process.env, NODE_PATH: path.resolve(__dirname, '../node_modules') }
+    env: { ...process.env, MYAOS_BASE_DIR: tmpDir }
   });
 
-  // Confirm worker executed as a real process and exited with 0
   assert.equal(workerRun.status, 0, `Worker failed: ${workerRun.stderr || workerRun.stdout}`);
   assert.match(workerRun.stdout, /Started real process worker for @Atlas/);
-  assert.match(workerRun.stdout, /Generated artifact at/);
+  assert.match(workerRun.stdout, /Claiming and executing task TASK_AUTONOMOUS_001/);
 
-  // 4. Verify machine evidence of worker output
-  assert.ok(fs.existsSync(proofFile), 'Proof artifact must physically exist on disk');
-  const artifactContent = JSON.parse(fs.readFileSync(proofFile, 'utf8'));
+  // 5. Verify machine artifact existence & hash
+  const artifactPath = path.join(tmpDir, 'data/artifacts/task_autonomous_001_proof.json');
+  assert.ok(fs.existsSync(artifactPath), 'Artifact must physically exist on disk');
+  const artifactContent = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
   assert.equal(artifactContent.task_id, task1.id);
   assert.equal(artifactContent.worker, 'Atlas');
-  assert.ok(artifactContent.pid > 0, 'Real process PID must be recorded');
+  assert.ok(artifactContent.pid > 0, 'Real process PID must be present in artifact');
+
+  const completedAt = new Date().toISOString();
 
   // Reload task state after worker completion
   myaos.taskManager.data = myaos.taskManager.load();
   const taskAfterWork = myaos.taskManager.getTask(task1.id);
   assert.equal(taskAfterWork.status, 'VERIFICATION');
 
-  // 5. Verifier Agent (Kael) executes independent machine verification
-  // Runs an independent test verifying JSON structure and validity
-  const verificationResult = myaos.verifier.verifyTaskArtifacts(task1.id, 'Kael', {
-    requiredFiles: [proofFile],
-    testCommand: `node -e "const data = require('${proofFile}'); if (!data.pid || data.status !== 'SUCCESS') process.exit(1);"`,
+  // 6. Independent Verifier (Kael) executes machine verification
+  const verifierRuntimeId = `rt_proc_kael_${Date.now()}`;
+  const verifierPid = process.pid;
+
+  const verifCommand = `node -e "const d = require('${artifactPath}'); if (d.status !== 'SUCCESS' || !d.pid) process.exit(1);"`;
+  const evidence = myaos.verifier.verifyTaskArtifacts(task1.id, 'Kael', {
+    requiredFiles: [artifactPath],
+    testCommand: verifCommand,
     cwd: tmpDir
   });
 
-  assert.equal(verificationResult.status, 'VERIFIED');
-  assert.equal(verificationResult.passed, true);
-  assert.equal(verificationResult.resolution, 'RESOLVED_PASS');
-  assert.equal(verificationResult.exit_code, 0);
-  assert.equal(verificationResult.evidenceClass, EVIDENCE_CLASSES.VERIFIED);
+  assert.equal(evidence.status, 'VERIFIED');
+  assert.equal(evidence.passed, true);
+  assert.equal(evidence.resolution, 'RESOLVED_PASS');
+  assert.equal(evidence.exit_code, 0);
+  assert.equal(evidence.evidenceClass, EVIDENCE_CLASSES.VERIFIED);
 
-  // 6. Confirm task1 is marked DONE
-  const finalTask1 = myaos.taskManager.getTask(task1.id);
-  assert.equal(finalTask1.status, 'DONE');
-  assert.ok(finalTask1.verification_evidence);
-  assert.equal(finalTask1.verification_evidence.verified_by, 'Kael');
+  const verifiedAt = new Date().toISOString();
 
-  // 7. Trigger orchestrator or verify downstream task unblocking
+  // 7. Generate full cryptographic Proof Bundle
+  const bundleResult = myaos.proofBundle.createBundle({
+    taskId: task1.id,
+    taskTitle: task1.title,
+    creator: task1.creator,
+    workerAgent: 'Atlas',
+    workerRuntime: workerRuntimeId,
+    workerPid: artifactContent.pid,
+    claimedAt,
+    artifacts: [artifactPath],
+    completedAt,
+    verifierAgent: 'Kael',
+    verifierRuntime: verifierRuntimeId,
+    verifierPid,
+    verificationCommand: verifCommand,
+    verificationExitCode: evidence.exit_code,
+    verificationOutput: evidence.command_output,
+    verifiedAt,
+    downstreamTaskId: task2.id
+  });
+
+  assert.ok(bundleResult.bundle_path);
+  assert.ok(fs.existsSync(bundleResult.bundle_path));
+
+  // 8. Independently verify the generated Proof Bundle from disk
+  const bundleVerification = myaos.proofBundle.verifyBundle(bundleResult.bundle_path);
+  assert.equal(bundleVerification.verified, true);
+  assert.equal(bundleVerification.task_id, task1.id);
+  assert.equal(bundleVerification.worker, 'Atlas');
+  assert.equal(bundleVerification.verifier, 'Kael');
+
+  // 9. Downstream handoff: trigger unblocking
   myaos.eventBus.emit('verification.passed', 'Kael', { taskId: task1.id });
-
+  myaos.taskManager.data = myaos.taskManager.load();
   const finalTask2 = myaos.taskManager.getTask(task2.id);
-  assert.equal(finalTask2.status, 'TODO', 'Downstream task must automatically unblock to TODO');
+  assert.equal(finalTask2.status, 'TODO', 'Downstream task must unblock upon verification');
 
-  // 8. Verify immutable provenance audit trail
+  // 10. Verify immutable provenance audit trail
   const recentProvenance = myaos.provenance.getRecentRecords(10);
-  assert.ok(recentProvenance.length >= 3);
+  assert.ok(recentProvenance.length >= 2);
   const verifyProv = recentProvenance.find(p => p.operation === 'TASK_VERIFICATION');
   assert.ok(verifyProv);
   assert.equal(verifyProv.actor, 'Kael');

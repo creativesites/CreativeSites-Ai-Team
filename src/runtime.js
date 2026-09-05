@@ -3,7 +3,9 @@ const path = require('path');
 const IdeAdapter = require('./runtime/adapters/ideAdapter');
 const ProcessAdapter = require('./runtime/adapters/processAdapter');
 const TmuxAdapter = require('./runtime/adapters/tmuxAdapter');
+const RuntimeHandshakeManager = require('./runtime/handshake');
 const { EVIDENCE_CLASSES } = require('./provenance');
+const { RUNTIME_LABELS } = require('./runtime/session');
 
 class RuntimeController {
   constructor(registry, inboxManager, eventBus, options = {}) {
@@ -13,9 +15,12 @@ class RuntimeController {
     this.baseDir = options.baseDir || path.resolve(__dirname, '..');
     this.provenance = options.provenance || null;
 
+    // Initialize Handshake Manager
+    this.handshakeManager = new RuntimeHandshakeManager(this.baseDir);
+
     // Initialize adapters
     this.ideAdapter = new IdeAdapter({ sockDir: options.sockDir || '/tmp/cc-socks' });
-    this.processAdapter = new ProcessAdapter({ baseDir: this.baseDir });
+    this.processAdapter = new ProcessAdapter({ baseDir: this.baseDir, handshakeManager: this.handshakeManager });
     this.tmuxAdapter = new TmuxAdapter();
 
     this.adapters = {
@@ -23,6 +28,92 @@ class RuntimeController {
       process: this.processAdapter,
       tmux: this.tmuxAdapter
     };
+
+    this.registeredSessions = new Map(); // runtime_id -> session
+  }
+
+  /**
+   * Complete runtime registration handshake
+   */
+  registerRuntime({ runtime_id, agent_id, handshake_token, pid, parent_pid, cwd }) {
+    const verification = this.handshakeManager.verifyAndRegister({
+      runtime_id,
+      agent_id,
+      handshake_token,
+      pid,
+      parent_pid,
+      cwd
+    });
+
+    if (!verification.success) {
+      if (this.provenance) {
+        this.provenance.record({
+          actor: agent_id || 'Unknown',
+          operation: 'RUNTIME_REGISTRATION_FAILED',
+          runtime_id,
+          reason: verification.reason,
+          evidence_class: EVIDENCE_CLASSES.UNKNOWN,
+          evidence: { runtime_id, pid, reason: verification.reason }
+        });
+      }
+      return verification;
+    }
+
+    const session = verification.session;
+    this.registeredSessions.set(runtime_id, session);
+
+    if (this.provenance) {
+      this.provenance.record({
+        actor: session.agent_id,
+        operation: 'RUNTIME_REGISTERED',
+        runtime_id,
+        reason: 'Runtime successfully completed cryptographic handshake and OS process verification',
+        evidence_class: EVIDENCE_CLASSES.OBSERVED,
+        evidence: session
+      });
+    }
+
+    if (this.eventBus) {
+      this.eventBus.emit('session.registered', 'RuntimeController', session);
+    }
+
+    return {
+      success: true,
+      session
+    };
+  }
+
+  /**
+   * Helper for tests or manual registration
+   */
+  registerSession(sessionData) {
+    const runtimeId = sessionData.runtime_id || `rt_${sessionData.agent_id}_${Date.now()}`;
+    const session = {
+      runtime_id: runtimeId,
+      agent_id: sessionData.agent_id,
+      pid: sessionData.pid || process.pid,
+      parent_pid: sessionData.parent_pid || process.ppid,
+      cwd: sessionData.cwd || process.cwd(),
+      runtime_type: sessionData.runtime_type || 'process',
+      runtime_label: sessionData.runtime_label || RUNTIME_LABELS.REAL_PROCESS,
+      status: 'REGISTERED',
+      registered_at: new Date().toISOString()
+    };
+    this.registeredSessions.set(runtimeId, session);
+    return session;
+  }
+
+  getSession(runtimeIdOrAgent) {
+    if (this.registeredSessions.has(runtimeIdOrAgent)) {
+      return this.registeredSessions.get(runtimeIdOrAgent);
+    }
+    const clean = runtimeIdOrAgent.toLowerCase().trim();
+    for (const s of this.registeredSessions.values()) {
+      if (s.agent_id && s.agent_id.toLowerCase() === clean) {
+        return s;
+      }
+    }
+    return null;
   }
 
   /**
@@ -40,7 +131,8 @@ class RuntimeController {
         ide: ideObservation,
         process: processObservation,
         tmux: tmuxObservation
-      }
+      },
+      registered_runtimes: Array.from(this.registeredSessions.values())
     };
   }
 
@@ -73,6 +165,14 @@ class RuntimeController {
         session: ideStatus.session,
         evidence_class: EVIDENCE_CLASSES.OBSERVED
       };
+    } else if (ideStatus.status === 'NOT_ATTRIBUTED') {
+      return {
+        agent: clean,
+        status: 'UNATTRIBUTED',
+        adapter: 'ide',
+        note: ideStatus.note,
+        evidence_class: EVIDENCE_CLASSES.OBSERVED
+      };
     }
 
     return {
@@ -103,15 +203,13 @@ class RuntimeController {
   /**
    * Wake an agent according to the strict lifecycle:
    * WAKE_REQUESTED -> RUNTIME_STARTING -> RUNTIME_STARTED -> SESSION_REGISTERED -> AGENT_ACTIVE
-   *
-   * Invariant: Dropping a wake token is NOT proof an agent is ACTIVE.
    */
   async wake(agentName, task = null, payload = {}) {
     const clean = agentName.toLowerCase().trim();
     const agent = this.registry ? this.registry.getAgent(clean) : null;
     const resolvedName = agent ? (agent.name || agent.identity?.name || clean) : clean;
 
-    // Step 1: WAKE_REQUESTED
+    // Stage 1: WAKE_REQUESTED
     if (this.eventBus) {
       this.eventBus.emit('agent.wake_requested', 'RuntimeController', {
         agent: resolvedName,
@@ -120,7 +218,6 @@ class RuntimeController {
       });
     }
 
-    // Queue wake token in inbox (durable message, not proof of liveness)
     let wakeTokenFile = null;
     if (this.inboxManager) {
       try {
@@ -135,10 +232,9 @@ class RuntimeController {
       } catch (e) {}
     }
 
-    // Step 2 & 3: Check for existing live runtime session
+    // Stage 2: Check current observed status
     const currentObserved = await this.status(resolvedName);
     if (currentObserved.status === 'ACTIVE') {
-      // Agent already has an active machine session!
       if (this.registry) {
         try { this.registry.updateAgentStatus(resolvedName, 'WORKING'); } catch (e) {}
       }
@@ -152,9 +248,9 @@ class RuntimeController {
       };
     }
 
-    // If options allow auto-spawning a process worker:
+    // Stage 3 & 4: Spawn process if requested
     if (payload.autoSpawn) {
-      const startResult = await this.processAdapter.start(resolvedName);
+      const startResult = await this.processAdapter.start(resolvedName, { taskId: task ? task.id : null });
       if (startResult.success) {
         if (this.registry) {
           try { this.registry.updateAgentStatus(resolvedName, 'WORKING'); } catch (e) {}
@@ -170,7 +266,7 @@ class RuntimeController {
       }
     }
 
-    // If no active session and not spawned, do NOT claim ACTIVE!
+    // If no active session confirmed, report truthfully
     if (this.registry) {
       try { this.registry.updateAgentStatus(resolvedName, 'WAKE_REQUESTED'); } catch (e) {}
     }
@@ -186,9 +282,6 @@ class RuntimeController {
     };
   }
 
-  /**
-   * Put agent to sleep
-   */
   async sleep(agentName, reason = 'IDLE') {
     const clean = agentName.toLowerCase().trim();
     await this.processAdapter.sleep(clean, reason);
@@ -220,7 +313,7 @@ class RuntimeController {
   }
 
   /**
-   * Synchronous / backward-compatible aliases for existing calls
+   * Synchronous / backward-compatible aliases
    */
   wakeAgent(agentName, wakeReason = 'MANUAL_TRIGGER', payload = {}) {
     const agent = this.registry ? this.registry.getAgent(agentName) : null;
@@ -229,36 +322,31 @@ class RuntimeController {
     }
     const resolvedName = agent ? (agent.name || agent.identity?.name || agentName) : agentName;
 
-    // Check IDE sockets synchronously
     let liveSession = null;
     try {
-      const sockDir = this.ideAdapter.sockDir;
-      if (fs.existsSync(sockDir)) {
-        const files = fs.readdirSync(sockDir).filter(f => f.endsWith('.sock'));
-        if (files.length > 0) {
-          liveSession = this.ideAdapter.matchSessionForAgent(resolvedName, files.map(f => {
-            const pidMatch = f.match(/^(\d+)\.sock$/);
-            return {
-              socket: f,
-              pid: pidMatch ? parseInt(pidMatch[1], 10) : null,
-              cwd: process.cwd(),
-              isAlive: true
-            };
-          }));
+      // Direct check of process adapter sessions
+      const clean = resolvedName.toLowerCase().trim();
+      const runtimeId = this.processAdapter.agentSessions.get(clean);
+      if (runtimeId) {
+        const entry = this.processAdapter.sessions.get(runtimeId);
+        if (entry && entry.session.isAlive()) {
+          liveSession = entry.session;
         }
       }
     } catch (e) {}
 
     let wakeTokenFile = null;
     if (this.inboxManager) {
-      const { dir } = this.inboxManager.getAgentInboxDir(resolvedName);
-      wakeTokenFile = path.join(dir, '.wake_signal');
-      fs.writeFileSync(wakeTokenFile, JSON.stringify({
-        timestamp: new Date().toISOString(),
-        reason: wakeReason,
-        target_agent: resolvedName,
-        payload
-      }, null, 2), 'utf8');
+      try {
+        const { dir } = this.inboxManager.getAgentInboxDir(resolvedName);
+        wakeTokenFile = path.join(dir, '.wake_signal');
+        fs.writeFileSync(wakeTokenFile, JSON.stringify({
+          timestamp: new Date().toISOString(),
+          reason: wakeReason,
+          target_agent: resolvedName,
+          payload
+        }, null, 2), 'utf8');
+      } catch (e) {}
     }
 
     const hasLiveSession = Boolean(liveSession);
@@ -275,7 +363,7 @@ class RuntimeController {
         agent: resolvedName,
         reason: wakeReason,
         live_session: hasLiveSession,
-        session: liveSession,
+        session: liveSession ? liveSession.toJSON() : null,
         payload
       });
     }

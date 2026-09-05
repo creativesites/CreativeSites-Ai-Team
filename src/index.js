@@ -9,6 +9,9 @@ const MyaDoctor = require('./doctor');
 const Orchestrator = require('./orchestrator');
 const { ProvenanceEngine, EVIDENCE_CLASSES } = require('./provenance');
 
+const ProofBundleEngine = require('./chain/proofBundle');
+const TestVerificationRecorder = require('./testRecorder');
+
 function initMyaOS(options = {}) {
   const baseDir = options.baseDir || path.resolve(__dirname, '..');
   const communityDir = path.join(baseDir, 'community');
@@ -22,6 +25,8 @@ function initMyaOS(options = {}) {
   const verifier = new VerificationEngine(taskManager, eventBus, { provenance });
   const doctor = new MyaDoctor({ registry, taskManager, inboxManager: inboxes, eventBus, runtime, baseDir });
   const orchestrator = new Orchestrator({ registry, taskManager, inboxManager: inboxes, runtime, eventBus });
+  const proofBundle = new ProofBundleEngine(baseDir);
+  const testRecorder = new TestVerificationRecorder(baseDir);
 
   return {
     eventBus,
@@ -32,7 +37,9 @@ function initMyaOS(options = {}) {
     runtime,
     verifier,
     doctor,
-    orchestrator
+    orchestrator,
+    proofBundle,
+    testRecorder
   };
 }
 
@@ -47,5 +54,8 @@ module.exports = {
   RuntimeController,
   VerificationEngine,
   MyaDoctor,
-  Orchestrator
+  Orchestrator,
+  ProofBundleEngine,
+  TestVerificationRecorder
 };
+

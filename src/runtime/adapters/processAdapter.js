@@ -2,35 +2,62 @@ const { spawn } = require('child_process');
 const path = require('path');
 const BaseAdapter = require('./baseAdapter');
 const RuntimeSession = require('../session');
+const { EXECUTION_CLASSES, ATTRIBUTION_STATES } = require('../session');
+const HandshakeManager = require('../handshake');
 
 class ProcessAdapter extends BaseAdapter {
   constructor(options = {}) {
     super('process', options);
-    this.sessions = new Map(); // agentName -> { session: RuntimeSession, process: ChildProcess }
+    this.sessions = new Map(); // runtime_id -> { session: RuntimeSession, process: ChildProcess }
+    this.agentSessions = new Map(); // agent_id -> runtime_id
     this.baseDir = options.baseDir || path.resolve(__dirname, '../../..');
+    this.handshakeManager = options.handshakeManager || new HandshakeManager();
   }
 
   /**
-   * Start a real OS child process worker for an agent
+   * Start a real OS child process worker for an agent with handshake tokens
    */
   async start(agentName, options = {}) {
     const clean = agentName.toLowerCase().trim();
-    const existing = this.sessions.get(clean);
-    if (existing && existing.session.isAlive()) {
-      return {
-        success: true,
-        already_running: true,
-        session: existing.session.toJSON()
-      };
+    const existingRuntimeId = this.agentSessions.get(clean);
+    if (existingRuntimeId) {
+      const existing = this.sessions.get(existingRuntimeId);
+      if (existing && existing.session.isAlive()) {
+        return {
+          success: true,
+          already_running: true,
+          session: existing.session.toJSON()
+        };
+      }
     }
 
-    const command = options.command || process.execPath; // node
+    let runtimeId = `rt_proc_${clean}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    let handshakeToken = null;
+
+    if (this.handshakeManager) {
+      const pending = this.handshakeManager.createPendingRegistration(clean, 'process');
+      runtimeId = pending.runtime_id;
+      handshakeToken = pending.token;
+    }
+
+    const command = options.command || process.execPath;
     const defaultArgs = [
       path.resolve(this.baseDir, 'bin/myaos.js'),
       'worker',
       '--agent',
-      clean
+      clean,
+      '--runtime-id',
+      runtimeId
     ];
+
+    if (handshakeToken) {
+      defaultArgs.push('--handshake-token', handshakeToken);
+    }
+
+    if (options.taskId) {
+      defaultArgs.push('--task', options.taskId);
+    }
+
     const args = options.args || defaultArgs;
     const cwd = options.cwd || this.baseDir;
 
@@ -40,29 +67,43 @@ class ProcessAdapter extends BaseAdapter {
       detached: false,
       env: {
         ...process.env,
-        MYAOS_AGENT: clean,
-        MYAOS_RUNTIME_TYPE: 'process'
+        MYAOS_AGENT_NAME: clean,
+        MYAOS_RUNTIME_ID: runtimeId,
+        MYAOS_HANDSHAKE_TOKEN: handshakeToken || '',
+        MYAOS_RUNTIME_TYPE: 'process',
+        MYAOS_BASE_DIR: this.baseDir
       }
     });
 
     const session = new RuntimeSession({
+      runtime_id: runtimeId,
       agent_id: clean,
       pid: child.pid,
       parent_pid: process.pid,
       cwd,
       runtime_type: 'process',
-      status: 'STARTING'
+      execution_class: EXECUTION_CLASSES.REAL_PROCESS,
+      status: 'STARTING',
+      attribution_state: ATTRIBUTION_STATES.ATTRIBUTED
     });
 
-    this.sessions.set(clean, { session, process: child });
+    this.sessions.set(runtimeId, { session, process: child });
+    this.agentSessions.set(clean, runtimeId);
 
-    child.stdout.on('data', (data) => {
-      // Stream logs if debug enabled
-    });
-
-    child.stderr.on('data', (data) => {
-      // Stream errors if debug enabled
-    });
+    // If handshakeManager is present, auto-register the newly verified child PID
+    if (this.handshakeManager && handshakeToken) {
+      const regResult = this.handshakeManager.verifyAndRegister({
+        runtime_id: runtimeId,
+        agent_id: clean,
+        token: handshakeToken,
+        pid: child.pid,
+        parent_pid: process.pid,
+        cwd
+      });
+      if (regResult.success) {
+        session.status = 'REGISTERED';
+      }
+    }
 
     child.on('error', (err) => {
       session.status = 'ERROR';
@@ -73,14 +114,16 @@ class ProcessAdapter extends BaseAdapter {
       session.status = 'TERMINATED';
       session.exitCode = code;
       session.exitSignal = signal;
-      this.sessions.delete(clean);
+      this.sessions.delete(runtimeId);
+      if (this.agentSessions.get(clean) === runtimeId) {
+        this.agentSessions.delete(clean);
+      }
     });
-
-    // Give process a moment to initialize and transition to REGISTERED
-    session.status = 'REGISTERED';
 
     return {
       success: true,
+      runtime_id: runtimeId,
+      handshake_token: handshakeToken,
       session: session.toJSON(),
       child
     };
@@ -91,14 +134,21 @@ class ProcessAdapter extends BaseAdapter {
    */
   async stop(agentName, options = {}) {
     const clean = agentName.toLowerCase().trim();
-    const entry = this.sessions.get(clean);
+    const runtimeId = this.agentSessions.get(clean);
+    if (!runtimeId) {
+      return { success: true, not_running: true };
+    }
+
+    const entry = this.sessions.get(runtimeId);
     if (!entry) {
+      this.agentSessions.delete(clean);
       return { success: true, not_running: true };
     }
 
     const { session, process: child } = entry;
     if (!session.isAlive()) {
-      this.sessions.delete(clean);
+      this.sessions.delete(runtimeId);
+      this.agentSessions.delete(clean);
       return { success: true, already_stopped: true };
     }
 
@@ -108,7 +158,8 @@ class ProcessAdapter extends BaseAdapter {
     } catch (e) {}
 
     session.status = 'TERMINATED';
-    this.sessions.delete(clean);
+    this.sessions.delete(runtimeId);
+    this.agentSessions.delete(clean);
 
     return {
       success: true,
@@ -121,11 +172,11 @@ class ProcessAdapter extends BaseAdapter {
    */
   async wake(agentName, task = null, payload = {}) {
     const clean = agentName.toLowerCase().trim();
-    let entry = this.sessions.get(clean);
+    let runtimeId = this.agentSessions.get(clean);
+    let entry = runtimeId ? this.sessions.get(runtimeId) : null;
 
-    // If not running, start it
     if (!entry || !entry.session.isAlive()) {
-      const startResult = await this.start(clean);
+      const startResult = await this.start(clean, { taskId: task ? task.id : null });
       if (!startResult.success) {
         return {
           success: false,
@@ -133,18 +184,16 @@ class ProcessAdapter extends BaseAdapter {
           reason: startResult.reason || 'Failed to start OS process'
         };
       }
-      entry = this.sessions.get(clean);
+      runtimeId = startResult.runtime_id;
+      entry = this.sessions.get(runtimeId);
     }
 
     entry.session.status = 'ACTIVE';
     entry.session.touch();
 
-    // Signal process if alive
     try {
       entry.process.kill('SIGUSR2');
-    } catch (e) {
-      // Ignored if process handles signals differently
-    }
+    } catch (e) {}
 
     return {
       success: true,
@@ -153,15 +202,15 @@ class ProcessAdapter extends BaseAdapter {
     };
   }
 
-  /**
-   * Put agent process to sleep
-   */
   async sleep(agentName, reason = 'IDLE') {
     const clean = agentName.toLowerCase().trim();
-    const entry = this.sessions.get(clean);
-    if (entry && entry.session.isAlive()) {
-      entry.session.status = 'SLEEPING';
-      entry.session.touch();
+    const runtimeId = this.agentSessions.get(clean);
+    if (runtimeId) {
+      const entry = this.sessions.get(runtimeId);
+      if (entry && entry.session.isAlive()) {
+        entry.session.status = 'SLEEPING';
+        entry.session.touch();
+      }
     }
     return {
       success: true,
@@ -170,19 +219,23 @@ class ProcessAdapter extends BaseAdapter {
     };
   }
 
-  /**
-   * Observe machine status for an agent
-   */
   async status(agentName) {
     const clean = agentName.toLowerCase().trim();
-    const entry = this.sessions.get(clean);
+    const runtimeId = this.agentSessions.get(clean);
+    if (!runtimeId) {
+      return { status: 'NOT_OBSERVED', session: null, evidence_class: 'OBSERVED' };
+    }
+
+    const entry = this.sessions.get(runtimeId);
     if (!entry) {
+      this.agentSessions.delete(clean);
       return { status: 'NOT_OBSERVED', session: null, evidence_class: 'OBSERVED' };
     }
 
     const isAlive = entry.session.isAlive();
     if (!isAlive) {
-      this.sessions.delete(clean);
+      this.sessions.delete(runtimeId);
+      this.agentSessions.delete(clean);
       return { status: 'TERMINATED', session: null, evidence_class: 'OBSERVED' };
     }
 
@@ -193,16 +246,13 @@ class ProcessAdapter extends BaseAdapter {
     };
   }
 
-  /**
-   * Observe all active child processes
-   */
   async observe() {
     const active = [];
-    for (const [name, entry] of this.sessions.entries()) {
+    for (const [id, entry] of this.sessions.entries()) {
       if (entry.session.isAlive()) {
         active.push(entry.session.toJSON());
       } else {
-        this.sessions.delete(name);
+        this.sessions.delete(id);
       }
     }
     return { ok: true, sessions: active };
