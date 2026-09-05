@@ -34,7 +34,8 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const SOCK_DIR = '/tmp/cc-socks';
-const CENSUS = path.join(__dirname, '..', '..', 'community', 'system', 'session_census.json');
+const CENSUS_DIR = path.join(__dirname, '..', '..', 'community', 'system');
+const CENSUS_GLOB = /^session_census.*\.json$/;
 
 /** Running sessions with their working directory. Pure observation. */
 function observedSessions(sockDir = SOCK_DIR) {
@@ -121,30 +122,77 @@ function agentsForCwd(cwd, agents, repoPaths = {}) {
  * cannot see?", which socket attribution alone cannot answer.
  */
 function readCensus(observedCount, now = Date.now()) {
-    if (!fs.existsSync(CENSUS)) return { usable: false, reason: 'no census file' };
-    let c;
-    try { c = JSON.parse(fs.readFileSync(CENSUS, 'utf8')); }
-    catch (e) { return { usable: false, reason: `census unparseable: ${e.message}` }; }
+    let files;
+    try {
+        files = fs.readdirSync(CENSUS_DIR).filter((f) => CENSUS_GLOB.test(f));
+    } catch (e) {
+        return { usable: false, reason: `cannot read census dir: ${e.code || e.message}` };
+    }
+    if (!files.length) return { usable: false, reason: 'no census files' };
 
-    const at = Date.parse(c.attested_at || '');
-    if (!Number.isFinite(at)) return { usable: false, reason: 'census has no valid attested_at' };
+    const attestations = [];
+    for (const f of files) {
+        let c;
+        try { c = JSON.parse(fs.readFileSync(path.join(CENSUS_DIR, f), 'utf8')); }
+        catch (e) { return { usable: false, reason: `${f} unparseable: ${e.message}` }; }
 
-    const ageMin = (now - at) / 60000;
-    const budget = Number(c.staleness_budget_minutes) || 30;
-    if (ageMin > budget)
-        return { usable: false, reason: `census is ${Math.round(ageMin)}m old (budget ${budget}m)`, census: c };
+        const at = Date.parse(c.attested_at || '');
+        if (!Number.isFinite(at)) return { usable: false, reason: `${f} has no valid attested_at` };
 
-    if (typeof c.total_sessions !== 'number')
-        return { usable: false, reason: 'census has no total_sessions', census: c };
+        const ageMin = (now - at) / 60000;
+        const budget = Number(c.staleness_budget_minutes) || 30;
+        if (ageMin > budget)
+            return { usable: false, reason: `${f} is ${Math.round(ageMin)}m old (budget ${budget}m)` };
 
-    if (c.total_sessions !== observedCount)
-        return {
-            usable: false, census: c, conflict: true,
-            reason: `census claims ${c.total_sessions} sessions, ${observedCount} sockets observed — `
-                  + 'disagreement between two independent observations; trusting neither',
-        };
+        if (typeof c.total_sessions !== 'number')
+            return { usable: false, reason: `${f} has no total_sessions` };
 
-    return { usable: true, census: c, ageMin: Math.round(ageMin) };
+        attestations.push({ file: f, ...c });
+    }
+
+    // Every attestor must agree on the total, and it must match what we see.
+    const totals = [...new Set(attestations.map((a) => a.total_sessions))];
+    if (totals.length > 1)
+        return { usable: false, conflict: true,
+                 reason: `attestors disagree on total (${totals.join(' vs ')}) — trusting none` };
+    if (totals[0] !== observedCount)
+        return { usable: false, conflict: true,
+                 reason: `census claims ${totals[0]} sessions, ${observedCount} sockets observed — `
+                       + 'disagreement between independent observations; trusting neither' };
+
+    // MUTUAL CORROBORATION. `self` and `peers` were previously carried but never
+    // checked, inside a file documented as cross-checked — a trap for whoever
+    // reached for them next, assuming the guarantee extended to them. Rather
+    // than rename them away, make the check real: each attestor must be named
+    // as a peer by every other attestor, and all must describe the same session
+    // set. A lone attestor has to be assumed neither confused nor compromised,
+    // and today has not been a good day for that assumption.
+    if (attestations.length > 1) {
+        for (const a of attestations) {
+            if (!a.self) return { usable: false, reason: `${a.file} has no self` };
+            for (const b of attestations) {
+                if (a === b) continue;
+                const bPeers = Array.isArray(b.peers) ? b.peers : [];
+                if (!bPeers.includes(a.self))
+                    return { usable: false, conflict: true,
+                             reason: `${b.file} does not name ${a.self} as a peer — attestations do not corroborate` };
+            }
+        }
+        const sets = attestations.map((a) =>
+            JSON.stringify([...new Set([a.self, ...(a.peers || [])])].sort()));
+        if (new Set(sets).size > 1)
+            return { usable: false, conflict: true,
+                     reason: 'attestors describe different session sets — trusting none' };
+    }
+
+    const corroborated = attestations.length > 1;
+    return {
+        usable: true,
+        corroborated,
+        attestors: attestations.map((a) => a.attested_by || a.file),
+        census: attestations[0],
+        reason: corroborated ? null : 'single attestor — uncorroborated (total is still cross-checked against sockets)',
+    };
 }
 
 /**
@@ -264,4 +312,53 @@ function reconcile(agents, sockDir = SOCK_DIR, repoPaths = {}) {
     };
 }
 
-module.exports = { observedSessions, agentsForCwd, resolveLiveness, reconcile, readCensus, SOCK_DIR, CENSUS };
+/**
+ * Routing view over a reconcile() result.
+ *
+ * Every false positive this verifier has produced failed the same direction:
+ * reporting a live agent as absent. Never once did it invent presence. That is
+ * structural, not luck — a checker built to distrust claims errs toward denying
+ * them — and it is the safer direction, because assigning work to a ghost is
+ * worse than not assigning it.
+ *
+ * But the safe failure still has a bill, and it lands here. If routing skips
+ * everyone the doctor cannot confirm, a systematically absent-biased verifier
+ * means available agents quietly never receive work. Nothing errors. Nobody
+ * notices. It is invisible in exactly the way the failures we keep getting
+ * caught by are invisible.
+ *
+ * So this deliberately does NOT collapse into a single "who can I route to"
+ * list. It separates what is proven from what is merely unconfirmed, and makes
+ * skipping the unconfirmed an explicit choice a caller has to make, rather than
+ * a default it inherits from the verifier's bias.
+ */
+function routingEligibility(rec) {
+    if (!rec.ok) {
+        return {
+            confirmedAvailable: [], confirmedAbsent: [],
+            unconfirmed: rec.rows.map((r) => r.name),
+            guidance: 'Liveness could not be observed. Nothing is confirmed absent. '
+                    + 'Skipping unconfirmed agents here would skip everyone.',
+        };
+    }
+    const confirmedAvailable = rec.rows.filter((r) => r.observed === 'ONLINE').map((r) => r.name);
+    const confirmedAbsent = rec.rows.filter((r) => r.observed === 'NOT OBSERVED').map((r) => r.name);
+    const unconfirmed = rec.rows
+        .filter((r) => r.observed === 'AMBIGUOUS' || r.observed === 'UNATTRIBUTED' || r.observed === 'UNKNOWN')
+        .map((r) => r.name);
+
+    return {
+        confirmedAvailable, confirmedAbsent, unconfirmed,
+        guidance: unconfirmed.length
+            ? `${unconfirmed.length} agent(s) unconfirmed (${unconfirmed.join(', ')}). `
+            + 'They are NOT known to be absent. Skipping them is a decision with a cost: '
+            + 'an available agent silently never receives work. Prefer contacting them to '
+            + 'excluding them, and record the skip if you exclude them anyway.'
+            : 'All agents are confirmed either available or absent.',
+    };
+}
+
+module.exports = {
+    observedSessions, agentsForCwd, resolveLiveness, reconcile, readCensus,
+    routingEligibility, SOCK_DIR, CENSUS_DIR,
+};
