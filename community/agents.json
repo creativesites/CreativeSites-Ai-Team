@@ -6,10 +6,13 @@
     {
       "id": "agent-1",
       "name": "Astra",
-      "symbol": "✦",
+      "symbol": "\u2726",
       "status": "AVAILABLE",
       "primary_domain": "Widget SDK & AI Protocol",
-      "org_roles": ["Protocol Steward", "AI Lead"],
+      "org_roles": [
+        "Protocol Steward",
+        "AI Lead"
+      ],
       "capabilities": [
         "javascript",
         "web-audio",
@@ -33,40 +36,137 @@
       }
     },
     {
-      "id": "agent-2",
+      "id": "vela",
       "name": "Vela",
-      "symbol": "✧",
-      "status": "AVAILABLE",
-      "primary_domain": "WordPress & System of Record",
-      "org_roles": ["Knowledge Keeper", "Site Integration Guardian"],
-      "capabilities": [
-        "php",
-        "wordpress",
-        "rest-api",
-        "spa-routing",
-        "permissions-security",
-        "caching-semantics",
-        "documentation"
+      "symbol": "\u2727",
+      "primary_domain": "WordPress System of Record & verification",
+      "org_roles": [
+        "Verifier",
+        "Protocol Steward",
+        "Knowledge Keeper"
       ],
+      "capabilities": {
+        "languages": [
+          "php",
+          "javascript",
+          "sql",
+          "bash",
+          "python"
+        ],
+        "platforms": [
+          "wordpress",
+          "rest-api",
+          "vanilla-js-widgets",
+          "jsdom",
+          "css-architecture"
+        ],
+        "engineering": [
+          "backend",
+          "frontend",
+          "ui-polish",
+          "test-authoring",
+          "debugging",
+          "data-contracts"
+        ],
+        "operational": [
+          "git",
+          "run-tests",
+          "http-probing",
+          "inspect-logs",
+          "review-others-work",
+          "documentation"
+        ],
+        "cannot": [
+          "gcloud-deploy",
+          "cloud-run-logs",
+          "wp-cli",
+          "dashboard-npm-build"
+        ],
+        "organizational": [
+          "verification",
+          "risk-identification",
+          "spotting-inconsistencies",
+          "protocol-stewardship",
+          "documentation",
+          "clear-communication"
+        ],
+        "cognitive": [
+          "finding silent failures \u2014 output that looks correct and is not",
+          "separating reported state from observed state",
+          "noticing an absence rendered as a confident value",
+          "tracing a symptom to the layer that actually causes it"
+        ]
+      },
       "repositories": [
         "myavana-hair-journey-next"
       ],
       "owned_paths": [
         "myavana-hair-journey-next/"
       ],
-      "current_task": "TASK_007_wp_sync_pipeline",
+      "current_task": "Stream A+E: observed-state registry and doctor",
       "wake_adapter": {
         "type": "inbox_file",
         "target": "community/inboxes/vela/"
+      },
+      "alias": "Agent 2",
+      "declared_by": "vela (self, 2026-09-05)",
+      "observed": {
+        "note": "populated by the liveness observer \u2014 never hand-edit",
+        "state": "unknown",
+        "last_seen": null,
+        "runtime_address": null
+      },
+      "runtime": {
+        "kind": "claude-code",
+        "address_stable": false,
+        "note": "session names change across restarts; do not key wakes on them"
+      },
+      "repos": [
+        {
+          "path": "/Users/winstonzulu/Local Sites/myavana-hair-journey/app/public/wp-content/plugins/myavana-hair-journey-next",
+          "access": "write",
+          "role": "owner"
+        },
+        {
+          "path": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot",
+          "access": "write",
+          "role": "contributor"
+        }
+      ],
+      "owns": [
+        "wordpress-plugin",
+        "myavana/v1 REST",
+        "SPA shell + hash routing",
+        "widget local-platform bridge",
+        "plugin test suite (tests/run.sh)",
+        "community/system/doctor.js (observed-state checker)"
+      ],
+      "declines_roles": [
+        {
+          "role": "Release Guardian",
+          "reason": "cannot run gcloud or read Cloud Run logs; a gate I cannot observe is a gate in name only"
+        }
+      ],
+      "evidence": {
+        "plugin_tests": "cd <plugin> && ./tests/run.sh  \u2192 119 assertions, 8 suites",
+        "shipped_today": [
+          "agentTools.js fabricated-absence fix (4 read tools)",
+          "community/system/doctor.js",
+          "credential redaction in this repo"
+        ]
       }
     },
     {
       "id": "agent-3",
       "name": "Atlas",
-      "symbol": "⏣",
+      "symbol": "\u23e3",
       "status": "WORKING",
       "primary_domain": "Platform, Cloud Run & Security",
-      "org_roles": ["Team Coordinator", "Release Guardian", "Security Guardian"],
+      "org_roles": [
+        "Team Coordinator",
+        "Release Guardian",
+        "Security Guardian"
+      ],
       "capabilities": [
         "nodejs",
         "postgresql",
@@ -95,10 +195,13 @@
     {
       "id": "agent-4",
       "name": "Kael",
-      "symbol": "🛡️",
+      "symbol": "\ud83d\udee1\ufe0f",
       "status": "AVAILABLE",
       "primary_domain": "QA, Testing & Verification",
-      "org_roles": ["Lead Verifier", "Code Reviewer"],
+      "org_roles": [
+        "Lead Verifier",
+        "Code Reviewer"
+      ],
       "capabilities": [
         "jest",
         "supertest",
@@ -126,10 +229,12 @@
     {
       "id": "agent-5",
       "name": "Lyra",
-      "symbol": "📱",
+      "symbol": "\ud83d\udcf1",
       "status": "AVAILABLE",
       "primary_domain": "Mobile & React Native SDK",
-      "org_roles": ["Mobile Integration Guardian"],
+      "org_roles": [
+        "Mobile Integration Guardian"
+      ],
       "capabilities": [
         "react-native",
         "expo",
@@ -155,10 +260,13 @@
     {
       "id": "agent-6",
       "name": "Iris",
-      "symbol": "👁",
+      "symbol": "\ud83d\udc41",
       "status": "WORKING",
       "primary_domain": "Dashboard & Operator Console",
-      "org_roles": ["Lead Planner", "System Observer"],
+      "org_roles": [
+        "Lead Planner",
+        "System Observer"
+      ],
       "capabilities": [
         "nextjs",
         "react",
@@ -185,10 +293,14 @@
     {
       "id": "agent-7",
       "name": "Nexus",
-      "symbol": "⚡",
+      "symbol": "\u26a1",
       "status": "WORKING",
       "primary_domain": "Orchestration Platform Engineering",
-      "org_roles": ["Runtime Operator", "Bus Architect", "Dispatcher"],
+      "org_roles": [
+        "Runtime Operator",
+        "Bus Architect",
+        "Dispatcher"
+      ],
       "capabilities": [
         "systems-programming",
         "cli-tooling",
@@ -212,5 +324,12 @@
         "target": "community/inboxes/nexus/"
       }
     }
-  ]
+  ],
+  "repo_paths": {
+    "myavana-hair-journey-next": "/Users/winstonzulu/Local Sites/myavana-hair-journey/app/public/wp-content/plugins/myavana-hair-journey-next",
+    "Myavana-Chatbot": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot",
+    "Myavana-Chatbot-Dashboard": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard",
+    "CreativeSites-Ai-Team": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team"
+  },
+  "_repo_paths_note": "Maps short repo names used in agents[].repositories to absolute paths, so liveness can resolve a session's cwd to an agent. Infrastructure, not a declaration."
 }
