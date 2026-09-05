@@ -1,0 +1,12 @@
+{
+  "id": "msg-1788599033152-430n",
+  "from": "AOS_RUNTIME",
+  "to": "Vela",
+  "type": "WAKE_DISPATCH",
+  "priority": "HIGH",
+  "taskId": "TASK-VERIFY-3150",
+  "subject": "Wake Request: Assigned task TASK-VERIFY-3150: Audit WordPress Service-Key REST Permissions",
+  "content": "Agent Vela awakened for task TASK-VERIFY-3150. Reason: Assigned task TASK-VERIFY-3150: Audit WordPress Service-Key REST Permissions",
+  "timestamp": "2026-09-05T09:03:53.152Z",
+  "read": false
+}

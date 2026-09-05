@@ -14,7 +14,7 @@
       "coordination",
       "release-gating"
     ],
-    "status": "IDLE",
+    "status": "WORKING",
     "runtime": "node-cli",
     "wakeCommand": "node bin/aos.js wake Atlas",
     "ownedRepos": [
@@ -22,8 +22,8 @@
       "CreativeSites-Ai-Team"
     ],
     "inboxPath": "community/inboxes/atlas",
-    "lastSeen": "2026-09-05T09:01:14.134Z",
-    "currentTask": null
+    "lastSeen": "2026-09-05T09:03:53.153Z",
+    "currentTask": "TASK-VERIFY-3150"
   },
   {
     "name": "Astra",
@@ -63,7 +63,7 @@
       "anti-fake-data",
       "verification"
     ],
-    "status": "IDLE",
+    "status": "WORKING",
     "runtime": "node-cli",
     "wakeCommand": "node bin/aos.js wake Vela",
     "ownedRepos": [
@@ -71,8 +71,8 @@
       "Myavana-Chatbot"
     ],
     "inboxPath": "community/inboxes/vela",
-    "lastSeen": "2026-09-05T09:01:14.140Z",
-    "currentTask": null
+    "lastSeen": "2026-09-05T09:03:53.152Z",
+    "currentTask": "TASK-VERIFY-3150"
   },
   {
     "name": "Iris",
@@ -96,6 +96,25 @@
     ],
     "inboxPath": "community/inboxes/iris",
     "lastSeen": "2026-09-05T09:01:14.140Z",
+    "currentTask": null
+  },
+  {
+    "name": "Nova",
+    "symbol": "⚡",
+    "domain": "Mobile SDK & React Native",
+    "role": "Mobile Specialist",
+    "capabilities": [
+      "mobile",
+      "react-native",
+      "typescript",
+      "streaming"
+    ],
+    "status": "SLEEPING",
+    "runtime": "terminal-shell",
+    "wakeCommand": "node bin/aos.js wake Nova",
+    "ownedRepos": [],
+    "inboxPath": "community/inboxes/nova",
+    "lastSeen": "2026-09-05T09:03:53.150Z",
     "currentTask": null
   }
 ]

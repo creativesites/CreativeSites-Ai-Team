@@ -1,1 +1,50 @@
-[]
+[
+  {
+    "id": "TASK-VERIFY-3150",
+    "title": "Audit WordPress Service-Key REST Permissions",
+    "description": "Verify fail-closed authentication on /wp-json/myavana/v1/* routes",
+    "requiredCapabilities": [
+      "wordpress",
+      "security"
+    ],
+    "priority": "HIGH",
+    "assignee": "Vela",
+    "status": "VERIFIED",
+    "dependencies": [],
+    "reviewer": null,
+    "evidence": {
+      "description": "Executed permissions audit suite. Fail-closed confirmed on unauthenticated endpoints.",
+      "exitCode": 0,
+      "testsPassed": 9,
+      "testsFailed": 0,
+      "testsTotal": 9,
+      "output": "REST API Permissions suite: 9/9 passed. HTTP 401 verified without service key.",
+      "recordedAt": "2026-09-05T09:03:53.153Z"
+    },
+    "verificationResult": {
+      "reviewer": "Atlas",
+      "passed": true,
+      "checks": [
+        {
+          "name": "Process Exit Code",
+          "passed": true,
+          "detail": "Observed exit code 0 (expected 0)"
+        },
+        {
+          "name": "Unit / Integration Tests",
+          "passed": true,
+          "detail": "9/9 passed (0 failed)"
+        },
+        {
+          "name": "Execution Output Sanity",
+          "passed": true,
+          "detail": "Clean output logs observed"
+        }
+      ],
+      "verifiedAt": "2026-09-05T09:03:53.155Z"
+    },
+    "createdAt": "2026-09-05T09:03:53.151Z",
+    "updatedAt": "2026-09-05T09:03:53.155Z",
+    "completedAt": "2026-09-05T09:03:53.155Z"
+  }
+]
