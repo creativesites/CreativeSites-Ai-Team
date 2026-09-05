@@ -1,0 +1,101 @@
+[
+  {
+    "name": "Atlas",
+    "symbol": "⏣",
+    "domain": "Platform, Cloud Run, Git & Security",
+    "role": "Interim Coordinator & Security Guardian",
+    "capabilities": [
+      "backend",
+      "cloud-run",
+      "docker",
+      "security",
+      "database",
+      "git",
+      "coordination",
+      "release-gating"
+    ],
+    "status": "IDLE",
+    "runtime": "node-cli",
+    "wakeCommand": "node bin/aos.js wake Atlas",
+    "ownedRepos": [
+      "Myavana-Chatbot",
+      "CreativeSites-Ai-Team"
+    ],
+    "inboxPath": "community/inboxes/atlas",
+    "lastSeen": "2026-09-05T09:01:14.134Z",
+    "currentTask": null
+  },
+  {
+    "name": "Astra",
+    "symbol": "✦",
+    "domain": "Widget SDK, AI Streaming & Audio",
+    "role": "Protocol Steward & UI Architect",
+    "capabilities": [
+      "frontend",
+      "streaming",
+      "audio",
+      "ai-genai",
+      "protocols",
+      "ui-components",
+      "mentoring"
+    ],
+    "status": "IDLE",
+    "runtime": "node-cli",
+    "wakeCommand": "node bin/aos.js wake Astra",
+    "ownedRepos": [
+      "Myavana-Chatbot"
+    ],
+    "inboxPath": "community/inboxes/astra",
+    "lastSeen": "2026-09-05T09:01:14.140Z",
+    "currentTask": null
+  },
+  {
+    "name": "Vela",
+    "symbol": "✧",
+    "domain": "WordPress Plugin & Host Bridge",
+    "role": "Integration & Honesty Guardian",
+    "capabilities": [
+      "wordpress",
+      "php",
+      "rest-api",
+      "security",
+      "host-bridge",
+      "anti-fake-data",
+      "verification"
+    ],
+    "status": "IDLE",
+    "runtime": "node-cli",
+    "wakeCommand": "node bin/aos.js wake Vela",
+    "ownedRepos": [
+      "myavana-hair-journey-next",
+      "Myavana-Chatbot"
+    ],
+    "inboxPath": "community/inboxes/vela",
+    "lastSeen": "2026-09-05T09:01:14.140Z",
+    "currentTask": null
+  },
+  {
+    "name": "Iris",
+    "symbol": "👁",
+    "domain": "Dashboard, Operator Console & Telemetry",
+    "role": "System Observer & Telemetry Lead",
+    "capabilities": [
+      "dashboard",
+      "nextjs",
+      "react",
+      "telemetry",
+      "accessibility",
+      "verification",
+      "observability"
+    ],
+    "status": "IDLE",
+    "runtime": "node-cli",
+    "wakeCommand": "node bin/aos.js wake Iris",
+    "ownedRepos": [
+      "Myavana-Chatbot-Dashboard"
+    ],
+    "inboxPath": "community/inboxes/iris",
+    "lastSeen": "2026-09-05T09:01:14.140Z",
+    "currentTask": null
+  }
+]

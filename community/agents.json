@@ -1,0 +1,216 @@
+{
+  "$schema": "./agents.schema.json",
+  "version": "1.0.0",
+  "updated_at": "2026-09-05T09:30:00Z",
+  "agents": [
+    {
+      "id": "agent-1",
+      "name": "Astra",
+      "symbol": "✦",
+      "status": "AVAILABLE",
+      "primary_domain": "Widget SDK & AI Protocol",
+      "org_roles": ["Protocol Steward", "AI Lead"],
+      "capabilities": [
+        "javascript",
+        "web-audio",
+        "ndjson-streaming",
+        "gemini-live-voice",
+        "css-layout",
+        "protocol-design",
+        "browser-performance"
+      ],
+      "repositories": [
+        "Myavana-Chatbot"
+      ],
+      "owned_paths": [
+        "packages/widget/",
+        "packages/core/src/chatProtocol/"
+      ],
+      "current_task": "TASK_005_client_core_extraction",
+      "wake_adapter": {
+        "type": "inbox_file",
+        "target": "community/inboxes/astra/"
+      }
+    },
+    {
+      "id": "agent-2",
+      "name": "Vela",
+      "symbol": "✧",
+      "status": "AVAILABLE",
+      "primary_domain": "WordPress & System of Record",
+      "org_roles": ["Knowledge Keeper", "Site Integration Guardian"],
+      "capabilities": [
+        "php",
+        "wordpress",
+        "rest-api",
+        "spa-routing",
+        "permissions-security",
+        "caching-semantics",
+        "documentation"
+      ],
+      "repositories": [
+        "myavana-hair-journey-next"
+      ],
+      "owned_paths": [
+        "myavana-hair-journey-next/"
+      ],
+      "current_task": "TASK_007_wp_sync_pipeline",
+      "wake_adapter": {
+        "type": "inbox_file",
+        "target": "community/inboxes/vela/"
+      }
+    },
+    {
+      "id": "agent-3",
+      "name": "Atlas",
+      "symbol": "⏣",
+      "status": "WORKING",
+      "primary_domain": "Platform, Cloud Run & Security",
+      "org_roles": ["Team Coordinator", "Release Guardian", "Security Guardian"],
+      "capabilities": [
+        "nodejs",
+        "postgresql",
+        "cloud-run",
+        "docker",
+        "secret-management",
+        "release-gating",
+        "git-audit",
+        "security-hardening"
+      ],
+      "repositories": [
+        "Myavana-Chatbot",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [
+        "packages/core/",
+        "chatbots/Myavana/",
+        "scripts/"
+      ],
+      "current_task": "TASK_006_myaos_platform_setup",
+      "wake_adapter": {
+        "type": "inbox_file",
+        "target": "community/inboxes/atlas/"
+      }
+    },
+    {
+      "id": "agent-4",
+      "name": "Kael",
+      "symbol": "🛡️",
+      "status": "AVAILABLE",
+      "primary_domain": "QA, Testing & Verification",
+      "org_roles": ["Lead Verifier", "Code Reviewer"],
+      "capabilities": [
+        "jest",
+        "supertest",
+        "playwright",
+        "performance-benchmarking",
+        "regression-testing",
+        "evidence-verification",
+        "code-review"
+      ],
+      "repositories": [
+        "Myavana-Chatbot",
+        "Myavana-Chatbot-Dashboard",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [
+        "tests/",
+        "packages/core/src/__tests__/"
+      ],
+      "current_task": null,
+      "wake_adapter": {
+        "type": "inbox_file",
+        "target": "community/inboxes/kael/"
+      }
+    },
+    {
+      "id": "agent-5",
+      "name": "Lyra",
+      "symbol": "📱",
+      "status": "AVAILABLE",
+      "primary_domain": "Mobile & React Native SDK",
+      "org_roles": ["Mobile Integration Guardian"],
+      "capabilities": [
+        "react-native",
+        "expo",
+        "typescript",
+        "mobile-audio-bridge",
+        "offline-storage",
+        "native-animations",
+        "mobile-telemetry"
+      ],
+      "repositories": [
+        "Myavana-Chatbot",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [
+        "packages/react-native-sdk/"
+      ],
+      "current_task": "TASK_005_react_native_sdk_foundation",
+      "wake_adapter": {
+        "type": "inbox_file",
+        "target": "community/inboxes/lyra/"
+      }
+    },
+    {
+      "id": "agent-6",
+      "name": "Iris",
+      "symbol": "👁",
+      "status": "WORKING",
+      "primary_domain": "Dashboard & Operator Console",
+      "org_roles": ["Lead Planner", "System Observer"],
+      "capabilities": [
+        "nextjs",
+        "react",
+        "typescript",
+        "operator-console",
+        "customer-360",
+        "telemetry-analysis",
+        "zero-mock-auditing",
+        "planning"
+      ],
+      "repositories": [
+        "Myavana-Chatbot-Dashboard",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [
+        "Myavana-Chatbot-Dashboard/"
+      ],
+      "current_task": "TASK_006_myaos_platform_setup",
+      "wake_adapter": {
+        "type": "inbox_file",
+        "target": "community/inboxes/iris/"
+      }
+    },
+    {
+      "id": "agent-7",
+      "name": "Nexus",
+      "symbol": "⚡",
+      "status": "WORKING",
+      "primary_domain": "Orchestration Platform Engineering",
+      "org_roles": ["Runtime Operator", "Bus Architect", "Dispatcher"],
+      "capabilities": [
+        "systems-programming",
+        "cli-tooling",
+        "process-supervision",
+        "event-bus",
+        "terminal-automation",
+        "inbox-routing",
+        "schema-validation"
+      ],
+      "repositories": [
+        "CreativeSites-Ai-Team",
+        "Myavana-Chatbot"
+      ],
+      "owned_paths": [
+        "myaos/",
+        "community/inboxes/"
+      ],
+      "current_task": "TASK_006_orchestration_platform_foundation",
+      "wake_adapter": {
+        "type": "inbox_file",
+        "target": "community/inboxes/nexus/"
+      }
+    }
+  ]
+}

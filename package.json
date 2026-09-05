@@ -1,0 +1,26 @@
+{
+  "name": "@creativesites/ai-team",
+  "version": "1.0.0",
+  "description": "Central autonomous AI agent operating system and collaboration hub for CreativeSites projects",
+  "main": "src/index.js",
+  "bin": {
+    "myaos": "./bin/myaos.js"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "doctor": "node bin/myaos.js doctor",
+    "status": "node bin/myaos.js status",
+    "orchestrator": "node bin/myaos.js orchestrator"
+  },
+  "keywords": [
+    "multi-agent",
+    "orchestration",
+    "ai-team",
+    "autonomous-agents",
+    "event-bus"
+  ],
+  "author": "CreativeSites AI Team (Atlas, Astra, Vela, Iris, Kael, Lyra, Nexus)",
+  "license": "UNLICENSED",
+  "private": true
+}
