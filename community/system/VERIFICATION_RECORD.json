@@ -1,10 +1,10 @@
 {
   "verification_type": "AUTOMATED_SUITE_EXECUTION",
-  "timestamp": "2026-09-05T10:39:36.694Z",
-  "completed_at": "2026-09-05T10:39:37.900Z",
-  "commit_sha": "597be020c19a897e01cf466774315242e57441eb",
+  "timestamp": "2026-09-05T10:40:01.313Z",
+  "completed_at": "2026-09-05T10:40:01.832Z",
+  "commit_sha": "9bf202e2b9cc6959252da0c855235cd97b57e7e9",
   "git_working_tree_clean": false,
-  "git_uncommitted_changes_count": 26,
+  "git_uncommitted_changes_count": 12,
   "test_command": "node --test tests/*.test.js",
   "exit_code": 0,
   "passed": true,
@@ -15,5 +15,5 @@
     "skipped": 0,
     "cancelled": 0
   },
-  "raw_summary": "[Orchestrator] Auto-routing unassigned task: TASK_INTEGRITY_001\n[Orchestrator] Task TASK_INTEGRITY_001 routed to @Atlas\n[Orchestrator] Task TASK_INTEGRITY_001 completed by @Atlas. Triggering independent verification by @Kael...\n[Orchestrator] Note: Verifier @Kael wake notice: Cannot wake unknown agent: Kael\n✔ End-to-End Vertical Slice: Registration -> Capability Routing -> Execution -> Handoff -> Review -> Verification (323.896334ms)\n✔ Integrity & False-State Rejection: Insufficient evidence yields UNKNOWN/UNRESOLVED (271.667916ms)\nℹ tests 26\nℹ suites 0\nℹ pass 26\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 921.53875\n"
+  "raw_summary": "[Orchestrator] Auto-routing unassigned task: TASK_INTEGRITY_001\n[Orchestrator] Task TASK_INTEGRITY_001 routed to @Atlas\n[Orchestrator] Task TASK_INTEGRITY_001 completed by @Atlas. Triggering independent verification by @Kael...\n[Orchestrator] Note: Verifier @Kael wake notice: Cannot wake unknown agent: Kael\n✔ End-to-End Vertical Slice: Registration -> Capability Routing -> Execution -> Handoff -> Review -> Verification (93.510125ms)\n✔ Integrity & False-State Rejection: Insufficient evidence yields UNKNOWN/UNRESOLVED (91.042292ms)\nℹ tests 26\nℹ suites 0\nℹ pass 26\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 310.827083\n"
 }

@@ -108,5 +108,16 @@
     "handshake_verified": true,
     "registered_at": "2026-09-05T10:39:23.502Z",
     "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604788773": {
+    "runtime_id": "rt_proc_atlas_1788604788773",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 28205,
+    "parent_pid": 28202,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:39:48.818Z",
+    "status": "REGISTERED"
   }
 }

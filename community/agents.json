@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "updated_at": "2026-09-05T10:39:23.575Z",
+  "updated_at": "2026-09-05T10:39:48.863Z",
   "principle": "Declared state != observed state != attested state != verified state",
   "agents": [
     {
@@ -35,8 +35,8 @@
       "evidence_source": "/tmp/cc-socks/ (verified via mya who)",
       "confidence_provenance": "VERIFIED_OBSERVED",
       "status": "AVAILABLE",
-      "last_seen": "2026-09-05T10:39:23.422Z",
-      "current_task": "TASK_LIVE_3414"
+      "last_seen": "2026-09-05T10:39:48.771Z",
+      "current_task": "TASK_LIVE_8759"
     },
     {
       "identity": {
@@ -99,8 +99,8 @@
       "evidence_source": "/tmp/cc-socks/ (verified via mya who & direct message)",
       "confidence_provenance": "VERIFIED_OBSERVED",
       "status": "WAKE_REQUESTED_OFFLINE",
-      "last_seen": "2026-09-05T10:39:23.575Z",
-      "current_task": "TASK_LIVE_3415"
+      "last_seen": "2026-09-05T10:39:48.863Z",
+      "current_task": "TASK_LIVE_8760"
     },
     {
       "identity": {
