@@ -147,7 +147,10 @@ class TaskManager {
     this.save();
 
     if (this.registry) {
-      this.registry.updateAgentStatus(agentName, 'AVAILABLE', null);
+      const agent = this.registry.getAgent(agentName);
+      if (agent) {
+        this.registry.updateAgentStatus(agentName, 'AVAILABLE', null);
+      }
     }
 
     if (this.eventBus) {

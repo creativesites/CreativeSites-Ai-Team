@@ -56,12 +56,12 @@ test('End-to-End Vertical Slice: Registration -> Capability Routing -> Execution
   assert.match(unreadLyra[0].content, /TASK_TEST_001/);
 
   // 4. Lyra wakes and starts work
-  myaos.runtime.wakeAgent('Lyra', 'TASK_DISPATCH');
-  const agentAfterWake = myaos.registry.getAgent('Lyra');
-  assert.equal(agentAfterWake.status, 'WORKING');
+  const wakeResult = myaos.runtime.wakeAgent('Lyra', 'TASK_DISPATCH');
+  assert.ok(wakeResult.status.startsWith('WAKE_REQUESTED'));
 
   myaos.taskManager.startTask(task.id, 'Lyra');
   assert.equal(myaos.taskManager.getTask(task.id).status, 'IN_PROGRESS');
+  assert.equal(myaos.registry.getAgent('Lyra').status, 'WORKING');
 
   // 5. Lyra completes work, creates mock artifact, emits completion
   const artifactFile = path.join(tmpDir, 'clientTransport.js');

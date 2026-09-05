@@ -41,7 +41,12 @@ class Orchestrator {
         relatedTask: taskId
       });
 
-      this.runtime.wakeAgent(verifier, 'VERIFICATION_DISPATCH', { taskId });
+      const verifierAgent = this.registry ? this.registry.getAgent(verifier) : null;
+      if (verifierAgent) {
+        this.runtime.wakeAgent(verifier, 'VERIFICATION_DISPATCH', { taskId });
+      } else {
+        console.log(`[Orchestrator] Designated verifier @${verifier} not registered in this environment. Verification remains UNASSIGNED.`);
+      }
     });
 
     // 3. When verification passes, check if dependent tasks can now be unblocked!
