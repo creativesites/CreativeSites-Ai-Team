@@ -34,6 +34,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const SOCK_DIR = '/tmp/cc-socks';
+const CENSUS = path.join(__dirname, '..', '..', 'community', 'system', 'session_census.json');
 
 /** Running sessions with their working directory. Pure observation. */
 function observedSessions(sockDir = SOCK_DIR) {
@@ -98,6 +99,55 @@ function agentsForCwd(cwd, agents, repoPaths = {}) {
 }
 
 /**
+ * Read an agent-attested session census.
+ *
+ * ListAgents enumerates sessions authoritatively, but it is an agent tool and a
+ * script cannot call it — the same boundary that stops mya.js sending messages.
+ * So an agent records the count here and the doctor may use it.
+ *
+ * This is the one place agent-supplied evidence enters the verifier, so it is
+ * fenced twice:
+ *
+ *   1. STALENESS — a census older than its own budget is ignored. Sessions
+ *      start and stop; yesterday's count proves nothing about now.
+ *   2. CROSS-CHECK — the attested total must equal the number of sockets
+ *      observed independently. If they disagree, BOTH are treated as
+ *      unreliable and the doctor abstains. It does not pick a winner.
+ *
+ * Without the cross-check this would be a hole straight through the design: an
+ * agent could assert any census and the verifier would inherit it. With it, the
+ * census can only ever *confirm* what the sockets already show, and its value
+ * is that it makes the total authoritative — closing "is there a session I
+ * cannot see?", which socket attribution alone cannot answer.
+ */
+function readCensus(observedCount, now = Date.now()) {
+    if (!fs.existsSync(CENSUS)) return { usable: false, reason: 'no census file' };
+    let c;
+    try { c = JSON.parse(fs.readFileSync(CENSUS, 'utf8')); }
+    catch (e) { return { usable: false, reason: `census unparseable: ${e.message}` }; }
+
+    const at = Date.parse(c.attested_at || '');
+    if (!Number.isFinite(at)) return { usable: false, reason: 'census has no valid attested_at' };
+
+    const ageMin = (now - at) / 60000;
+    const budget = Number(c.staleness_budget_minutes) || 30;
+    if (ageMin > budget)
+        return { usable: false, reason: `census is ${Math.round(ageMin)}m old (budget ${budget}m)`, census: c };
+
+    if (typeof c.total_sessions !== 'number')
+        return { usable: false, reason: 'census has no total_sessions', census: c };
+
+    if (c.total_sessions !== observedCount)
+        return {
+            usable: false, census: c, conflict: true,
+            reason: `census claims ${c.total_sessions} sessions, ${observedCount} sockets observed — `
+                  + 'disagreement between two independent observations; trusting neither',
+        };
+
+    return { usable: true, census: c, ageMin: Math.round(ageMin) };
+}
+
+/**
  * @returns {{online: Map<string,object>, sessions: Array, ambiguous: Array, unmapped: Array}}
  */
 function resolveLiveness(agents, sockDir = SOCK_DIR, repoPaths = {}) {
@@ -135,6 +185,13 @@ function reconcile(agents, sockDir = SOCK_DIR, repoPaths = {}) {
         };
     }
     const { online, ambiguous, unmapped } = live;
+
+    // With a corroborated census the TOTAL is authoritative: if every session is
+    // accounted for, an agent matching none of them has no session anywhere.
+    // That conclusion survives cwd ambiguity because it never uses attribution.
+    const census = readCensus(live.sessions.length);
+    const allAccountedFor = census.usable;
+
     const rows = agents.map((a) => {
         const seen = online.get(a.name) || null;
         // A session in this agent's repo that could not be attributed uniquely
@@ -146,7 +203,7 @@ function reconcile(agents, sockDir = SOCK_DIR, repoPaths = {}) {
         const claimed = (a.status || a.observed?.state || 'unknown').toString();
         const claimsPresent = /active|available|working|reviewing|online/i.test(claimed);
 
-        let observed = 'NOT OBSERVED';
+        let observed = allAccountedFor ? 'NOT OBSERVED' : 'UNATTRIBUTED';
         if (seen) observed = 'ONLINE';
         else if (amb) observed = 'AMBIGUOUS';
 
@@ -172,7 +229,39 @@ function reconcile(agents, sockDir = SOCK_DIR, repoPaths = {}) {
             + `Narrow by giving each agent a distinct repos[].path (e.g. their owned subdirectory).`,
     }));
 
-    return { ok: true, reason: null, rows, ambiguous, contested, unmapped, onlineCount: online.size };
+    // Arithmetic that survives ambiguity entirely, when the census corroborates.
+    // Total sessions minus those uniquely attributed leaves the number of
+    // contested candidates that can possibly be present. Everyone beyond that
+    // is provably absent WITHOUT resolving who is who — which is the conclusion
+    // socket attribution alone cannot reach.
+    let bound = null;
+    if (allAccountedFor) {
+        // An agent already uniquely attributed to its own session is not a
+        // candidate for someone else's — leaving it in inflates the pool and
+        // understates how many are provably absent.
+        const candidates = [...new Set(ambiguous.flatMap((x) => x.candidates))]
+            .filter((n) => !online.has(n));
+        const unaccounted = Math.max(0, census.census.total_sessions - online.size);
+        bound = {
+            totalSessions: census.census.total_sessions,
+            uniquelyAttributed: [...online.keys()],
+            contestedCandidates: candidates,
+            atMostPresent: Math.min(unaccounted, candidates.length),
+            provablyAbsentCount: Math.max(0, candidates.length - unaccounted),
+            statement:
+                `${census.census.total_sessions} sessions exist and all are accounted for. `
+                + `${online.size} uniquely attributed (${[...online.keys()].join(', ')}). `
+                + `At most ${Math.min(unaccounted, candidates.length)} of `
+                + `[${candidates.join(', ')}] can be present; the remaining `
+                + `${Math.max(0, candidates.length - unaccounted)} have no session.`,
+        };
+    }
+
+    return {
+        ok: true, reason: null, rows, ambiguous, contested, unmapped, bound,
+        onlineCount: online.size,
+        census: { usable: census.usable, reason: census.reason || null, conflict: !!census.conflict },
+    };
 }
 
-module.exports = { observedSessions, agentsForCwd, resolveLiveness, reconcile, SOCK_DIR };
+module.exports = { observedSessions, agentsForCwd, resolveLiveness, reconcile, readCensus, SOCK_DIR, CENSUS };

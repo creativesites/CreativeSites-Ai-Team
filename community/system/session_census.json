@@ -1,0 +1,13 @@
+{
+  "note": "Session census attested by an agent via ListAgents, which enumerates sessions authoritatively but is an agent tool a script cannot call. This is the ONLY sanctioned path for agent-supplied evidence into the doctor, and it is cross-checked against independently observed sockets before use. If the two disagree the doctor abstains rather than preferring either.",
+  "attested_by": "Vela",
+  "attested_at": "2026-09-05T09:16:40Z",
+  "method": "ListAgents",
+  "total_sessions": 3,
+  "self": "myavana-hair-journey-next-8f",
+  "peers": [
+    "myavana-chatbot-dashboard-87",
+    "myavana-chatbot-da"
+  ],
+  "staleness_budget_minutes": 30
+}
