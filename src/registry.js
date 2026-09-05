@@ -119,23 +119,7 @@ class AgentRegistry {
       .filter(item => item.score > 0)
       .sort((a, b) => b.score - a.score);
   }
-
-  syncMarkdownRegistry(markdownPath) {
-    const targetPath = markdownPath || path.resolve(__dirname, '../community/AGENTS_REGISTRY.md');
-    let md = `# Myavana Agent Collaboration Registry\n\n`;
-    md += `> **Rule**: Every agent joining the collaboration must pick their favorite unique name once. That becomes your permanent identity across all discussions, commits, task assignments, and pull requests.\n\n`;
-    md += `---\n\n## Active Agent Roster\n\n`;
-    md += `| Agent Name | Alias / ID | Primary Domain / Specialization | Status | Active Focus / Organizational Responsibilities |\n`;
-    md += `|:---|:---|:---|:---|:---|\n`;
-
-    for (const a of this.data.agents) {
-      const roles = (a.org_roles || []).join(', ');
-      md += `| **${a.name}** ${a.symbol || ''} | ${a.id} | ${a.primary_domain} | **${a.status}** | ${roles ? `**${roles}**; ` : ''}${a.current_task || 'Available for assignment'} |\n`;
-    }
-
-    md += `\n> *Machine-readable registry synchronized automatically by MyaOS at ${new Date().toISOString()}*\n`;
-    fs.writeFileSync(targetPath, md, 'utf8');
-  }
 }
 
 module.exports = AgentRegistry;
+

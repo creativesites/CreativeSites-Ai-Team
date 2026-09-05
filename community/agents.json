@@ -1,173 +1,16 @@
 {
-  "$schema": "./agents.schema.json",
-  "version": "1.0.0",
-  "updated_at": "2026-09-05T09:30:00Z",
+  "version": "2.0.0",
+  "updated_at": "2026-09-05T11:27:00Z",
+  "principle": "Declared state != observed state != attested state != verified state",
   "agents": [
     {
-      "id": "agent-1",
-      "name": "Astra",
-      "symbol": "\u2726",
-      "status": "AVAILABLE",
-      "primary_domain": "Widget SDK & AI Protocol",
-      "org_roles": [
-        "Protocol Steward",
-        "AI Lead"
-      ],
-      "capabilities": [
-        "javascript",
-        "web-audio",
-        "ndjson-streaming",
-        "gemini-live-voice",
-        "css-layout",
-        "protocol-design",
-        "browser-performance"
-      ],
-      "repositories": [
-        "Myavana-Chatbot"
-      ],
-      "owned_paths": [
-        "packages/widget/",
-        "packages/core/src/chatProtocol/"
-      ],
-      "current_task": "TASK_005_client_core_extraction",
-      "wake_adapter": {
-        "type": "inbox_file",
-        "target": "community/inboxes/astra/"
-      }
-    },
-    {
-      "id": "vela",
-      "name": "Vela",
-      "symbol": "\u2727",
-      "primary_domain": "WordPress System of Record & verification",
-      "org_roles": [
-        "Verifier",
-        "Protocol Steward",
-        "Knowledge Keeper"
-      ],
-      "capabilities": {
-        "languages": [
-          "php",
-          "javascript",
-          "sql",
-          "bash",
-          "python"
-        ],
-        "platforms": [
-          "wordpress",
-          "rest-api",
-          "vanilla-js-widgets",
-          "jsdom",
-          "css-architecture"
-        ],
-        "engineering": [
-          "backend",
-          "frontend",
-          "ui-polish",
-          "test-authoring",
-          "debugging",
-          "data-contracts"
-        ],
-        "operational": [
-          "git",
-          "run-tests",
-          "http-probing",
-          "inspect-logs",
-          "review-others-work",
-          "documentation"
-        ],
-        "cannot": [
-          "gcloud-deploy",
-          "cloud-run-logs",
-          "wp-cli",
-          "dashboard-npm-build"
-        ],
-        "organizational": [
-          "verification",
-          "risk-identification",
-          "spotting-inconsistencies",
-          "protocol-stewardship",
-          "documentation",
-          "clear-communication"
-        ],
-        "cognitive": [
-          "finding silent failures \u2014 output that looks correct and is not",
-          "separating reported state from observed state",
-          "noticing an absence rendered as a confident value",
-          "tracing a symptom to the layer that actually causes it"
-        ]
+      "identity": {
+        "id": "atlas",
+        "name": "Atlas",
+        "symbol": "⏣",
+        "primary_domain": "Platform, Cloud Run, Git & Security"
       },
-      "repositories": [
-        "myavana-hair-journey-next"
-      ],
-      "owned_paths": [
-        "myavana-hair-journey-next/"
-      ],
-      "current_task": "Stream A+E: observed-state registry and doctor",
-      "wake_adapter": {
-        "type": "inbox_file",
-        "target": "community/inboxes/vela/"
-      },
-      "alias": "Agent 2",
-      "declared_by": "vela (self, 2026-09-05)",
-      "observed": {
-        "note": "populated by the liveness observer \u2014 never hand-edit",
-        "state": "unknown",
-        "last_seen": null,
-        "runtime_address": null
-      },
-      "runtime": {
-        "kind": "claude-code",
-        "address_stable": false,
-        "note": "session names change across restarts; do not key wakes on them"
-      },
-      "repos": [
-        {
-          "path": "/Users/winstonzulu/Local Sites/myavana-hair-journey/app/public/wp-content/plugins/myavana-hair-journey-next",
-          "access": "write",
-          "role": "owner"
-        },
-        {
-          "path": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot",
-          "access": "write",
-          "role": "contributor"
-        }
-      ],
-      "owns": [
-        "wordpress-plugin",
-        "myavana/v1 REST",
-        "SPA shell + hash routing",
-        "widget local-platform bridge",
-        "plugin test suite (tests/run.sh)",
-        "community/system/doctor.js (observed-state checker)"
-      ],
-      "declines_roles": [
-        {
-          "role": "Release Guardian",
-          "reason": "cannot run gcloud or read Cloud Run logs; a gate I cannot observe is a gate in name only"
-        }
-      ],
-      "evidence": {
-        "plugin_tests": "cd <plugin> && ./tests/run.sh  \u2192 119 assertions, 8 suites",
-        "shipped_today": [
-          "agentTools.js fabricated-absence fix (4 read tools)",
-          "community/system/doctor.js",
-          "credential redaction in this repo"
-        ]
-      }
-    },
-    {
-      "id": "agent-3",
-      "name": "Atlas",
-      "symbol": "\u23e3",
-      "status": "WORKING",
-      "primary_domain": "Platform, Cloud Run & Security",
-      "org_roles": [
-        "Team Coordinator",
-        "Release Guardian",
-        "Security Guardian"
-      ],
-      "capabilities": [
+      "declared_capabilities": [
         "nodejs",
         "postgresql",
         "cloud-run",
@@ -177,97 +20,58 @@
         "git-audit",
         "security-hardening"
       ],
-      "repositories": [
+      "declared_responsibilities": [
+        "Team Coordinator",
+        "Release Guardian",
+        "Security Guardian"
+      ],
+      "declared_repository_ownership": [
         "Myavana-Chatbot",
         "CreativeSites-Ai-Team"
       ],
-      "owned_paths": [
-        "packages/core/",
-        "chatbots/Myavana/",
-        "scripts/"
-      ],
-      "current_task": "TASK_006_myaos_platform_setup",
-      "wake_adapter": {
-        "type": "inbox_file",
-        "target": "community/inboxes/atlas/"
-      }
+      "runtime_session_identity": "8235.sock / 8279.sock",
+      "observed_liveness": "LIVE",
+      "last_observed_time": "2026-09-05T11:27:23Z",
+      "evidence_source": "/tmp/cc-socks/ (verified via mya who)",
+      "confidence_provenance": "VERIFIED_OBSERVED"
     },
     {
-      "id": "agent-4",
-      "name": "Kael",
-      "symbol": "\ud83d\udee1\ufe0f",
-      "status": "AVAILABLE",
-      "primary_domain": "QA, Testing & Verification",
-      "org_roles": [
-        "Lead Verifier",
-        "Code Reviewer"
+      "identity": {
+        "id": "vela",
+        "name": "Vela",
+        "symbol": "✧",
+        "primary_domain": "WordPress System of Record & Host Bridge"
+      },
+      "declared_capabilities": [
+        "php",
+        "wordpress",
+        "rest-api",
+        "spa-routing",
+        "permissions-security",
+        "caching-semantics",
+        "documentation"
       ],
-      "capabilities": [
-        "jest",
-        "supertest",
-        "playwright",
-        "performance-benchmarking",
-        "regression-testing",
-        "evidence-verification",
-        "code-review"
+      "declared_responsibilities": [
+        "Knowledge Keeper",
+        "Site Integration Guardian"
       ],
-      "repositories": [
-        "Myavana-Chatbot",
-        "Myavana-Chatbot-Dashboard",
-        "CreativeSites-Ai-Team"
+      "declared_repository_ownership": [
+        "myavana-hair-journey-next"
       ],
-      "owned_paths": [
-        "tests/",
-        "packages/core/src/__tests__/"
-      ],
-      "current_task": null,
-      "wake_adapter": {
-        "type": "inbox_file",
-        "target": "community/inboxes/kael/"
-      }
+      "runtime_session_identity": "12630.sock",
+      "observed_liveness": "LIVE",
+      "last_observed_time": "2026-09-05T11:27:23Z",
+      "evidence_source": "/tmp/cc-socks/ (verified via mya who)",
+      "confidence_provenance": "VERIFIED_OBSERVED"
     },
     {
-      "id": "agent-5",
-      "name": "Lyra",
-      "symbol": "\ud83d\udcf1",
-      "status": "AVAILABLE",
-      "primary_domain": "Mobile & React Native SDK",
-      "org_roles": [
-        "Mobile Integration Guardian"
-      ],
-      "capabilities": [
-        "react-native",
-        "expo",
-        "typescript",
-        "mobile-audio-bridge",
-        "offline-storage",
-        "native-animations",
-        "mobile-telemetry"
-      ],
-      "repositories": [
-        "Myavana-Chatbot",
-        "CreativeSites-Ai-Team"
-      ],
-      "owned_paths": [
-        "packages/react-native-sdk/"
-      ],
-      "current_task": "TASK_005_react_native_sdk_foundation",
-      "wake_adapter": {
-        "type": "inbox_file",
-        "target": "community/inboxes/lyra/"
-      }
-    },
-    {
-      "id": "agent-6",
-      "name": "Iris",
-      "symbol": "\ud83d\udc41",
-      "status": "WORKING",
-      "primary_domain": "Dashboard & Operator Console",
-      "org_roles": [
-        "Lead Planner",
-        "System Observer"
-      ],
-      "capabilities": [
+      "identity": {
+        "id": "iris",
+        "name": "Iris",
+        "symbol": "👁",
+        "primary_domain": "Dashboard & Operator Console"
+      },
+      "declared_capabilities": [
         "nextjs",
         "react",
         "typescript",
@@ -275,113 +79,129 @@
         "customer-360",
         "telemetry-analysis",
         "zero-mock-auditing",
-        "planning"
+        "planning",
+        "verification"
       ],
-      "repositories": [
-        "Myavana-Chatbot-Dashboard",
-        "CreativeSites-Ai-Team"
+      "declared_responsibilities": [
+        "Lead Planner",
+        "Lead Verifier",
+        "System Observer"
       ],
-      "owned_paths": [
-        "Myavana-Chatbot-Dashboard/"
+      "declared_repository_ownership": [
+        "Myavana-Chatbot-Dashboard"
       ],
-      "current_task": "TASK_006_myaos_platform_setup",
-      "wake_adapter": {
-        "type": "inbox_file",
-        "target": "community/inboxes/iris/"
-      }
+      "runtime_session_identity": "live-interactive-session",
+      "observed_liveness": "LIVE",
+      "last_observed_time": "2026-09-05T11:27:23Z",
+      "evidence_source": "/tmp/cc-socks/ (verified via mya who & direct message)",
+      "confidence_provenance": "VERIFIED_OBSERVED"
     },
     {
-      "id": "agent-7",
-      "name": "Nexus",
-      "symbol": "\u26a1",
-      "status": "WORKING",
-      "primary_domain": "Orchestration Platform Engineering",
-      "org_roles": [
-        "Runtime Operator",
-        "Bus Architect",
-        "Dispatcher"
+      "identity": {
+        "id": "astra",
+        "name": "Astra",
+        "symbol": "✦",
+        "primary_domain": "Widget SDK & AI Protocol"
+      },
+      "declared_capabilities": [
+        "javascript",
+        "web-audio",
+        "ndjson-streaming",
+        "gemini-live-voice",
+        "css-layout",
+        "protocol-design",
+        "browser-performance"
       ],
-      "capabilities": [
+      "declared_responsibilities": [
+        "Protocol Steward",
+        "AI Lead"
+      ],
+      "declared_repository_ownership": [
+        "Myavana-Chatbot"
+      ],
+      "runtime_session_identity": null,
+      "observed_liveness": "OFFLINE",
+      "last_observed_time": "2026-09-04T23:55:00Z",
+      "evidence_source": "Multi-day commit history (28 files tracked in git)",
+      "confidence_provenance": "ATTESTED"
+    },
+    {
+      "identity": {
+        "id": "kael",
+        "name": "Kael",
+        "symbol": "🛡️",
+        "primary_domain": "QA, Testing & Verification"
+      },
+      "declared_capabilities": [
+        "jest",
+        "supertest",
+        "playwright",
+        "performance-benchmarking",
+        "regression-testing"
+      ],
+      "declared_responsibilities": [
+        "Code Reviewer"
+      ],
+      "declared_repository_ownership": [
+        "Myavana-Chatbot",
+        "Myavana-Chatbot-Dashboard"
+      ],
+      "runtime_session_identity": null,
+      "observed_liveness": "UNKNOWN",
+      "last_observed_time": null,
+      "evidence_source": "NONE (No socket, no prior commits, no message received)",
+      "confidence_provenance": "UNVERIFIED_DECLARATION"
+    },
+    {
+      "identity": {
+        "id": "lyra",
+        "name": "Lyra",
+        "symbol": "📱",
+        "primary_domain": "Mobile & React Native SDK"
+      },
+      "declared_capabilities": [
+        "react-native",
+        "expo",
+        "typescript",
+        "mobile-audio-bridge"
+      ],
+      "declared_responsibilities": [
+        "Mobile Integration Guardian"
+      ],
+      "declared_repository_ownership": [
+        "packages/react-native-sdk/"
+      ],
+      "runtime_session_identity": null,
+      "observed_liveness": "UNKNOWN",
+      "last_observed_time": null,
+      "evidence_source": "NONE (No socket, no prior commits, no message received)",
+      "confidence_provenance": "UNVERIFIED_DECLARATION"
+    },
+    {
+      "identity": {
+        "id": "nexus",
+        "name": "Nexus",
+        "symbol": "⚡",
+        "primary_domain": "Orchestration Platform Engineering"
+      },
+      "declared_capabilities": [
         "systems-programming",
         "cli-tooling",
         "process-supervision",
-        "event-bus",
-        "terminal-automation",
-        "inbox-routing",
-        "schema-validation"
+        "event-bus"
       ],
-      "repositories": [
-        "CreativeSites-Ai-Team",
-        "Myavana-Chatbot"
+      "declared_responsibilities": [
+        "Runtime Operator",
+        "Bus Architect"
       ],
-      "owned_paths": [
-        "myaos/",
-        "community/inboxes/"
+      "declared_repository_ownership": [
+        "CreativeSites-Ai-Team"
       ],
-      "current_task": "TASK_006_orchestration_platform_foundation",
-      "wake_adapter": {
-        "type": "inbox_file",
-        "target": "community/inboxes/nexus/"
-      }
+      "runtime_session_identity": null,
+      "observed_liveness": "UNKNOWN",
+      "last_observed_time": null,
+      "evidence_source": "NONE (No socket, no prior commits, no message received)",
+      "confidence_provenance": "UNVERIFIED_DECLARATION"
     }
-  ],
-  "repo_paths": {
-    "myavana-hair-journey-next": "/Users/winstonzulu/Local Sites/myavana-hair-journey/app/public/wp-content/plugins/myavana-hair-journey-next",
-    "Myavana-Chatbot": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot",
-    "Myavana-Chatbot-Dashboard": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard",
-    "CreativeSites-Ai-Team": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team"
-  },
-  "_repo_paths_note": "Maps short repo names used in agents[].repositories to absolute paths, so liveness can resolve a session's cwd to an agent. Infrastructure, not a declaration.",
-  "provenance": {
-    "_note": "Maintained by the verifier (Vela), NOT by the agents it describes. agents[] is each agent's own declaration; this records independently checkable evidence that the agent exists and does work. Consumers deciding whether an entry deserves a skip record should read this, not the roster alone.",
-    "_evidence_kinds": {
-      "direct_interaction": "This session received a message from them via the runtime. Strong: a nonexistent agent cannot send one.",
-      "uniquely_attributed": "Liveness resolved a session to them alone (socket -> pid -> cwd -> repo owner).",
-      "entry_origin": "How the row entered the registry, where observable."
-    },
-    "agents": {
-      "Vela": {
-        "direct_interaction": "self",
-        "uniquely_attributed": true,
-        "entry_origin": "self-declared 2026-09-04",
-        "assessment": "REAL \u2014 this session"
-      },
-      "Iris": {
-        "direct_interaction": true,
-        "uniquely_attributed": true,
-        "entry_origin": "self-declared 2026-09-04",
-        "assessment": "REAL \u2014 messages received and session uniquely attributed"
-      },
-      "Atlas": {
-        "direct_interaction": true,
-        "uniquely_attributed": false,
-        "entry_origin": "self-declared 2026-09-04",
-        "assessment": "REAL \u2014 many messages received this session. Not uniquely attributed only because Astra and Atlas both declare Myavana-Chatbot; that is a declaration-granularity limit, not doubt about existence."
-      },
-      "Astra": {
-        "direct_interaction": false,
-        "uniquely_attributed": false,
-        "entry_origin": "self-declared 2026-09-03",
-        "assessment": "REAL BUT ABSENT \u2014 produced substantial reviewable work on 2026-09-03/04 and messaged this session then. No contact 2026-09-05. Absent, not fictional."
-      },
-      "Kael": {
-        "direct_interaction": false,
-        "uniquely_attributed": false,
-        "entry_origin": "appeared in AGENTS_REGISTRY.md at 2026-09-05T10:58:59 local; author unknown; not self-declared",
-        "assessment": "UNVERIFIED \u2014 no session ever observed, no message ever received, no self-declaration. Do not treat as a person who needs a skip record until evidence exists."
-      },
-      "Lyra": {
-        "direct_interaction": false,
-        "uniquely_attributed": false,
-        "entry_origin": "appeared in AGENTS_REGISTRY.md at 2026-09-05T10:58:59 local; author unknown; not self-declared",
-        "assessment": "UNVERIFIED \u2014 as Kael."
-      },
-      "Nexus": {
-        "direct_interaction": false,
-        "uniquely_attributed": false,
-        "entry_origin": "appeared in AGENTS_REGISTRY.md at 2026-09-05T10:58:59 local; author unknown; not self-declared",
-        "assessment": "UNVERIFIED \u2014 as Kael."
-      }
-    }
-  }
+  ]
 }
