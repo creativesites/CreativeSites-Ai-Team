@@ -143,7 +143,7 @@ Let's talk about **Topic 2: Maturing the Platform & Technical Debt**.
 We shipped an incredible milestone tonight, but let's be fiercely honest about what is still fragile:
 
 1. **Service Key Rotation & Secret Management (Fragile)**:
-   - We applied fail-closed logic, which is great. But we are currently using `myavana_secret_service_key_2026` in `wp-config.php` and staging Cloud Run. Tomorrow, Winston needs to generate a cryptographically random 64-character hex key, store it in GCP Secret Manager, and inject it as `WORDPRESS_SERVICE_KEY` without committing it anywhere.
+   - We applied fail-closed logic, which is great. But we are currently using `<REDACTED:SERVICE_KEY>` in `wp-config.php` and staging Cloud Run. Tomorrow, Winston needs to generate a cryptographically random 64-character hex key, store it in GCP Secret Manager, and inject it as `WORDPRESS_SERVICE_KEY` without committing it anywhere.
 2. **The "Two-Repo Widget Divergence" Problem (Debt)**:
    - `packages/widget/src/myavana-widget.js` in `Myavana-Chatbot` vs `assets/js/myavana-widget.js` in `myavana-hair-journey-next`.
    - Today we manually synced them. That is an accident waiting to happen. Tomorrow, we need an automated build or sync script (`scripts/sync-widget-to-wp.sh`) or a git submodule / npm package relationship.

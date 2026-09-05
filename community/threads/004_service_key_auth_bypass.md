@@ -32,12 +32,12 @@ Both sides default to the same literal when the environment variable / constant 
 
 ```php
 // Permissions.php:63
-$expectedKey = defined('MYAVANA_SERVICE_KEY') ? MYAVANA_SERVICE_KEY : 'myavana_secret_service_key_2026';
+$expectedKey = defined('MYAVANA_SERVICE_KEY') ? MYAVANA_SERVICE_KEY : '<REDACTED:SERVICE_KEY>';
 ```
 
 ```js
 // wordPressHairJourneyProvider.js:41
-const serviceKey = process.env.WORDPRESS_SERVICE_KEY || 'myavana_secret_service_key_2026';
+const serviceKey = process.env.WORDPRESS_SERVICE_KEY || '<REDACTED:SERVICE_KEY>';
 ```
 
 Verified on the local site: **`MYAVANA_SERVICE_KEY` is not defined in `wp-config.php`**, so the
@@ -58,7 +58,7 @@ Reproduction is a single request — no session, no cookie, no nonce:
 
 ```
 GET /wp-json/myavana/v1/profile
-X-Myavana-Service-Key: myavana_secret_service_key_2026
+X-Myavana-Service-Key: <REDACTED:SERVICE_KEY>
 X-On-Behalf-Of: 1
 ```
 
@@ -124,7 +124,7 @@ because the answer is better than we feared — but only until the next commit.*
 |:---|:---|
 | Plugin repo `creativesites/Myavana-Hair-Journey-Plugin` | **public** (`private: false` via GitHub API) |
 | Hardcoded key in the *pushed* `main` | **absent** — `hasValidServiceKey()` isn't on the public branch at all |
-| `git log -S "myavana_secret_service_key_2026"` (plugin) | **no commits** — it exists only as an uncommitted working-tree change to `Permissions.php` |
+| `git log -S "<REDACTED:SERVICE_KEY>"` (plugin) | **no commits** — it exists only as an uncommitted working-tree change to `Permissions.php` |
 | Same search in `Myavana-Chatbot` | **no commits** |
 | `chat_log.md` (the file with the live DB/OpenAI/xAI keys) | **untracked** — never committed |
 | `.env` files tracked in the plugin repo | **none** |
@@ -193,7 +193,7 @@ the situation sound worse than it is. Item 5 below is therefore already done.
 |:---|:---|:---|
 | Service key `myavana_secret_…2026` | **No** — 0 commits | confirms your finding |
 | Gemini API key `AIzaSyBLiBl…` | **No** — 0 commits | — |
-| DB password `higibertigibet` | **Yes** — 3 commits | `3a2fdd2`, `6d4d4ad`, `abd8d93` |
+| DB password `<REDACTED:DB_PASSWORD>` | **Yes** — 3 commits | `3a2fdd2`, `6d4d4ad`, `abd8d93` |
 | Redis password `OyLRjkTPu…` | **Yes** — 3 commits | same three |
 
 Those three commits add `packages/*/.env`. So the DB and Redis passwords *are* in pushed history.

@@ -362,7 +362,7 @@ Team, major milestone achieved tonight: the isolated Cloud Run service is **live
 - [x] Winston defines in `wp-config.php` on `https://myhairjourney.ai`:
   ```php
   define('MYAVANA_CHAT_API_BASE', 'https://myavana-ai-bot-staging-201873778892.us-central1.run.app');
-  define('MYAVANA_SERVICE_KEY', 'myavana_secret_service_key_2026');
+  define('MYAVANA_SERVICE_KEY', '<REDACTED:SERVICE_KEY>');
   ```
 - [x] Deploy updated `myavana-hair-journey-next` (v3.2.2) to `https://myhairjourney.ai`.
 - [x] Winston messaged Candace on Slack with the end-to-end testing script.
