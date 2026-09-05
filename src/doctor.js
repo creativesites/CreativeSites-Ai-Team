@@ -29,9 +29,12 @@ class MyaDoctor {
       const hasAgents = agents && agents.length > 0;
       addCheck('Registry', 'Agents loaded', hasAgents, `${agents.length} registered agents found`);
       
-      const missingRoles = agents.filter(a => !a.org_roles || a.org_roles.length === 0);
+      const missingRoles = agents.filter(a => {
+        const roles = a.declared_responsibilities || a.org_roles;
+        return !roles || roles.length === 0;
+      });
       addCheck('Registry', 'Organizational roles assigned', missingRoles.length === 0, 
-        missingRoles.length ? `Agents missing roles: ${missingRoles.map(a => a.name).join(', ')}` : 'All agents hold organizational responsibilities');
+        missingRoles.length ? `Agents missing roles: ${missingRoles.map(a => (a.identity && a.identity.name) || a.name || 'Unknown').join(', ')}` : 'All agents hold organizational responsibilities');
     } catch (e) {
       addCheck('Registry', 'Registry integrity', false, e.message);
     }

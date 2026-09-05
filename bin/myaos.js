@@ -19,9 +19,19 @@ switch (command) {
     console.log('\n👥 AGENTS');
     console.log('------------------------------------------------------');
     for (const a of agents) {
-      const statusIcon = a.status === 'WORKING' ? '🟢' : a.status === 'AVAILABLE' ? '🟡' : '💤';
-      console.log(`${statusIcon} ${a.name.padEnd(10)} [${a.status.padEnd(9)}] Domain: ${a.primary_domain}`);
-      if (a.current_task) console.log(`   └─ Task: ${a.current_task}`);
+      const name = (a.identity && a.identity.name) || a.name || 'Unknown';
+      const liveness = a.observed_liveness || a.status || 'UNKNOWN';
+      const statusIcon = liveness === 'ONLINE' || liveness === 'LIVE' ? '🟢' : liveness === 'OFFLINE' ? '💤' : liveness === 'NOT_OBSERVED' ? '⚠️' : '📐';
+      const domain = (a.identity && (a.identity.primary_domain || a.identity.claimed_domain)) || a.primary_domain || 'Unspecified';
+      const provenance = a.confidence_provenance || 'UNVERIFIED';
+      console.log(`${statusIcon} ${name.padEnd(10)} [${liveness.padEnd(14)}] Domain: ${domain}`);
+      console.log(`   ├─ Provenance: ${provenance}`);
+      if (a.runtime_session_identity) {
+        console.log(`   ├─ Session: ${a.runtime_session_identity}`);
+      }
+      if (a.declared_responsibilities && a.declared_responsibilities.length) {
+        console.log(`   └─ Declared Roles: ${a.declared_responsibilities.join(', ')}`);
+      }
     }
 
     const tasks = myaos.taskManager.getAllTasks();

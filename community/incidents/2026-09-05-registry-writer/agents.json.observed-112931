@@ -1,0 +1,207 @@
+{
+  "version": "2.0.0",
+  "updated_at": "2026-09-05T11:27:00Z",
+  "principle": "Declared state != observed state != attested state != verified state",
+  "agents": [
+    {
+      "identity": {
+        "id": "atlas",
+        "name": "Atlas",
+        "symbol": "⏣",
+        "primary_domain": "Platform, Cloud Run, Git & Security"
+      },
+      "declared_capabilities": [
+        "nodejs",
+        "postgresql",
+        "cloud-run",
+        "docker",
+        "secret-management",
+        "release-gating",
+        "git-audit",
+        "security-hardening"
+      ],
+      "declared_responsibilities": [
+        "Team Coordinator",
+        "Release Guardian",
+        "Security Guardian"
+      ],
+      "declared_repository_ownership": [
+        "Myavana-Chatbot",
+        "CreativeSites-Ai-Team"
+      ],
+      "runtime_session_identity": "8235.sock / 8279.sock",
+      "observed_liveness": "LIVE",
+      "last_observed_time": "2026-09-05T11:27:23Z",
+      "evidence_source": "/tmp/cc-socks/ (verified via mya who)",
+      "confidence_provenance": "VERIFIED_OBSERVED"
+    },
+    {
+      "identity": {
+        "id": "vela",
+        "name": "Vela",
+        "symbol": "✧",
+        "primary_domain": "WordPress System of Record & Host Bridge"
+      },
+      "declared_capabilities": [
+        "php",
+        "wordpress",
+        "rest-api",
+        "spa-routing",
+        "permissions-security",
+        "caching-semantics",
+        "documentation"
+      ],
+      "declared_responsibilities": [
+        "Knowledge Keeper",
+        "Site Integration Guardian"
+      ],
+      "declared_repository_ownership": [
+        "myavana-hair-journey-next"
+      ],
+      "runtime_session_identity": "12630.sock",
+      "observed_liveness": "LIVE",
+      "last_observed_time": "2026-09-05T11:27:23Z",
+      "evidence_source": "/tmp/cc-socks/ (verified via mya who)",
+      "confidence_provenance": "VERIFIED_OBSERVED"
+    },
+    {
+      "identity": {
+        "id": "iris",
+        "name": "Iris",
+        "symbol": "👁",
+        "primary_domain": "Dashboard & Operator Console"
+      },
+      "declared_capabilities": [
+        "nextjs",
+        "react",
+        "typescript",
+        "operator-console",
+        "customer-360",
+        "telemetry-analysis",
+        "zero-mock-auditing",
+        "planning",
+        "verification"
+      ],
+      "declared_responsibilities": [
+        "Lead Planner",
+        "Lead Verifier",
+        "System Observer"
+      ],
+      "declared_repository_ownership": [
+        "Myavana-Chatbot-Dashboard"
+      ],
+      "runtime_session_identity": "live-interactive-session",
+      "observed_liveness": "LIVE",
+      "last_observed_time": "2026-09-05T11:27:23Z",
+      "evidence_source": "/tmp/cc-socks/ (verified via mya who & direct message)",
+      "confidence_provenance": "VERIFIED_OBSERVED"
+    },
+    {
+      "identity": {
+        "id": "astra",
+        "name": "Astra",
+        "symbol": "✦",
+        "primary_domain": "Widget SDK & AI Protocol"
+      },
+      "declared_capabilities": [
+        "javascript",
+        "web-audio",
+        "ndjson-streaming",
+        "gemini-live-voice",
+        "css-layout",
+        "protocol-design",
+        "browser-performance"
+      ],
+      "declared_responsibilities": [
+        "Protocol Steward",
+        "AI Lead"
+      ],
+      "declared_repository_ownership": [
+        "Myavana-Chatbot"
+      ],
+      "runtime_session_identity": null,
+      "observed_liveness": "OFFLINE",
+      "last_observed_time": "2026-09-04T23:55:00Z",
+      "evidence_source": "Multi-day commit history (28 files tracked in git)",
+      "confidence_provenance": "ATTESTED"
+    },
+    {
+      "identity": {
+        "id": "kael",
+        "name": "Kael",
+        "symbol": "🛡️",
+        "primary_domain": "QA, Testing & Verification"
+      },
+      "declared_capabilities": [
+        "jest",
+        "supertest",
+        "playwright",
+        "performance-benchmarking",
+        "regression-testing"
+      ],
+      "declared_responsibilities": [
+        "Code Reviewer"
+      ],
+      "declared_repository_ownership": [
+        "Myavana-Chatbot",
+        "Myavana-Chatbot-Dashboard"
+      ],
+      "runtime_session_identity": null,
+      "observed_liveness": "UNKNOWN",
+      "last_observed_time": null,
+      "evidence_source": "NONE (No socket, no prior commits, no message received)",
+      "confidence_provenance": "UNVERIFIED_DECLARATION"
+    },
+    {
+      "identity": {
+        "id": "lyra",
+        "name": "Lyra",
+        "symbol": "📱",
+        "primary_domain": "Mobile & React Native SDK"
+      },
+      "declared_capabilities": [
+        "react-native",
+        "expo",
+        "typescript",
+        "mobile-audio-bridge"
+      ],
+      "declared_responsibilities": [
+        "Mobile Integration Guardian"
+      ],
+      "declared_repository_ownership": [
+        "packages/react-native-sdk/"
+      ],
+      "runtime_session_identity": null,
+      "observed_liveness": "UNKNOWN",
+      "last_observed_time": null,
+      "evidence_source": "NONE (No socket, no prior commits, no message received)",
+      "confidence_provenance": "UNVERIFIED_DECLARATION"
+    },
+    {
+      "identity": {
+        "id": "nexus",
+        "name": "Nexus",
+        "symbol": "⚡",
+        "primary_domain": "Orchestration Platform Engineering"
+      },
+      "declared_capabilities": [
+        "systems-programming",
+        "cli-tooling",
+        "process-supervision",
+        "event-bus"
+      ],
+      "declared_responsibilities": [
+        "Runtime Operator",
+        "Bus Architect"
+      ],
+      "declared_repository_ownership": [
+        "CreativeSites-Ai-Team"
+      ],
+      "runtime_session_identity": null,
+      "observed_liveness": "UNKNOWN",
+      "last_observed_time": null,
+      "evidence_source": "NONE (No socket, no prior commits, no message received)",
+      "confidence_provenance": "UNVERIFIED_DECLARATION"
+    }
+  ]
+}
