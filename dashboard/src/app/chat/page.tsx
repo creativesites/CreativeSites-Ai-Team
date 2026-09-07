@@ -2,27 +2,38 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import {
+  Users,
+  MessageSquare,
+  Send,
+  Layers,
+  ShieldCheck,
+  Zap,
+  RefreshCw,
+  Cpu,
+  Clock,
+  ArrowUpRight,
+} from '@/components/icons';
 
-export default function ChatConsole() {
+export default function BentoChatConsole() {
   const [agents, setAgents] = useState<any[]>([]);
   const [threads, setThreads] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'agents' | 'threads'>('agents');
   const [selectedAgentId, setSelectedAgentId] = useState<string>('atlas');
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
-  
+
   // Cockpit details
   const [cockpitData, setCockpitData] = useState<any>(null);
   const [threadData, setThreadData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
-  // Message compose form
+  // Message compose
   const [messageBody, setMessageBody] = useState('');
   const [messageType, setMessageType] = useState('COORDINATION');
   const [priority, setPriority] = useState('normal');
   const [subject, setSubject] = useState('');
   const [sending, setSending] = useState(false);
 
-  // Initial load
   useEffect(() => {
     fetch('/api/conversations')
       .then((res) => res.json())
@@ -32,7 +43,6 @@ export default function ChatConsole() {
       });
   }, []);
 
-  // Fetch Agent Cockpit
   const loadAgentCockpit = async (agentId: string) => {
     setLoading(true);
     try {
@@ -46,7 +56,6 @@ export default function ChatConsole() {
     }
   };
 
-  // Fetch Thread Timeline
   const loadThreadTimeline = async (threadId: string) => {
     setLoading(true);
     try {
@@ -88,13 +97,13 @@ export default function ChatConsole() {
           subject: subject || null,
           body: messageBody,
           type: messageType,
-          priority: priority
-        })
+          priority: priority,
+        }),
       });
 
       setMessageBody('');
       setSubject('');
-      
+
       if (activeTab === 'agents') {
         await loadAgentCockpit(selectedAgentId);
       } else if (selectedThreadId) {
@@ -108,65 +117,95 @@ export default function ChatConsole() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
-      {/* Top Bar */}
-      <header className="px-6 py-4 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+    <main className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
+      {/* Top Header */}
+      <header className="bg-white px-6 py-4 border-b border-slate-200/80 flex justify-between items-center shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="text-xl font-black tracking-tight text-white flex items-center gap-2">
-            <span className="text-blue-500">◈</span> MyaOS Multi-Agent Intercom & Cockpit
+          <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+            <MessageSquare />
           </div>
-          <span className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">v3.0 Operational</span>
+          <div>
+            <h1 className="text-base font-bold text-slate-900 tracking-tight">
+              Multi-Agent Intercom & Cockpit
+            </h1>
+            <p className="text-xs text-slate-500">Persistent organizational communication substrate</p>
+          </div>
         </div>
-        <nav className="flex gap-4 text-xs font-semibold">
-          <Link href="/" className="text-slate-400 hover:text-white transition">Overview</Link>
-          <Link href="/chat" className="text-blue-400 border-b border-blue-400 pb-0.5">Console & Intercom</Link>
-          <Link href="/human" className="text-slate-400 hover:text-white transition">Decisions</Link>
-          <Link href="/phase5" className="text-slate-400 hover:text-white transition">Phase 5 (Projects & Memory)</Link>
+
+        <nav className="flex items-center gap-1 text-xs font-medium">
+          <Link href="/" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition">
+            Cockpit
+          </Link>
+          <Link href="/chat" className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-900 font-semibold">
+            Intercom
+          </Link>
+          <Link href="/human" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition">
+            Approvals
+          </Link>
+          <Link href="/phase5" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition">
+            Learning & Memory
+          </Link>
         </nav>
       </header>
 
-      {/* Main Workspace Layout */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left Nav Column: Select Agent or Thread */}
-        <aside className="w-72 border-r border-slate-800 bg-slate-900/30 flex flex-col">
-          {/* Switcher Tabs */}
-          <div className="grid grid-cols-2 p-2 gap-1 border-b border-slate-800 text-xs font-semibold">
+      {/* Main Layout */}
+      <div className="flex-1 flex overflow-hidden p-6 gap-6">
+        {/* Left Sidebar: Select Agent or Thread */}
+        <aside className="w-80 bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-xs overflow-hidden">
+          {/* Tabs */}
+          <div className="grid grid-cols-2 p-2 gap-1 border-b border-slate-100 text-xs font-semibold bg-slate-50/50">
             <button
               onClick={() => setActiveTab('agents')}
-              className={`py-1.5 rounded transition ${activeTab === 'agents' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+              className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'agents' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
+              }`}
             >
-              Agents ({agents.length})
+              <Users />
+              <span>Agents ({agents.length})</span>
             </button>
             <button
               onClick={() => {
                 setActiveTab('threads');
                 if (!selectedThreadId && threads.length > 0) setSelectedThreadId(threads[0].id);
               }}
-              className={`py-1.5 rounded transition ${activeTab === 'threads' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'}`}
+              className={`py-2 rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                activeTab === 'threads' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
+              }`}
             >
-              Threads ({threads.length})
+              <Layers />
+              <span>Threads ({threads.length})</span>
             </button>
           </div>
 
           {/* List Content */}
-          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
             {activeTab === 'agents' ? (
               agents.map((a) => (
                 <button
                   key={a.id}
                   onClick={() => setSelectedAgentId(a.id)}
-                  className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between text-xs transition ${
-                    selectedAgentId === a.id ? 'bg-slate-800 text-white border border-slate-700' : 'text-slate-400 hover:bg-slate-800/50'
+                  className={`w-full text-left p-3 rounded-xl flex items-center justify-between text-xs transition cursor-pointer ${
+                    selectedAgentId === a.id
+                      ? 'bg-indigo-50/80 border border-indigo-200 text-slate-900'
+                      : 'hover:bg-slate-50 text-slate-600 border border-transparent'
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <span className="text-base">{a.symbol || '🤖'}</span>
+                    <div className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-700 shadow-2xs">
+                      <Cpu />
+                    </div>
                     <div>
-                      <div className="font-bold text-slate-200">{a.display_name}</div>
-                      <div className="text-[10px] text-slate-500 font-mono truncate max-w-[130px]">{a.primary_domain}</div>
+                      <div className="font-bold text-slate-900">{a.display_name}</div>
+                      <div className="text-[10px] text-slate-500 truncate max-w-[130px]">
+                        {a.primary_domain}
+                      </div>
                     </div>
                   </div>
-                  <span className={`w-2 h-2 rounded-full ${a.observed_liveness === 'LIVE' ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      a.observed_liveness === 'LIVE' ? 'bg-emerald-500' : 'bg-slate-300'
+                    }`}
+                  />
                 </button>
               ))
             ) : (
@@ -174,14 +213,18 @@ export default function ChatConsole() {
                 <button
                   key={t.id}
                   onClick={() => setSelectedThreadId(t.id)}
-                  className={`w-full text-left p-2.5 rounded-lg text-xs space-y-1 transition ${
-                    selectedThreadId === t.id ? 'bg-slate-800 text-white border border-slate-700' : 'text-slate-400 hover:bg-slate-800/50'
+                  className={`w-full text-left p-3 rounded-xl text-xs space-y-1 transition cursor-pointer ${
+                    selectedThreadId === t.id
+                      ? 'bg-indigo-50/80 border border-indigo-200 text-slate-900'
+                      : 'hover:bg-slate-50 text-slate-600 border border-transparent'
                   }`}
                 >
-                  <div className="font-bold text-slate-200 line-clamp-1">{t.title}</div>
-                  <div className="flex justify-between items-center text-[10px] text-slate-500">
+                  <div className="font-bold text-slate-900 line-clamp-1">{t.title}</div>
+                  <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono">
                     <span>{t.message_count || 0} messages</span>
-                    <span className="uppercase text-[9px] px-1 bg-slate-900 rounded">{t.status}</span>
+                    <span className="uppercase text-[9px] px-1.5 py-0.5 bg-slate-100 rounded font-bold">
+                      {t.status}
+                    </span>
                   </div>
                 </button>
               ))
@@ -189,82 +232,114 @@ export default function ChatConsole() {
           </div>
         </aside>
 
-        {/* Center: Real-Time Chat & Timeline Stream */}
-        <section className="flex-1 flex flex-col border-r border-slate-800">
-          {/* Header Info */}
-          <div className="px-6 py-3 border-b border-slate-800 bg-slate-900/20 flex justify-between items-center">
+        {/* Center: Real-Time Communication Feed */}
+        <section className="flex-1 bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-xs overflow-hidden">
+          {/* Chat Header */}
+          <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/30 flex justify-between items-center">
             <div>
-              <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                {activeTab === 'agents' ? (
-                  <>
-                    <span>{cockpitData?.identity?.symbol}</span>
-                    <span>Chatting with {cockpitData?.identity?.display_name || selectedAgentId}</span>
-                  </>
-                ) : (
-                  <span>{threadData?.thread?.title || selectedThreadId}</span>
-                )}
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <MessageSquare />
+                <span>
+                  {activeTab === 'agents'
+                    ? `Conversation with ${cockpitData?.identity?.display_name || selectedAgentId}`
+                    : threadData?.thread?.title || selectedThreadId}
+                </span>
               </h2>
-              <p className="text-[11px] text-slate-400">
-                {activeTab === 'agents' 
-                  ? `${cockpitData?.identity?.lane || 'Lane'} • ${cockpitData?.identity?.primary_domain || ''}`
-                  : `Thread Status: ${threadData?.thread?.status || 'open'}`}
+              <p className="text-xs text-slate-500 mt-0.5">
+                {activeTab === 'agents'
+                  ? `${cockpitData?.identity?.lane} lane • ${cockpitData?.identity?.primary_domain || ''}`
+                  : `Status: ${threadData?.thread?.status || 'open'}`}
               </p>
             </div>
             <button
-              onClick={() => activeTab === 'agents' ? loadAgentCockpit(selectedAgentId) : loadThreadTimeline(selectedThreadId!)}
-              className="text-xs text-slate-400 hover:text-white bg-slate-800 px-2.5 py-1 rounded"
+              onClick={() =>
+                activeTab === 'agents'
+                  ? loadAgentCockpit(selectedAgentId)
+                  : loadThreadTimeline(selectedThreadId!)
+              }
+              className="text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5"
             >
-              Refresh
+              <RefreshCw />
+              <span>Refresh</span>
             </button>
           </div>
 
-          {/* Conversation Feed */}
-          <div className="flex-1 p-6 overflow-y-auto space-y-4 max-h-[calc(100vh-250px)]">
+          {/* Messages Stream */}
+          <div className="flex-1 p-6 overflow-y-auto space-y-4 max-h-[calc(100vh-340px)]">
             {activeTab === 'agents' ? (
               cockpitData?.messages?.length === 0 ? (
-                <div className="text-center py-16 text-slate-500 text-xs">No direct message history found with this agent. Send a command below.</div>
+                <div className="text-center py-20 text-slate-400 text-xs">
+                  No recorded messages found for this agent. Send instructions below.
+                </div>
               ) : (
                 cockpitData?.messages?.map((m: any) => (
-                  <div key={m.id} className={`flex flex-col ${m.from_identity === 'Winston' ? 'items-end' : 'items-start'}`}>
-                    <div className={`max-w-xl p-3.5 rounded-lg text-xs leading-relaxed space-y-1.5 ${
-                      m.from_identity === 'Winston' ? 'bg-blue-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-200'
-                    }`}>
-                      <div className="flex justify-between items-center text-[10px] opacity-75 font-mono">
-                        <span className="font-bold">{m.from_identity} → {m.to_identity || 'Team'}</span>
-                        <span className="uppercase px-1 rounded bg-black/20">{m.type}</span>
+                  <div
+                    key={m.id}
+                    className={`flex flex-col ${
+                      m.from_identity === 'Winston' ? 'items-end' : 'items-start'
+                    }`}
+                  >
+                    <div
+                      className={`max-w-xl p-4 rounded-2xl text-xs leading-relaxed space-y-1.5 shadow-2xs ${
+                        m.from_identity === 'Winston'
+                          ? 'bg-indigo-600 text-white rounded-br-xs'
+                          : 'bg-slate-50 border border-slate-200 text-slate-800 rounded-bl-xs'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center text-[10px] opacity-75 font-mono gap-4">
+                        <span className="font-bold">
+                          {m.from_identity} → {m.to_identity || 'Team'}
+                        </span>
+                        <span className="uppercase px-1.5 py-0.5 rounded bg-black/10 font-semibold">
+                          {m.type}
+                        </span>
                       </div>
-                      {m.subject && <div className="font-semibold text-[11px]">{m.subject}</div>}
-                      <p className="whitespace-pre-wrap">{m.body}</p>
+                      {m.subject && (
+                        <div className="font-semibold text-xs border-b border-black/10 pb-1">
+                          {m.subject}
+                        </div>
+                      )}
+                      <p className="whitespace-pre-wrap font-sans">{m.body}</p>
                     </div>
-                    <span className="text-[9px] text-slate-500 font-mono mt-1">{m.ts}</span>
+                    <span className="text-[10px] text-slate-400 font-mono mt-1 px-1">
+                      {m.ts}
+                    </span>
                   </div>
                 ))
               )
             ) : (
               threadData?.messages?.length === 0 ? (
-                <div className="text-center py-16 text-slate-500 text-xs">No messages recorded in this thread yet.</div>
+                <div className="text-center py-20 text-slate-400 text-xs">
+                  No thread timeline entries recorded yet.
+                </div>
               ) : (
                 threadData?.messages?.map((m: any) => (
-                  <div key={m.id} className="p-3.5 bg-slate-900 border border-slate-800 rounded-lg text-xs space-y-1">
+                  <div
+                    key={m.id}
+                    className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-1.5 shadow-2xs"
+                  >
                     <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                      <span className="font-bold text-slate-200">{m.from_identity}</span>
+                      <span className="font-bold text-slate-800">{m.from_identity}</span>
                       <span>{m.ts}</span>
                     </div>
-                    {m.subject && <div className="font-semibold text-slate-100">{m.subject}</div>}
-                    <p className="text-slate-300 whitespace-pre-wrap">{m.body}</p>
+                    {m.subject && <div className="font-semibold text-slate-900">{m.subject}</div>}
+                    <p className="text-slate-700 whitespace-pre-wrap font-sans">{m.body}</p>
                   </div>
                 ))
               )
             )}
           </div>
 
-          {/* Dispatch Bar */}
-          <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-800 bg-slate-900/40 space-y-2">
+          {/* Dispatch Input Box */}
+          <form
+            onSubmit={handleSendMessage}
+            className="p-4 border-t border-slate-100 bg-slate-50/50 space-y-2.5"
+          >
             <div className="flex gap-2 text-xs">
               <select
                 value={messageType}
                 onChange={(e) => setMessageType(e.target.value)}
-                className="bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-slate-300 focus:outline-none"
+                className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none focus:border-indigo-500"
               >
                 <option value="COORDINATION">COORDINATION</option>
                 <option value="TASK_ASSIGNMENT">TASK_ASSIGNMENT</option>
@@ -275,7 +350,7 @@ export default function ChatConsole() {
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value)}
-                className="bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-slate-300 focus:outline-none"
+                className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-700 focus:outline-none focus:border-indigo-500"
               >
                 <option value="normal">Normal Priority</option>
                 <option value="high">High Priority</option>
@@ -285,8 +360,8 @@ export default function ChatConsole() {
                 type="text"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                placeholder="Optional subject / task ref..."
-                className="flex-1 bg-slate-900 border border-slate-800 rounded px-3 py-1 text-slate-200 placeholder-slate-500 focus:outline-none"
+                placeholder="Optional subject / task reference..."
+                className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <div className="flex gap-2">
@@ -294,15 +369,20 @@ export default function ChatConsole() {
                 value={messageBody}
                 onChange={(e) => setMessageBody(e.target.value)}
                 rows={2}
-                placeholder={activeTab === 'agents' ? `Dispatch command or message to ${selectedAgentId}...` : `Reply to thread ${selectedThreadId}...`}
-                className="flex-1 bg-slate-900 border border-slate-800 rounded p-2.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-none"
+                placeholder={
+                  activeTab === 'agents'
+                    ? `Dispatch directive to ${selectedAgentId}...`
+                    : `Reply to thread...`
+                }
+                className="flex-1 bg-white border border-slate-200 rounded-xl p-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 resize-none font-sans"
               />
               <button
                 type="submit"
                 disabled={sending}
-                className="px-6 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded text-xs transition disabled:opacity-50"
+                className="px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs transition disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-xs"
               >
-                {sending ? 'Sending...' : 'Dispatch'}
+                <Send />
+                <span>{sending ? 'Sending...' : 'Dispatch'}</span>
               </button>
             </div>
           </form>
@@ -310,21 +390,34 @@ export default function ChatConsole() {
 
         {/* Right Sidebar: Contextual Cockpit */}
         {activeTab === 'agents' && (
-          <aside className="w-80 p-5 overflow-y-auto bg-slate-900/20 space-y-6 text-xs border-l border-slate-800/60">
+          <aside className="w-80 bg-white border border-slate-200/80 rounded-2xl p-5 overflow-y-auto space-y-6 shadow-xs">
+            {/* Identity Card */}
             <div>
-              <h3 className="font-bold text-slate-100 uppercase tracking-wider text-[10px] text-slate-400 mb-3">Agent Cockpit</h3>
-              <div className="p-3.5 bg-slate-900 rounded-lg border border-slate-800 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">{cockpitData?.identity?.symbol}</span>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <ShieldCheck />
+                <span>Agent Identity</span>
+              </div>
+              <div className="p-4 bg-slate-50/70 rounded-xl border border-slate-200/60 space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-800 shadow-2xs">
+                    <Cpu />
+                  </div>
                   <div>
-                    <div className="font-bold text-slate-200 text-sm">{cockpitData?.identity?.display_name}</div>
-                    <div className="text-slate-400 text-[10px]">{cockpitData?.identity?.lane} lane</div>
+                    <div className="font-bold text-slate-900 text-xs">
+                      {cockpitData?.identity?.display_name}
+                    </div>
+                    <div className="text-slate-500 text-[10px]">
+                      {cockpitData?.identity?.lane} lane
+                    </div>
                   </div>
                 </div>
-                <div className="text-[11px] text-slate-300 font-mono pt-1">
-                  Confidence: <span className="text-emerald-400 font-bold">{cockpitData?.identity?.confidence_provenance}</span>
+                <div className="text-[11px] text-slate-600 font-mono pt-1">
+                  Confidence:{' '}
+                  <span className="text-emerald-700 font-bold">
+                    {cockpitData?.identity?.confidence_provenance}
+                  </span>
                 </div>
-                <div className="text-[10px] text-slate-500 font-mono">
+                <div className="text-[10px] text-slate-400 font-mono">
                   Evidence: {cockpitData?.identity?.evidence_source || 'None'}
                 </div>
               </div>
@@ -332,20 +425,30 @@ export default function ChatConsole() {
 
             {/* Active Tasks */}
             <div>
-              <h4 className="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 flex justify-between">
-                <span>Active Tasks</span>
-                <span className="text-amber-400">{cockpitData?.activeTasks?.length || 0}</span>
-              </h4>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex justify-between items-center">
+                <span className="flex items-center gap-1.5">
+                  <Layers />
+                  <span>Active Tasks</span>
+                </span>
+                <span className="text-amber-600 font-mono font-bold">
+                  {cockpitData?.activeTasks?.length || 0}
+                </span>
+              </div>
               <div className="space-y-2">
                 {cockpitData?.activeTasks?.length === 0 ? (
-                  <div className="p-2.5 bg-slate-900/50 rounded border border-slate-800/60 text-slate-500 text-[11px]">No open tasks assigned.</div>
+                  <div className="p-3 bg-slate-50/60 rounded-xl border border-slate-200/60 text-slate-400 text-xs text-center">
+                    No active tasks assigned.
+                  </div>
                 ) : (
                   cockpitData?.activeTasks?.map((t: any) => (
-                    <div key={t.id} className="p-2.5 bg-slate-900 rounded border border-slate-800 space-y-1">
-                      <div className="font-bold text-slate-200 text-[11px]">{t.title}</div>
-                      <div className="flex justify-between text-[10px] text-slate-400">
-                        <span className="font-mono">{t.id}</span>
-                        <span className="uppercase text-amber-400">{t.status}</span>
+                    <div
+                      key={t.id}
+                      className="p-3 bg-slate-50/70 rounded-xl border border-slate-200/60 space-y-1 text-xs"
+                    >
+                      <div className="font-semibold text-slate-900">{t.title}</div>
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>{t.id}</span>
+                        <span className="uppercase font-bold text-amber-700">{t.status}</span>
                       </div>
                     </div>
                   ))
@@ -353,40 +456,30 @@ export default function ChatConsole() {
               </div>
             </div>
 
-            {/* Organizational Memory Snippets */}
+            {/* Institutional Memory Snippets */}
             <div>
-              <h4 className="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 flex justify-between">
-                <span>Learnings & Memory</span>
-                <span className="text-blue-400">{cockpitData?.memory?.length || 0}</span>
-              </h4>
-              <div className="space-y-1.5">
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex justify-between items-center">
+                <span className="flex items-center gap-1.5">
+                  <Zap />
+                  <span>Learnings & Memory</span>
+                </span>
+                <span className="text-indigo-600 font-mono font-bold">
+                  {cockpitData?.memory?.length || 0}
+                </span>
+              </div>
+              <div className="space-y-2">
                 {cockpitData?.memory?.length === 0 ? (
-                  <div className="p-2.5 bg-slate-900/50 rounded border border-slate-800/60 text-slate-500 text-[11px]">No snippets logged.</div>
+                  <div className="p-3 bg-slate-50/60 rounded-xl border border-slate-200/60 text-slate-400 text-xs text-center">
+                    No snippets recorded.
+                  </div>
                 ) : (
                   cockpitData?.memory?.map((m: any) => (
-                    <div key={m.id} className="p-2 bg-slate-900 rounded border border-slate-800 text-[10px] space-y-0.5">
-                      <div className="font-bold text-blue-400 font-mono">{m.key}</div>
-                      <div className="text-slate-300">{m.value}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Verification Records */}
-            <div>
-              <h4 className="font-bold text-slate-300 uppercase tracking-wider text-[10px] mb-2 flex justify-between">
-                <span>Verification Authority</span>
-                <span className="text-purple-400">{cockpitData?.verificationRecords?.length || 0}</span>
-              </h4>
-              <div className="space-y-1.5">
-                {cockpitData?.verificationRecords?.length === 0 ? (
-                  <div className="p-2.5 bg-slate-900/50 rounded border border-slate-800/60 text-slate-500 text-[11px]">No verified tasks.</div>
-                ) : (
-                  cockpitData?.verificationRecords?.map((v: any) => (
-                    <div key={v.id} className="p-2 bg-slate-900 rounded border border-slate-800 text-[10px]">
-                      <div className="font-mono font-bold text-purple-300">{v.task_id}</div>
-                      <div className="text-slate-400">Class: {v.evidence_class}</div>
+                    <div
+                      key={m.id}
+                      className="p-2.5 bg-slate-50/70 rounded-xl border border-slate-200/60 text-xs space-y-0.5"
+                    >
+                      <div className="font-mono font-bold text-[10px] text-indigo-600">{m.key}</div>
+                      <div className="text-slate-700 text-[11px] leading-relaxed">{m.value}</div>
                     </div>
                   ))
                 )}
