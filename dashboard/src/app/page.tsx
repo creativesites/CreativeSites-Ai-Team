@@ -211,6 +211,12 @@ export default function BentoDashboard() {
               Cockpit
             </Link>
             <Link
+              href="/today"
+              className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
+            >
+              Today
+            </Link>
+            <Link
               href="/chat"
               className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
             >
