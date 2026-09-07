@@ -21,6 +21,7 @@ import {
   Database,
   ArrowUpRight,
 } from '@/components/icons';
+import { MarkdownDocument } from '@/components/MarkdownDocument';
 
 export default function BentoDashboard() {
   const [data, setData] = useState<any>(null);
@@ -790,10 +791,10 @@ export default function BentoDashboard() {
 
               {selectedTask.description && (
                 <div>
-                  <h4 className="font-semibold text-slate-700 mb-1">Description:</h4>
-                  <p className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 text-slate-700 leading-relaxed font-sans">
-                    {selectedTask.description}
-                  </p>
+                  <h4 className="font-semibold text-slate-700 mb-1">Description & Acceptance Criteria:</h4>
+                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/60">
+                    <MarkdownDocument content={selectedTask.description} defaultExpanded={true} />
+                  </div>
                 </div>
               )}
 

@@ -14,6 +14,7 @@ import {
   Clock,
   ArrowUpRight,
 } from '@/components/icons';
+import { MarkdownDocument } from '@/components/MarkdownDocument';
 
 export default function BentoChatConsole() {
   const [agents, setAgents] = useState<any[]>([]);
@@ -299,7 +300,9 @@ export default function BentoChatConsole() {
                           {m.subject}
                         </div>
                       )}
-                      <p className="whitespace-pre-wrap font-sans">{m.body}</p>
+                      <div className="pt-1">
+                        <MarkdownDocument content={m.body} />
+                      </div>
                     </div>
                     <span className="text-[10px] text-slate-400 font-mono mt-1 px-1">
                       {m.ts}
@@ -316,14 +319,16 @@ export default function BentoChatConsole() {
                 threadData?.messages?.map((m: any) => (
                   <div
                     key={m.id}
-                    className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-1.5 shadow-2xs"
+                    className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-2 shadow-2xs"
                   >
                     <div className="flex justify-between text-[10px] text-slate-400 font-mono">
                       <span className="font-bold text-slate-800">{m.from_identity}</span>
                       <span>{m.ts}</span>
                     </div>
                     {m.subject && <div className="font-semibold text-slate-900">{m.subject}</div>}
-                    <p className="text-slate-700 whitespace-pre-wrap font-sans">{m.body}</p>
+                    <div className="pt-1">
+                      <MarkdownDocument content={m.body} />
+                    </div>
                   </div>
                 ))
               )
