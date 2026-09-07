@@ -13,6 +13,7 @@ import {
   Cpu,
   ArrowUpRight,
   MessageSquare,
+  Send,
 } from '@/components/icons';
 import { MarkdownDocument } from '@/components/MarkdownDocument';
 
@@ -21,6 +22,11 @@ export default function BentoTodayPage() {
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+
+  // Direct Orchestrator Chat State
+  const [orchestratorChat, setOrchestratorChat] = useState<any[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatSending, setChatSending] = useState(false);
 
   const loadTodayState = async () => {
     try {
@@ -34,9 +40,48 @@ export default function BentoTodayPage() {
     }
   };
 
+  const loadOrchestratorMessages = async () => {
+    try {
+      const res = await fetch('/api/conversations?agentId=orchestrator');
+      const d = await res.json();
+      if (d.messages) setOrchestratorChat(d.messages);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     loadTodayState();
+    loadOrchestratorMessages();
   }, []);
+
+  const handleSendToOrchestrator = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || chatSending) return;
+    const messageText = chatInput.trim();
+    setChatInput('');
+    setChatSending(true);
+
+    try {
+      await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from_identity: 'Winston',
+          to_identity: 'orchestrator',
+          body: messageText,
+          type: 'COORDINATION',
+          priority: 'high',
+        }),
+      });
+      await loadOrchestratorMessages();
+      await loadTodayState();
+    } catch (err: any) {
+      alert(`Error communicating with orchestrator: ${err.message}`);
+    } finally {
+      setChatSending(false);
+    }
+  };
 
   const triggerAction = async (action: string, payload: any = {}) => {
     setProcessing(true);
@@ -204,6 +249,74 @@ export default function BentoTodayPage() {
 
           <div className="p-4 bg-slate-50/70 border border-slate-200/60 rounded-xl leading-relaxed">
             <MarkdownDocument content={narrative} defaultExpanded={true} />
+          </div>
+
+          {/* Direct Orchestrator Dialogue Stream */}
+          <div className="pt-2 border-t border-slate-100 space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <MessageSquare width={14} height={14} />
+                <span>Direct Dialogue with Orchestrator</span>
+              </span>
+              <span className="text-[10px] font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1 font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live Responder
+              </span>
+            </div>
+
+            {/* Conversation Bubbles */}
+            <div className="space-y-2.5 max-h-[260px] overflow-y-auto p-1 pr-2">
+              {orchestratorChat.length === 0 ? (
+                <div className="text-center py-6 text-slate-400 text-xs italic bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                  Ask the orchestrator anything (e.g. &quot;Wake Iris and review task 5&quot;, &quot;What is our focus today?&quot;)
+                </div>
+              ) : (
+                orchestratorChat.slice(-6).map((m: any) => (
+                  <div
+                    key={m.id}
+                    className={`flex flex-col ${
+                      m.from_identity === 'Winston' ? 'items-end' : 'items-start'
+                    }`}
+                  >
+                    <div
+                      className={`max-w-lg p-3 rounded-xl text-xs leading-relaxed shadow-2xs ${
+                        m.from_identity === 'Winston'
+                          ? 'bg-slate-900 text-white rounded-br-xs'
+                          : 'bg-slate-50 border border-slate-200 text-slate-800 rounded-bl-xs'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center text-[10px] opacity-75 font-mono mb-1 gap-2">
+                        <span className="font-semibold">
+                          {m.from_identity === 'Winston' ? 'You' : '⚙️ Orchestrator'}
+                        </span>
+                        <span>{m.ts.split('T')[1]?.slice(0, 8) || m.ts}</span>
+                      </div>
+                      <div className="font-sans">
+                        <MarkdownDocument content={m.body} />
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Inline Message Input */}
+            <form onSubmit={handleSendToOrchestrator} className="flex gap-2 pt-1">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Give instruction or ask orchestrator (e.g. 'Prioritize TASK_005', 'Wake Lyra')..."
+                className="flex-1 bg-slate-50 border border-slate-200/80 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:border-slate-400 shadow-2xs font-sans"
+              />
+              <button
+                type="submit"
+                disabled={chatSending || !chatInput.trim()}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-medium transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
+              >
+                <Send width={12} height={12} />
+                <span>{chatSending ? 'Thinking...' : 'Instruct'}</span>
+              </button>
+            </form>
           </div>
         </section>
 

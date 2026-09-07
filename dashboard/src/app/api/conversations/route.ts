@@ -128,7 +128,66 @@ export async function POST(request: Request) {
       console.warn('Write-through inbox warning:', e);
     }
 
-    return NextResponse.json({ success: true, ts });
+    // 4. Autonomous Orchestrator Response Loop (Direct Dialogue)
+    let orchestratorResponse: any = null;
+    if (to_identity && to_identity.toLowerCase() === 'orchestrator') {
+      try {
+        const { execFileSync } = require('child_process');
+        const path = require('path');
+        const baseDir = path.resolve(process.cwd(), '..');
+
+        const script = `
+          const { initMyaOS } = require('./src');
+          const myaos = initMyaOS();
+          myaos.orchestrator.handleDirectMessage(${JSON.stringify(content)})
+            .then(res => console.log(JSON.stringify(res)))
+            .catch(err => console.error(err));
+        `;
+        const out = execFileSync(process.execPath, ['-e', script], { cwd: baseDir, encoding: 'utf8' });
+        orchestratorResponse = JSON.parse(out.trim());
+
+        if (orchestratorResponse && orchestratorResponse.reply) {
+          const replyTs = new Date().toISOString();
+          const escapedReply = orchestratorResponse.reply.replace(/'/g, "''");
+
+          // Save orchestrator's response back to messages
+          runDb(`
+            INSERT INTO messages (
+              thread_id, from_identity, to_identity, type, priority, subject, body, 
+              related_task_id, related_project_id, read, ts, original_file_path
+            ) VALUES (
+              ${thread_id ? `'${thread_id}'` : 'NULL'},
+              'orchestrator',
+              '${from_identity}',
+              'COORDINATION',
+              'normal',
+              'Re: ${escapedSubject || 'Direct Dialogue'}',
+              '${escapedReply}',
+              ${related_task_id ? `'${related_task_id}'` : 'NULL'},
+              ${related_project_id ? `'${related_project_id}'` : 'NULL'},
+              0,
+              '${replyTs}',
+              'tam_db_orchestrator_daemon'
+            )
+          `);
+
+          // Record event in event stream
+          runDb(`
+            INSERT INTO events (type, sender, payload, ts)
+            VALUES (
+              'orchestrator.responded',
+              'orchestrator',
+              '${JSON.stringify({ to: from_identity, actions: orchestratorResponse.actionsTaken }).replace(/'/g, "''")}',
+              '${replyTs}'
+            )
+          `);
+        }
+      } catch (orchErr: any) {
+        console.error('Orchestrator autonomous reply error:', orchErr.message);
+      }
+    }
+
+    return NextResponse.json({ success: true, ts, orchestratorResponse });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

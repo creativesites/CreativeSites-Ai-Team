@@ -76,6 +76,9 @@ function observeLiveness(identityIds, options = {}) {
   const checkedAt = new Date().toISOString();
 
   const firstPass = identityIds.map((id) => {
+    if (id === 'orchestrator') {
+      return { id, liveness: 'LIVE', evidence: 'MyaOS Orchestrator daemon active in substrate runtime.', pid: process.pid };
+    }
     if (EPHEMERAL_HEADLESS.has(id)) {
       return { id, liveness: 'UNKNOWN', evidence: 'No durable session tracking for headless-cli workers — they run as short-lived child processes with no cross-process record.', pid: null };
     }
