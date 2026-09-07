@@ -29,9 +29,11 @@ export default function OverviewPage() {
           </div>
           <nav className="flex gap-4 text-sm font-medium">
             <Link href="/" className="text-blue-400 border-b-2 border-blue-400 pb-1">Overview</Link>
-            <Link href="/human" className="text-slate-400 hover:text-slate-200">Human Approval Queue</Link>
+            <Link href="/chat" className="text-slate-400 hover:text-slate-200">Agent Chat & Control</Link>
+            <Link href="/human" className="text-slate-400 hover:text-slate-200">Human Approvals</Link>
             <Link href="/agents" className="text-slate-400 hover:text-slate-200">Agents</Link>
             <Link href="/work" className="text-slate-400 hover:text-slate-200">Work</Link>
+            <Link href="/phase5" className="text-slate-400 hover:text-slate-200">Phase 5 Console</Link>
           </nav>
         </header>
 
