@@ -1,0 +1,12 @@
+{
+  "id": "msg-1788599033153-9rqs",
+  "from": "AOS_RUNTIME",
+  "to": "Atlas",
+  "type": "WAKE_DISPATCH",
+  "priority": "HIGH",
+  "taskId": "TASK-VERIFY-3150",
+  "subject": "Wake Request: Review requested for task TASK-VERIFY-3150",
+  "content": "Agent Atlas awakened for task TASK-VERIFY-3150. Reason: Review requested for task TASK-VERIFY-3150",
+  "timestamp": "2026-09-05T09:03:53.153Z",
+  "read": false
+}

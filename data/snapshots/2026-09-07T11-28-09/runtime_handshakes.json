@@ -1,0 +1,162 @@
+{
+  "rt_process_broken_agent_1788604524243_hhyc": {
+    "runtime_id": "rt_process_broken_agent_1788604524243_hhyc",
+    "agent_id": "broken_agent",
+    "runtime_type": "process",
+    "handshake_token": "5e504fa489f9049f29218b21f8b5b7f49bb17da402bdd37b",
+    "issued_at": "2026-09-05T10:35:24.244Z",
+    "expires_at": 1788604539244
+  },
+  "rt_auth_test_1788604526207": {
+    "runtime_id": "rt_auth_test_1788604526207",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "3a96adf44241849df728fd44119bd19224dc2394d2eb1ebb",
+    "issued_at": "2026-09-05T10:35:26.215Z",
+    "expires_at": 1788604541215
+  },
+  "rt_stale_1788604528828": {
+    "runtime_id": "rt_stale_1788604528828",
+    "agent_id": "staleworker",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "224d0eb84640af0c179fea30d830c8dc368fc4abec5f40e4",
+    "issued_at": "2026-09-05T10:35:28.829Z",
+    "expires_at": 1788604543829
+  },
+  "rt_auth_test_1788604555053": {
+    "runtime_id": "rt_auth_test_1788604555053",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "86652dbed6f77aa6f777ddb1aa23205cb63fcdcf498012bd",
+    "issued_at": "2026-09-05T10:35:55.053Z",
+    "expires_at": 1788604570053
+  },
+  "rt_stale_1788604555138": {
+    "runtime_id": "rt_stale_1788604555138",
+    "agent_id": "staleworker",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "29ad497dc7ff01a250aae573e954b8b1e0ee545b5051470f",
+    "issued_at": "2026-09-05T10:35:55.138Z",
+    "expires_at": 1788604570138
+  },
+  "rt_proc_atlas_1788604558533": {
+    "runtime_id": "rt_proc_atlas_1788604558533",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "fd836788a6e79d6bbc90b8ba0c5bd49e155bcb5e94dd89bf",
+    "issued_at": "2026-09-05T10:35:58.533Z",
+    "expires_at": 1788604573533
+  },
+  "rt_auth_test_1788604558604": {
+    "runtime_id": "rt_auth_test_1788604558604",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "76f1f8001406b944236d5b2dec355b6e1134ce250f8e1edb",
+    "issued_at": "2026-09-05T10:35:58.604Z",
+    "expires_at": 1788604573604
+  },
+  "rt_stale_1788604558713": {
+    "runtime_id": "rt_stale_1788604558713",
+    "agent_id": "staleworker",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "1e71e202409ee3ab733d6409e747784b80ddbd555916f915",
+    "issued_at": "2026-09-05T10:35:58.713Z",
+    "expires_at": 1788604573713
+  },
+  "rt_auth_test_1788604581341": {
+    "runtime_id": "rt_auth_test_1788604581341",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "a6f9289aa3a3119a66a0f6754eec34121a51e6b2074ee05b",
+    "issued_at": "2026-09-05T10:36:21.341Z",
+    "expires_at": 1788604596341
+  },
+  "rt_stale_1788604582572": {
+    "runtime_id": "rt_stale_1788604582572",
+    "agent_id": "staleworker",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "cbe9ccdb3cd80a1b671a57ede816bbe476205e52219cc0a5",
+    "issued_at": "2026-09-05T10:36:22.580Z",
+    "expires_at": 1788604597580
+  },
+  "rt_process_broken_agent_1788604583574_htsv": {
+    "runtime_id": "rt_process_broken_agent_1788604583574_htsv",
+    "agent_id": "broken_agent",
+    "runtime_type": "process",
+    "handshake_token": "753322eb53104b577ea3c6f709ddf4d073cae780df767490",
+    "issued_at": "2026-09-05T10:36:23.578Z",
+    "expires_at": 1788604598579
+  },
+  "rt_auth_test_1788604583863": {
+    "runtime_id": "rt_auth_test_1788604583863",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "a664fed89efb153ed16dc73c2d2164284751c7a8f5b6c931",
+    "issued_at": "2026-09-05T10:36:23.863Z",
+    "expires_at": 1788604598863
+  },
+  "rt_stale_1788604584286": {
+    "runtime_id": "rt_stale_1788604584286",
+    "agent_id": "staleworker",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "1ffcfd107d4669ea9bcef1c6d0abf3083ee7954c426d186b",
+    "issued_at": "2026-09-05T10:36:24.287Z",
+    "expires_at": 1788604599287
+  },
+  "rt_auth_test_1788604608096": {
+    "runtime_id": "rt_auth_test_1788604608096",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "3d59e82b71a8325d7ccdc92971256ca2815f89a7698ea564",
+    "issued_at": "2026-09-05T10:36:48.096Z",
+    "expires_at": 1788604623096
+  },
+  "rt_stale_1788604608237": {
+    "runtime_id": "rt_stale_1788604608237",
+    "agent_id": "staleworker",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "e1d777f835baf3cfdcbcbbd0033cf7c4cabfc1017b82df22",
+    "issued_at": "2026-09-05T10:36:48.237Z",
+    "expires_at": 1788604623237
+  },
+  "rt_auth_test_1788604611421": {
+    "runtime_id": "rt_auth_test_1788604611421",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "faf8a3bf1e6d3ba924c09b4b04d105370fa3fcd0d361997d",
+    "issued_at": "2026-09-05T10:36:51.421Z",
+    "expires_at": 1788604626421
+  },
+  "rt_stale_1788604611669": {
+    "runtime_id": "rt_stale_1788604611669",
+    "agent_id": "staleworker",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "efa93fe2c3da496f9868a887f7a777ed6a4dab65a92e8bf9",
+    "issued_at": "2026-09-05T10:36:51.669Z",
+    "expires_at": 1788604626669
+  },
+  "rt_process_broken_agent_1788604654909_7d8t": {
+    "runtime_id": "rt_process_broken_agent_1788604654909_7d8t",
+    "agent_id": "broken_agent",
+    "runtime_type": "process",
+    "handshake_token": "f381c70b239ea9c8d47fc64bdfe3ea597350f5bae3d47634",
+    "issued_at": "2026-09-05T10:37:34.910Z",
+    "expires_at": 1788604669910
+  },
+  "rt_auth_test_1788604656697": {
+    "runtime_id": "rt_auth_test_1788604656697",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "cb19ea33df2e929cf14af2e9d0e122ed98c61207cb398d25",
+    "issued_at": "2026-09-05T10:37:37.002Z",
+    "expires_at": 1788604672002
+  },
+  "rt_stale_1788604660694": {
+    "runtime_id": "rt_stale_1788604660694",
+    "agent_id": "staleworker",
+    "runtime_type": "REAL_PROCESS",
+    "handshake_token": "5eaea9516b6e9714162fe1102343a8426263f42e027f58a7",
+    "issued_at": "2026-09-05T10:37:40.694Z",
+    "expires_at": 1788604675694
+  }
+}

@@ -99,22 +99,26 @@
     "currentTask": null
   },
   {
-    "name": "Nova",
-    "symbol": "⚡",
-    "domain": "Mobile SDK & React Native",
-    "role": "Mobile Specialist",
+    "name": "Lyra",
+    "symbol": "📱",
+    "domain": "Mobile Client Architecture & React Native SDK",
+    "role": "Mobile Integration Guardian & React Native SDK Architect",
     "capabilities": [
       "mobile",
       "react-native",
       "typescript",
-      "streaming"
+      "streaming",
+      "ndjson",
+      "zero-dom"
     ],
-    "status": "SLEEPING",
-    "runtime": "terminal-shell",
-    "wakeCommand": "node bin/aos.js wake Nova",
-    "ownedRepos": [],
-    "inboxPath": "community/inboxes/nova",
-    "lastSeen": "2026-09-05T09:03:53.150Z",
-    "currentTask": null
+    "status": "WORKING",
+    "runtime": "gemini-antigravity",
+    "wakeCommand": "node bin/aos.js wake Lyra",
+    "ownedRepos": [
+      "Myavana-Chatbot"
+    ],
+    "inboxPath": "community/inboxes/lyra",
+    "lastSeen": "2026-09-05T17:20:00.000Z",
+    "currentTask": "TASK-005"
   }
 ]

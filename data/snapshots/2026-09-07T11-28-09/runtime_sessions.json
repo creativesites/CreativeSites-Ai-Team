@@ -1,0 +1,123 @@
+{
+  "rt_proc_atlas_1788604525621": {
+    "runtime_id": "rt_proc_atlas_1788604525621",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 26922,
+    "parent_pid": 26892,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/tmp_chain_proof_1788604524546",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:35:30.161Z",
+    "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604547255": {
+    "runtime_id": "rt_proc_atlas_1788604547255",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 27005,
+    "parent_pid": 26996,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/tmp_chain_proof_1788604546453",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:35:47.565Z",
+    "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604554982": {
+    "runtime_id": "rt_proc_atlas_1788604554982",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 27044,
+    "parent_pid": 27035,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/tmp_chain_proof_1788604554965",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:35:55.040Z",
+    "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604558533": {
+    "runtime_id": "rt_proc_atlas_1788604558533",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 27101,
+    "parent_pid": 27093,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/tmp_chain_proof_1788604558512",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:35:58.601Z",
+    "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604580477": {
+    "runtime_id": "rt_proc_atlas_1788604580477",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 27240,
+    "parent_pid": 27215,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/tmp_chain_proof_1788604579492",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:36:23.673Z",
+    "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604601653": {
+    "runtime_id": "rt_proc_atlas_1788604601653",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 27357,
+    "parent_pid": 27355,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/tmp_chain_proof_1788604601629",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:36:41.699Z",
+    "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604605278": {
+    "runtime_id": "rt_proc_atlas_1788604605278",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 27372,
+    "parent_pid": 27370,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/tmp_chain_proof_1788604605241",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:36:45.367Z",
+    "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604608025": {
+    "runtime_id": "rt_proc_atlas_1788604608025",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 27392,
+    "parent_pid": 27381,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/tmp_chain_proof_1788604607995",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:36:48.123Z",
+    "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604611315": {
+    "runtime_id": "rt_proc_atlas_1788604611315",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 27441,
+    "parent_pid": 27431,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/tmp_chain_proof_1788604611261",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:36:51.603Z",
+    "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604763424": {
+    "runtime_id": "rt_proc_atlas_1788604763424",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 28001,
+    "parent_pid": 27997,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:39:23.502Z",
+    "status": "REGISTERED"
+  },
+  "rt_proc_atlas_1788604788773": {
+    "runtime_id": "rt_proc_atlas_1788604788773",
+    "agent_id": "atlas",
+    "runtime_type": "REAL_PROCESS",
+    "pid": 28205,
+    "parent_pid": 28202,
+    "cwd": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team",
+    "handshake_verified": true,
+    "registered_at": "2026-09-05T10:39:48.818Z",
+    "status": "REGISTERED"
+  }
+}

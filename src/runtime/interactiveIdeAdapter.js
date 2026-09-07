@@ -43,7 +43,11 @@ class InteractiveIdeAdapter extends BaseRuntimeAdapter {
     const hints = {
       'atlas': 'myavana-chatbot',
       'iris': 'myavana-chatbot-dashboard',
-      'vela': 'myavana-hair-journey'
+      'vela': 'myavana-hair-journey',
+      'astra': 'myavana-chatbot',
+      'kael': 'test',
+      'lyra': 'react-native',
+      'nexus': 'creativesites-ai-team'
     };
     const hint = hints[clean];
     if (!hint) return null;
