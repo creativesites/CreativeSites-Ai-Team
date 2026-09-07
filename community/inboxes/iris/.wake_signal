@@ -1,8 +1,6 @@
 {
-  "timestamp": "2026-09-05T10:39:48.863Z",
-  "reason": "DEPENDENCY_RESOLVED",
+  "timestamp": "2026-09-07T12:32:16.428Z",
+  "reason": "CLI_WAKE_COMMAND",
   "target_agent": "Iris",
-  "payload": {
-    "taskId": "TASK_LIVE_8760"
-  }
+  "payload": {}
 }

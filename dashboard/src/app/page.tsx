@@ -158,92 +158,46 @@ export default function BentoDashboard() {
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900 p-6 font-sans flex flex-col space-y-6">
-      {/* Top Professional App Header */}
-      <header className="bg-white p-4 px-6 rounded-2xl border border-slate-200/80 shadow-xs flex justify-between items-center">
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-inner">
-            <Cpu />
+      {/* Minimalistic Command Center Header */}
+      <header className="bg-white/80 backdrop-blur-xs px-5 py-3 rounded-2xl border border-slate-200/80 shadow-2xs flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center text-slate-700">
+            <Cpu width={15} height={15} />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold tracking-tight text-slate-900">
-                CreativeSites AI Team
-              </h1>
-              <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200">
-                Operational v3.0
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-              <span>Organization Command Console</span>
-              <span>•</span>
-              <span className="flex items-center gap-1 font-mono text-[11px] text-slate-400">
-                <Clock /> {lastRefreshed}
-              </span>
-            </p>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-sm font-semibold tracking-tight text-slate-900">
+              Command Center
+            </h1>
+            <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200/60 font-mono">
+              v3.0
+            </span>
+            <span className="text-slate-300">/</span>
+            <span className="text-xs text-slate-400 font-mono flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+              {lastRefreshed}
+            </span>
           </div>
         </div>
 
-        {/* Quick Dispatch Actions & Navigation */}
-        <div className="flex items-center gap-3">
+        {/* Minimal Action Triggers */}
+        <div className="flex items-center gap-2">
           <button
             onClick={() => {
               setTargetAgent('atlas');
               setShowDispatchModal(true);
             }}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition flex items-center gap-2 cursor-pointer"
+            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
-            <Zap />
-            <span>Dispatch Command</span>
+            <Zap width={12} height={12} />
+            <span>Dispatch</span>
           </button>
           <button
             onClick={() => setShowTaskModal(true)}
-            className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+            className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/80 rounded-xl text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
           >
-            <Plus />
+            <Plus width={12} height={12} />
             <span>New Task</span>
           </button>
-
-          <nav className="flex items-center gap-1 pl-4 border-l border-slate-200 text-xs font-medium">
-            <Link
-              href="/"
-              className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-900 font-semibold"
-            >
-              Cockpit
-            </Link>
-            <Link
-              href="/today"
-              className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
-            >
-              Today
-            </Link>
-            <Link
-              href="/chat"
-              className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
-            >
-              Intercom
-            </Link>
-            <Link
-              href="/bridge"
-              className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
-            >
-              DeployFleet Bridge
-            </Link>
-            <Link
-              href="/human"
-              className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition flex items-center gap-1"
-            >
-              <span>Approvals</span>
-              {pulse?.pending_approvals > 0 && (
-                <span className="w-2 h-2 rounded-full bg-rose-500" />
-              )}
-            </Link>
-            <Link
-              href="/phase5"
-              className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
-            >
-              Learning & Memory
-            </Link>
-          </nav>
         </div>
       </header>
 

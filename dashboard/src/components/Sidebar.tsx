@@ -19,7 +19,10 @@ import {
 const NAV: { section: string; items: { href: string; label: string; icon: any }[] }[] = [
   {
     section: 'Overview',
-    items: [{ href: '/', label: 'Command Center', icon: Activity }],
+    items: [
+      { href: '/', label: 'Command Center', icon: Activity },
+      { href: '/today', label: 'Today Briefing', icon: Clock },
+    ],
   },
   {
     section: 'Work',

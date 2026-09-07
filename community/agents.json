@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "updated_at": "2026-09-05T10:39:48.863Z",
+  "updated_at": "2026-09-07T12:32:16.697Z",
   "principle": "Declared state != observed state != attested state != verified state",
   "agents": [
     {
@@ -34,8 +34,8 @@
       "last_observed_time": "2026-09-05T11:27:23Z",
       "evidence_source": "/tmp/cc-socks/ (verified via mya who)",
       "confidence_provenance": "VERIFIED_OBSERVED",
-      "status": "AVAILABLE",
-      "last_seen": "2026-09-05T10:39:48.771Z",
+      "status": "WAKE_REQUESTED_OFFLINE",
+      "last_seen": "2026-09-07T12:32:16.340Z",
       "current_task": "TASK_LIVE_8759"
     },
     {
@@ -65,7 +65,9 @@
       "observed_liveness": "LIVE",
       "last_observed_time": "2026-09-05T11:27:23Z",
       "evidence_source": "/tmp/cc-socks/ (verified via mya who)",
-      "confidence_provenance": "VERIFIED_OBSERVED"
+      "confidence_provenance": "VERIFIED_OBSERVED",
+      "status": "WAKE_REQUESTED_OFFLINE",
+      "last_seen": "2026-09-07T12:32:16.606Z"
     },
     {
       "identity": {
@@ -99,7 +101,7 @@
       "evidence_source": "/tmp/cc-socks/ (verified via mya who & direct message)",
       "confidence_provenance": "VERIFIED_OBSERVED",
       "status": "WAKE_REQUESTED_OFFLINE",
-      "last_seen": "2026-09-05T10:39:48.863Z",
+      "last_seen": "2026-09-07T12:32:16.428Z",
       "current_task": "TASK_LIVE_8760"
     },
     {
@@ -129,7 +131,9 @@
       "observed_liveness": "OFFLINE",
       "last_observed_time": "2026-09-04T23:55:00Z",
       "evidence_source": "Multi-day commit history (28 files tracked in git)",
-      "confidence_provenance": "ATTESTED"
+      "confidence_provenance": "ATTESTED",
+      "status": "WAKE_REQUESTED_OFFLINE",
+      "last_seen": "2026-09-07T12:32:16.697Z"
     },
     {
       "identity": {
@@ -156,7 +160,9 @@
       "observed_liveness": "UNKNOWN",
       "last_observed_time": null,
       "evidence_source": "NONE (No socket, no prior commits, no message received)",
-      "confidence_provenance": "UNVERIFIED_DECLARATION"
+      "confidence_provenance": "UNVERIFIED_DECLARATION",
+      "status": "WAKE_REQUESTED_OFFLINE",
+      "last_seen": "2026-09-07T12:25:56.934Z"
     },
     {
       "identity": {
@@ -183,8 +189,9 @@
       "last_observed_time": "2026-09-05T17:20:00Z",
       "evidence_source": "Onboarding check-in registered in Thread 006, 2026-09-05_standup.md, and AGENTS_REGISTRY.md",
       "confidence_provenance": "VERIFIED_OBSERVED",
-      "status": "WORKING",
-      "current_task": "TASK_005_react_native_sdk_foundation"
+      "status": "WAKE_REQUESTED_OFFLINE",
+      "current_task": "TASK_005_react_native_sdk_foundation",
+      "last_seen": "2026-09-07T12:32:16.514Z"
     },
     {
       "identity": {
@@ -210,7 +217,9 @@
       "observed_liveness": "UNKNOWN",
       "last_observed_time": null,
       "evidence_source": "NONE (No socket, no prior commits, no message received)",
-      "confidence_provenance": "UNVERIFIED_DECLARATION"
+      "confidence_provenance": "UNVERIFIED_DECLARATION",
+      "status": "WAKE_REQUESTED_OFFLINE",
+      "last_seen": "2026-09-07T12:26:08.870Z"
     }
   ]
 }

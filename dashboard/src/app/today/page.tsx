@@ -76,69 +76,51 @@ export default function BentoTodayPage() {
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900 p-6 font-sans flex flex-col space-y-6">
-      {/* Top Header */}
-      <header className="bg-white p-4 px-6 rounded-2xl border border-slate-200/80 shadow-xs flex justify-between items-center">
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shadow-inner">
-            <Clock />
+      {/* Minimalistic Today Briefing Header */}
+      <header className="bg-white/80 backdrop-blur-xs px-5 py-3 rounded-2xl border border-slate-200/80 shadow-2xs flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center text-slate-700">
+            <Clock width={15} height={15} />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold tracking-tight text-slate-900">
-                Today&apos;s Command Briefing
-              </h1>
-              <span className="text-[10px] font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-200 font-mono">
-                {data?.date}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500">
-              Orchestrator narrative briefing, morning wakeups, and wrap-up controls
-            </p>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-sm font-semibold tracking-tight text-slate-900">
+              Today&apos;s Briefing
+            </h1>
+            <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200/60 font-mono">
+              {data?.date}
+            </span>
+            <span className="text-slate-300">/</span>
+            <span className="text-xs text-slate-400">Orchestrator narrative & team lifecycle</span>
           </div>
         </div>
 
         {/* Global Batch Controls */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2">
           <button
             onClick={() => triggerAction('wake_all')}
             disabled={processing}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-medium transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
           >
-            <Zap />
-            <span>Wake All Agents</span>
+            <Zap width={12} height={12} />
+            <span>Wake All</span>
           </button>
 
           <button
             onClick={() => triggerAction('wrap_up', { minutes: 30 })}
             disabled={processing}
-            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/80 rounded-xl text-xs font-medium transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-2xs"
           >
-            <Clock />
+            <Clock width={12} height={12} />
             <span>Wrap Up (30m)</span>
           </button>
 
           <button
             onClick={() => triggerAction('sleep_all')}
             disabled={processing}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
           >
-            <span>Pause / Sleep</span>
+            <span>Sleep</span>
           </button>
-
-          <nav className="flex items-center gap-1 pl-4 border-l border-slate-200 text-xs font-medium">
-            <Link href="/" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition">
-              Cockpit
-            </Link>
-            <Link href="/today" className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-900 font-semibold">
-              Today
-            </Link>
-            <Link href="/chat" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition">
-              Intercom
-            </Link>
-            <Link href="/human" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition">
-              Approvals
-            </Link>
-          </nav>
         </div>
       </header>
 

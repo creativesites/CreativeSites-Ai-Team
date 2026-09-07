@@ -119,34 +119,23 @@ export default function BentoChatConsole() {
 
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans">
-      {/* Top Header */}
-      <header className="bg-white px-6 py-4 border-b border-slate-200/80 flex justify-between items-center shadow-xs">
+      {/* Minimalistic Intercom Header */}
+      <header className="bg-white/80 backdrop-blur-xs px-6 py-3 border-b border-slate-200/80 flex justify-between items-center shadow-2xs">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
-            <MessageSquare />
+          <div className="w-8 h-8 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center text-slate-700">
+            <MessageSquare width={15} height={15} />
           </div>
-          <div>
-            <h1 className="text-base font-bold text-slate-900 tracking-tight">
-              Multi-Agent Intercom & Cockpit
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-sm font-semibold tracking-tight text-slate-900">
+              Intercom & Chat
             </h1>
-            <p className="text-xs text-slate-500">Persistent organizational communication substrate</p>
+            <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md border border-slate-200/60 font-mono">
+              Dual-Store
+            </span>
+            <span className="text-slate-300">/</span>
+            <span className="text-xs text-slate-400">Direct agent & thread communication</span>
           </div>
         </div>
-
-        <nav className="flex items-center gap-1 text-xs font-medium">
-          <Link href="/" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition">
-            Cockpit
-          </Link>
-          <Link href="/chat" className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-900 font-semibold">
-            Intercom
-          </Link>
-          <Link href="/human" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition">
-            Approvals
-          </Link>
-          <Link href="/phase5" className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition">
-            Learning & Memory
-          </Link>
-        </nav>
       </header>
 
       {/* Main Layout */}

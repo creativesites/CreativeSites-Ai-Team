@@ -3,6 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const { initMyaOS } = require('../src');
+const { observeAndRecord } = require('../src/liveness');
 
 const baseDir = process.env.MYAOS_BASE_DIR || (fs.existsSync(path.resolve(process.cwd(), 'community')) ? process.cwd() : path.resolve(__dirname, '..'));
 const myaos = initMyaOS({ baseDir });
@@ -130,8 +131,34 @@ async function main() {
         console.error('Usage: myaos wake <agent>');
         process.exit(1);
       }
+      const dbPath = path.resolve(baseDir, 'data/myaos.db');
+      const clean = agentName.toLowerCase().trim();
+
+      // Durable, real observation first (writes to identities+runtimes in
+      // the DB) - this is what previously never happened, so `wake` always
+      // fell back to a broken in-memory check that starts empty on every
+      // fresh CLI process and reported OFFLINE regardless of ground truth.
+      let observed = null;
+      try {
+        observed = observeAndRecord([clean], dbPath).agents[0];
+      } catch (e) {
+        console.log(`   ⚠ Durable liveness observation failed (${e.message}) - falling back to legacy check only.`);
+      }
+
+      if (observed && observed.liveness === 'LIVE') {
+        console.log(`[MyaOS] Wake result for @${agentName}: Status = ALREADY_LIVE (observed, not caused by this command)`);
+        console.log(`   └─ Evidence: ${observed.evidence}`);
+        console.log(`   └─ Note: A .wake note was still written to the inbox so the agent sees why it was pinged, but this session was already running independently of this wake call - there is currently no way to inject a message into a live IDE session from the CLI.`);
+        if (myaos.registry) { try { myaos.registry.updateAgentStatus(agentName, 'AVAILABLE'); } catch (e) {} }
+      } else if (observed) {
+        console.log(`[MyaOS] Wake result for @${agentName}: Status = OFFLINE (observed just now)`);
+        console.log(`   └─ Evidence: ${observed.evidence}`);
+      }
+
       const result = await myaos.runtime.wakeAgent(agentName, 'CLI_WAKE_COMMAND');
-      console.log(`[MyaOS] Wake result for @${result.agent || agentName}: Status = ${result.status}`);
+      if (!observed) {
+        console.log(`[MyaOS] Wake result for @${result.agent || agentName}: Status = ${result.status}`);
+      }
       if (result.reason) console.log(`   └─ Note: ${result.reason}`);
       break;
     }

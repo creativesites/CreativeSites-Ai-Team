@@ -35,10 +35,13 @@ export async function POST(request: Request) {
       exitCode = typeof e.status === 'number' ? e.status : 1;
     }
 
-    const failed = exitCode !== 0 || !/Status = AGENT_ACTIVE/.test(stdout);
+    const succeeded = exitCode === 0 && /Status = (AGENT_ACTIVE|ALREADY_LIVE)/.test(stdout);
+    const failed = !succeeded;
     const honestNote = failed
       ? 'Wake did not succeed. A .wake token may still have been written to the agent inbox in case it is opened manually later, but no live process was actually started or notified.'
-      : 'The CLI reported a runtime start/observation. This does NOT confirm the agent will do correct or complete work - only that a runtime is now running or was already running.';
+      : /ALREADY_LIVE/.test(stdout)
+      ? 'This agent was already running independently of this wake call - the command observed that, it did not cause it. There is currently no way to inject a message into a live IDE session from the CLI.'
+      : 'The CLI reported a runtime start/observation. This does NOT confirm the agent will do correct or complete work - only that a runtime is now running.';
 
     return NextResponse.json({ exitCode, stdout, stderr, failed, honestNote });
   } catch (error: any) {

@@ -1,5 +1,7 @@
 import { queryDb, runDb } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import path from 'path';
+import { execFileSync } from 'child_process';
 
 export async function GET() {
   try {
@@ -70,7 +72,31 @@ export async function POST(request: Request) {
         INSERT INTO messages (from_identity, to_identity, type, priority, subject, body, read, ts, original_file_path)
         VALUES ('Winston', 'Team', 'COORDINATION', 'urgent', 'Morning Wake All Directive', 'All agents awake: orchestrator running morning synthesis and routing active tasks.', 0, '${ts}', 'tam_db_dashboard')
       `);
-      return NextResponse.json({ success: true, message: 'All agents notified to wake and orchestrator cycle triggered.' });
+
+      // Invoke real CLI wake for core agents (Atlas, Iris, Lyra, Vela, Astra)
+      const baseDir = path.resolve(process.cwd(), '..');
+      const scriptPath = path.join(baseDir, 'bin', 'myaos.js');
+      const wakeTargets = ['atlas', 'iris', 'lyra', 'vela', 'astra'];
+      const wakeResults: Record<string, string> = {};
+
+      for (const target of wakeTargets) {
+        try {
+          const out = execFileSync(process.execPath, [scriptPath, 'wake', target], {
+            cwd: baseDir,
+            encoding: 'utf8',
+            timeout: 8000,
+          });
+          wakeResults[target] = out.includes('ALREADY_LIVE') || out.includes('AGENT_ACTIVE') ? 'LIVE' : 'DISPATCHED';
+        } catch (e: any) {
+          wakeResults[target] = 'FAILED';
+        }
+      }
+
+      return NextResponse.json({ 
+        success: true, 
+        message: 'All agents notified to wake; real process wake commands dispatched.',
+        wakeResults
+      });
     }
 
     if (action === 'wrap_up') {
