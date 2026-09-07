@@ -216,6 +216,12 @@ export default function BentoDashboard() {
               Intercom
             </Link>
             <Link
+              href="/bridge"
+              className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
+            >
+              DeployFleet Bridge
+            </Link>
+            <Link
               href="/human"
               className="px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition flex items-center gap-1"
             >
