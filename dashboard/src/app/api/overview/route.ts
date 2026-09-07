@@ -6,7 +6,7 @@ export async function GET() {
     const agents = queryDb(`SELECT * FROM identities ORDER BY joined_at ASC`);
     const tasks = queryDb(`SELECT * FROM tasks ORDER BY created_at DESC`);
     const decisions = queryDb(`SELECT * FROM human_decisions WHERE status = 'pending'`);
-    const events = queryDb(`SELECT * FROM events ORDER BY timestamp DESC LIMIT 10`);
+    const events = queryDb(`SELECT * FROM events ORDER BY ts DESC LIMIT 10`);
 
     return NextResponse.json({
       summary: {
