@@ -120,5 +120,34 @@
     "inboxPath": "community/inboxes/lyra",
     "lastSeen": "2026-09-05T17:20:00.000Z",
     "currentTask": "TASK-005"
+  },
+  {
+    "name": "Antigravity",
+    "symbol": "🔬",
+    "domain": "Automated Browser QA & Production Testing",
+    "role": "Automated QA / Browser Testing Lead",
+    "capabilities": [
+      "playwright",
+      "chromium",
+      "automated-browser-interaction",
+      "desktop-testing",
+      "mobile-emulation",
+      "screenshot-capture",
+      "console-inspection",
+      "network-inspection",
+      "http-verification",
+      "regression-testing",
+      "production-smoke-testing",
+      "e2e-user-journey-testing"
+    ],
+    "status": "AVAILABLE",
+    "runtime": "antigravity-ide",
+    "wakeCommand": "node bin/aos.js wake Antigravity",
+    "ownedRepos": [
+      "myavana-hair-journey-next"
+    ],
+    "inboxPath": "community/inboxes/antigravity",
+    "lastSeen": "2026-09-08T08:39:15.000Z",
+    "currentTask": null
   }
 ]
