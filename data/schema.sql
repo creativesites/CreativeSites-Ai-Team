@@ -441,3 +441,157 @@ CREATE INDEX IF NOT EXISTS idx_task_claims_status ON task_claims(status);
 CREATE INDEX IF NOT EXISTS idx_handoffs_from ON handoffs(from_agent);
 CREATE INDEX IF NOT EXISTS idx_handoffs_to ON handoffs(to_agent);
 CREATE INDEX IF NOT EXISTS idx_handoffs_task ON handoffs(task_id);
+
+-- ============================================================
+-- PHASE 2: MODEL ROUTING & EVENT-DRIVEN ORCHESTRATION
+-- Model registry, agent capabilities, task routing, escalation
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS model_registry (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL, -- Claude, Gemini, DeepSeek, etc.
+  model_id TEXT NOT NULL UNIQUE,
+  display_name TEXT,
+
+  -- Capabilities
+  capabilities TEXT DEFAULT '[]', -- JSON array: coding, reasoning, vision, etc.
+  context_tokens INT,
+  tool_support INTEGER DEFAULT 0,
+  computer_use INTEGER DEFAULT 0,
+  vision INTEGER DEFAULT 0,
+
+  -- Performance & cost
+  speed_tier TEXT CHECK (speed_tier IN ('fastest','fast','medium','slow','slowest')),
+  capability_tier TEXT CHECK (capability_tier IN ('cheap','mid','high','top')),
+  estimated_cost_per_mtok REAL, -- $ per million tokens
+  latency_p50_ms INT,
+  latency_p95_ms INT,
+
+  -- Availability
+  availability TEXT DEFAULT 'available' CHECK (availability IN ('available','degraded','unavailable')),
+  rate_limit_rps INT,
+
+  -- Organizational knowledge
+  best_for TEXT, -- comma-separated task types it excels at
+  avoid_for TEXT, -- comma-separated task types it struggles with
+  notes TEXT,
+
+  last_checked TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS agent_capabilities (
+  id TEXT PRIMARY KEY,
+  identity_id TEXT NOT NULL REFERENCES identities(id),
+  capability_name TEXT NOT NULL, -- coding, architecture, security, design, etc.
+  proficiency_level TEXT CHECK (proficiency_level IN ('basic','intermediate','advanced','expert')),
+  evidence_class TEXT DEFAULT 'DECLARED' CHECK (evidence_class IN ('DECLARED','ATTESTED','OBSERVED','VERIFIED')),
+  verified_by TEXT REFERENCES identities(id),
+  verified_at TEXT,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(identity_id, capability_name)
+);
+
+CREATE TABLE IF NOT EXISTS task_routing_rules (
+  id TEXT PRIMARY KEY,
+  task_type TEXT NOT NULL, -- code_generation, architecture, security_review, etc.
+  required_capabilities TEXT DEFAULT '[]', -- JSON array
+  effort_level TEXT CHECK (effort_level IN ('LOW','MEDIUM','HIGH','MAXIMUM')),
+  preferred_model_tier TEXT CHECK (preferred_model_tier IN ('cheap','mid','high','top')),
+  preferred_agents TEXT DEFAULT '[]', -- JSON array of agent IDs
+  allow_escalation INTEGER DEFAULT 1,
+  max_retries INT DEFAULT 3,
+  timeout_seconds INT,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS model_selection_history (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  task_type TEXT,
+  required_capabilities TEXT,
+  effort_level TEXT,
+  
+  -- Selection process
+  candidates TEXT, -- JSON: [{model_id, reason, cost, estimated_success}]
+  selected_model TEXT,
+  selected_reason TEXT,
+  
+  -- Outcome
+  success INTEGER, -- 1 = passed, 0 = failed
+  tokens_used INT,
+  cost_usd REAL,
+  escalated_to TEXT, -- if escalated, which model
+  
+  created_at TEXT DEFAULT (datetime('now')),
+  completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS task_events (
+  id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL CHECK (event_type IN ('task_created','task_claimed','task_started','task_blocked','task_completed','task_failed','task_escalated','verification_passed','verification_failed')),
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  
+  -- Event details
+  triggered_by TEXT, -- agent or system
+  previous_status TEXT,
+  new_status TEXT,
+  
+  -- Context
+  model_used TEXT REFERENCES model_registry(id),
+  agent_id TEXT REFERENCES identities(id),
+  reason TEXT,
+  payload TEXT, -- JSON: additional context
+  
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS model_performance (
+  id TEXT PRIMARY KEY,
+  model_id TEXT NOT NULL REFERENCES model_registry(id),
+  task_type TEXT,
+  
+  -- Metrics
+  attempts INT DEFAULT 0,
+  successes INT DEFAULT 0,
+  failures INT DEFAULT 0,
+  escalations INT DEFAULT 0,
+  avg_tokens_per_task INT,
+  avg_cost_per_task REAL,
+  avg_latency_ms INT,
+  
+  -- Historical
+  last_used TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  
+  UNIQUE(model_id, task_type)
+);
+
+CREATE TABLE IF NOT EXISTS escalation_chains (
+  id TEXT PRIMARY KEY,
+  task_type TEXT NOT NULL,
+  step INT NOT NULL, -- 1, 2, 3, etc.
+  model_id TEXT NOT NULL REFERENCES model_registry(id),
+  max_attempts INT DEFAULT 1,
+  reason TEXT, -- why escalate to this model
+  PRIMARY KEY (task_type, step)
+);
+
+-- Indexes for Phase 2
+CREATE INDEX IF NOT EXISTS idx_model_registry_provider ON model_registry(provider);
+CREATE INDEX IF NOT EXISTS idx_model_registry_availability ON model_registry(availability);
+CREATE INDEX IF NOT EXISTS idx_model_registry_capability_tier ON model_registry(capability_tier);
+CREATE INDEX IF NOT EXISTS idx_agent_capabilities_identity ON agent_capabilities(identity_id);
+CREATE INDEX IF NOT EXISTS idx_agent_capabilities_proficiency ON agent_capabilities(proficiency_level);
+CREATE INDEX IF NOT EXISTS idx_task_routing_type ON task_routing_rules(task_type);
+CREATE INDEX IF NOT EXISTS idx_model_selection_task ON model_selection_history(task_id);
+CREATE INDEX IF NOT EXISTS idx_model_selection_model ON model_selection_history(selected_model);
+CREATE INDEX IF NOT EXISTS idx_task_events_type ON task_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_events_model ON task_events(model_used);
+CREATE INDEX IF NOT EXISTS idx_model_performance_model ON model_performance(model_id);
+CREATE INDEX IF NOT EXISTS idx_model_performance_type ON model_performance(task_type);
