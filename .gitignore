@@ -3,3 +3,10 @@ node_modules/
 tmp_*
 data/handshakes/
 data/artifacts/
+.env
+.env.*
+!.env.example
+community/secrets/
+data/myaos.db-shm
+data/myaos.db-wal
+data/*.bak-*
