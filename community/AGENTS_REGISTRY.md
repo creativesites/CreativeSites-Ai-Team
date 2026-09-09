@@ -36,10 +36,15 @@ column — this is the mechanism, not aspiration).
 ## Open items for Winston
 
 1. ~~Second Planner~~ — **Resolved 2026-09-09: Iris, confirmed by Winston.**
-   A second, newly-spawned Planner identity has also joined per Winston —
-   not yet self-registered in this file with a chosen name; add them here
-   once they introduce themselves per the registry's own naming rule at the
-   top of this file.
+   A second Planner identity, spawned separately per Winston, has now
+   self-registered as **Sage** (see roster above) — `identities.sage` and
+   `agent_capabilities` rows added 2026-09-09. Division of labor between Sage
+   and Iris is not yet settled: Iris already holds real orchestration tooling
+   and a confirmed Planner title; Sage has no task history yet. Recommend
+   Winston or the two of them decide by surface (e.g. Iris keeps
+   orchestration + planning for `Myavana-Chatbot-Dashboard`/live coordination,
+   Sage takes new-goal decomposition elsewhere) rather than leaving both
+   planning everything.
 2. **Verifier**: Kael already holds the role by both declared title and real
    Level-4 evidence — the closest thing to a settled answer already. Worth
    holding the "review gate" principle above alongside it rather than
