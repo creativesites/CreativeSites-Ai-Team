@@ -307,27 +307,45 @@ having enough real volume for a rate to mean something.
   `supportedGenerationMethods`/description, not independently exercised
   (no image/audio/computer-use call was actually made).
 
-## NOT IMPLEMENTED
+## NOT IMPLEMENTED (as of Phase A only — SUPERSEDED, see below)
 
-Everything past the provider adapter. Explicitly, not implied:
+> **This section is stale and was left uncorrected after Phases B-J were
+> added later in this same document — a real documentation bug, caught by
+> Atlas reading this section faithfully and correctly, then flagging that it
+> contradicted the later PHASE B-J sections he'd also checked. Not his
+> error. Kept below struck through rather than deleted, so the mistake and
+> its correction are both visible - deleting it would repeat exactly the
+> "erase instead of correct" problem flagged earlier tonight with Gemini
+> CLI's evidence deletion.**
 
-- No provider-agnostic `IntelligenceService`/adapter interface — only the
-  one real Gemini adapter exists. No `AnthropicAdapter` (Claude execution
-  today is the Claude Code session itself, not an API call this repo makes).
-- No model router, no capability matching, no escalation execution (the
-  `escalation_chains` table has real *data*; nothing reads it and acts yet).
-- No context manager / context tiers / context caching.
+~~Everything past the provider adapter. Explicitly, not implied:~~
+~~- No provider-agnostic `IntelligenceService`/adapter interface~~ → **built, Phase C**
+~~- No model router, no capability matching, no escalation execution~~ → **built, Phases B/D**
+~~- No context manager / context tiers / context caching~~ → **built, Phase E**
+~~- No token budget enforcement, no token telemetry~~ → **built, Phase F**
+~~- No dashboard Intelligence section~~ → **built, Phase I (`/intelligence`)**
+~~- No event bus wiring~~ → still true, see the real current list below.
+
+## NOT IMPLEMENTED (current, accurate as of Phase J)
+
 - No streaming support.
 - No structured-output / schema-validated generation.
-- No token budget enforcement, no token telemetry populated automatically
-  (the `attempt_log` table exists; nothing writes to it yet).
-- No event bus wiring — `event_bus`/`task_events` tables exist; nothing
-  emits to them from real execution.
-- No dashboard Intelligence section.
-- No Planner/Orchestrator/Verifier code integration with any of the above —
-  `community/PLANNER_AGENT_PROMPT.md` and `VERIFIER_AGENT_PROMPT.md` (from
-  the previous pass) are prompts for human-spawned Claude Code sessions,
-  not automated dispatch.
+- No `event_bus`/`task_events` emission from real execution — the tables
+  exist, `model_selection_history`/`attempt_log`/`escalation_decisions` are
+  populated for real (a more specific, already-working form of the same
+  idea), but the generic event bus itself is not wired.
+- No retry strategy differentiated by failure classification beyond
+  "escalate to the next chain step" — `geminiAdapter.classifyError()`
+  produces real categories (`AUTH_FAILURE`/`RATE_LIMIT`/etc.) but nothing
+  branches on them differently yet.
+- No Planner/Orchestrator/Verifier *code* integration —
+  `PLANNER_AGENT_PROMPT.md`/`VERIFIER_AGENT_PROMPT.md` are prompts for
+  human-spawned Claude Code sessions, not automated dispatch. This is
+  explicitly Winston's own piece (Phase H), not deferred by omission.
+- No context caching (Phase E has tiers and relevance-matching; caching
+  identical/near-identical context across calls is not built).
+- Learning loop aggregation is real (Phase J) but deliberately not wired
+  into routing decisions — see Phase J's own section for why.
 - No retry/backoff logic beyond the error classification function itself.
 - No tests beyond the three manual verification calls shown above (no test
   file, no CI).
