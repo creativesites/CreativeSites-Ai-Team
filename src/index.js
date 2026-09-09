@@ -24,7 +24,7 @@ function initMyaOS(options = {}) {
   const runtime = new RuntimeController(registry, inboxes, eventBus, { baseDir, sockDir: options.sockDir, provenance });
   const verifier = new VerificationEngine(taskManager, eventBus, { provenance });
   const doctor = new MyaDoctor({ registry, taskManager, inboxManager: inboxes, eventBus, runtime, baseDir });
-  const orchestrator = new Orchestrator({ registry, taskManager, inboxManager: inboxes, runtime, eventBus });
+  const orchestrator = new Orchestrator({ registry, taskManager, inboxManager: inboxes, runtime, eventBus, baseDir });
   const proofBundle = new ProofBundleEngine(baseDir);
   const testRecorder = new TestVerificationRecorder(baseDir);
 

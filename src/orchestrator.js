@@ -1,10 +1,14 @@
+const path = require('path');
+const { observeAndRecord } = require('./liveness');
+
 class Orchestrator {
-  constructor({ registry, taskManager, inboxManager, runtime, eventBus }) {
+  constructor({ registry, taskManager, inboxManager, runtime, eventBus, baseDir }) {
     this.registry = registry;
     this.taskManager = taskManager;
     this.inboxManager = inboxManager;
     this.runtime = runtime;
     this.eventBus = eventBus;
+    this.baseDir = baseDir || path.resolve(__dirname, '..');
     this.setupEventHandlers();
   }
 
@@ -114,40 +118,73 @@ class Orchestrator {
     let responseText = '';
 
     // 1. Check for wake commands: e.g. "wake atlas", "wake all", "wake up iris"
+    // Uses the durable liveness observer (src/liveness.js) so this reports what
+    // is actually true right now, not a blanket success claim regardless of
+    // outcome - a prior version of this said "I have initiated wake sequences"
+    // even when every single wake attempt failed underneath.
     if (lower.includes('wake')) {
-      if (lower.includes('all')) {
-        const targets = ['atlas', 'iris', 'lyra', 'vela', 'astra'];
-        for (const target of targets) {
-          try {
-            if (this.runtime) await this.runtime.wakeAgent(target, 'ORCHESTRATOR_DISPATCH');
-            actionsTaken.push(`Triggered wake sequence for @${target}`);
-          } catch (err) {
-            actionsTaken.push(`Wake notice logged for @${target}`);
+      const dbPath = path.resolve(this.baseDir, 'data/myaos.db');
+      const targets = lower.includes('all')
+        ? ['atlas', 'iris', 'lyra', 'vela', 'astra']
+        : ['atlas', 'iris', 'lyra', 'vela', 'astra', 'kael', 'nexus', 'meridian'].filter(a => lower.includes(a));
+
+      if (targets.length) {
+        let observation = { agents: [] };
+        try {
+          observation = observeAndRecord(targets, dbPath);
+        } catch (e) {
+          actionsTaken.push(`Liveness observation failed: ${e.message}`);
+        }
+
+        const live = observation.agents.filter(a => a.liveness === 'LIVE');
+        const offline = observation.agents.filter(a => a.liveness === 'OFFLINE');
+        const unknown = observation.agents.filter(a => a.liveness === 'UNKNOWN');
+
+        for (const a of observation.agents) actionsTaken.push(`@${a.id}: ${a.liveness} - ${a.evidence}`);
+
+        // Still leave a durable note in each target's inbox so a human opening
+        // that IDE later sees why it was pinged - this is real (a file write),
+        // it just isn't the same thing as actually waking anyone.
+        if (this.runtime) {
+          for (const target of targets) {
+            try { await this.runtime.wakeAgent(target, 'ORCHESTRATOR_DISPATCH'); } catch (e) {}
           }
         }
-        responseText = `Understood, Winston. I have initiated wake sequences for all core team agents (@atlas, @iris, @lyra, @vela, @astra).\n\nActive tasks are being inspected for readiness and dependency satisfaction.`;
-      } else {
-        const knownAgents = ['atlas', 'iris', 'lyra', 'vela', 'astra', 'kael', 'nexus', 'meridian'];
-        const matched = knownAgents.find(a => lower.includes(a));
-        if (matched) {
-          try {
-            if (this.runtime) await this.runtime.wakeAgent(matched, 'ORCHESTRATOR_DISPATCH');
-            actionsTaken.push(`Triggered wake sequence for @${matched}`);
-          } catch (e) {
-            actionsTaken.push(`Wake signal registered for @${matched}`);
-          }
-          responseText = `I have dispatched a wake directive for **@${matched}**. The agent will inspect its inbox and active tasks upon session engagement.`;
-        }
+
+        const lines = [];
+        if (live.length) lines.push(`**Already live** (confirmed via socket, not caused by this request): ${live.map(a => '@' + a.id).join(', ')}.`);
+        if (offline.length) lines.push(`**Offline** - no live session found, a wake note was left in their inbox for when they're opened manually: ${offline.map(a => '@' + a.id).join(', ')}.`);
+        if (unknown.length) lines.push(`**Unknown** - cannot be observed by this method (ephemeral headless workers or ambiguous shared runtime): ${unknown.map(a => '@' + a.id).join(', ')}.`);
+        responseText = lines.join('\n') || 'No matching agents found for that wake request.';
       }
     }
 
     // 2. Check for wrap-up or sleep commands: e.g. "wrap up", "sleep", "pause"
-    if (lower.includes('wrap up') || lower.includes('meeting in')) {
-      actionsTaken.push('Broadcasted wrap-up meeting notice');
-      responseText = `Noted. I have broadcasted a 30-minute wrap-up notice to all agents to finalize in-progress commits, persist task states to SQLite, and stand by for your meeting.`;
-    } else if (lower.includes('sleep') || lower.includes('stand down')) {
-      actionsTaken.push('Broadcasted stand-down directive');
-      responseText = `Team stand-down initiated. All agent states are securely checkpointed in the MyaOS database.`;
+    // Writes a real inbox note to every known agent and reports exactly that -
+    // it does NOT claim tasks were checkpointed or sessions stood down, since
+    // nothing here can actually verify either of those happened.
+    if (lower.includes('wrap up') || lower.includes('meeting in') || lower.includes('sleep') || lower.includes('stand down')) {
+      const isWrapUp = lower.includes('wrap up') || lower.includes('meeting in');
+      const subject = isWrapUp ? 'Wrap-up requested' : 'Stand-down requested';
+      const body = isWrapUp
+        ? `Winston has asked the team to wrap up (meeting incoming). Please finish or commit your current work and note your status in the DB before stopping.`
+        : `Winston has asked the team to stand down. Please note your current status before stopping - this note does not verify anything was actually saved.`;
+
+      const notified = [];
+      const failed = [];
+      const targets = ['atlas', 'iris', 'lyra', 'vela', 'astra', 'kael', 'nexus', 'meridian'];
+      for (const target of targets) {
+        try {
+          if (this.inboxManager) {
+            this.inboxManager.send({ from: 'Orchestrator', to: target, type: 'COORDINATION', subject, body, priority: 'HIGH' });
+            notified.push(target);
+          }
+        } catch (e) {
+          failed.push(target);
+        }
+      }
+      actionsTaken.push(`Wrote ${subject.toLowerCase()} note to ${notified.length} inboxes${failed.length ? `, failed for ${failed.join(', ')}` : ''}`);
+      responseText = `I've written a ${isWrapUp ? 'wrap-up' : 'stand-down'} note to ${notified.length} agent inbox(es): ${notified.map(a => '@' + a).join(', ')}.\n\nThis is a durable note, not a live interruption - I have no way to confirm any of them have actually seen it, saved work, or stopped, since none of them have a continuously-running session I can verify against right now. Check the Agents page for real liveness before assuming anyone has responded.`;
     }
 
     // 3. Check for task queries: "what are we doing", "status", "priority", "tasks"

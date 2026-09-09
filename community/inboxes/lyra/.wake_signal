@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-07T12:32:16.514Z",
+  "timestamp": "2026-09-07T19:26:59.208Z",
   "reason": "CLI_WAKE_COMMAND",
   "target_agent": "Lyra",
   "payload": {}

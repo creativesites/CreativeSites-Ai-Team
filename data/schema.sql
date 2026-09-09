@@ -340,6 +340,80 @@ CREATE TABLE IF NOT EXISTS migration_log (
   migrated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ============================================================
+-- PHASE 1: ORGANIZATIONAL KNOWLEDGE LAYER
+-- Facts, Claims, Handoffs — verified organizational knowledge
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS facts (
+  id TEXT PRIMARY KEY,
+  claim TEXT NOT NULL,
+  category TEXT, -- architecture, codebase, deployment, protocol, etc.
+  repository TEXT, -- which repo (myavana-hair-journey-next, Myavana-Chatbot, etc.)
+  file_path VARCHAR(500), -- optional, for file-specific facts
+  line_range VARCHAR(20), -- optional, e.g. "42-58"
+
+  -- Verification
+  evidence_class TEXT DEFAULT 'OBSERVED' CHECK (evidence_class IN ('DECLARED','ATTESTED','OBSERVED','VERIFIED','UNKNOWN')),
+  evidence TEXT, -- the command/result that supports the claim
+  verification_command VARCHAR(500), -- the command to re-verify
+
+  verified_by TEXT REFERENCES identities(id),
+  verified_at TEXT NOT NULL,
+
+  -- Freshness
+  freshness_days INT DEFAULT 7,
+  status TEXT DEFAULT 'active' CHECK (status IN ('active','stale','contradicted','superseded')),
+  expires_at TEXT,
+
+  -- Relations
+  related_facts TEXT DEFAULT '[]', -- JSON array of fact IDs
+  related_task_id TEXT REFERENCES tasks(id),
+  tags TEXT DEFAULT '[]', -- JSON array of tags
+
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS task_claims (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+
+  claim TEXT NOT NULL,
+  acceptance_criteria TEXT DEFAULT '[]', -- JSON array
+
+  status TEXT DEFAULT 'unverified' CHECK (status IN ('unverified','verified','failed','superseded')),
+  evidence_id INTEGER REFERENCES evidence(id),
+
+  verified_by TEXT REFERENCES identities(id),
+  verified_at TEXT,
+
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS handoffs (
+  id TEXT PRIMARY KEY,
+
+  from_agent TEXT NOT NULL REFERENCES identities(id),
+  to_agent TEXT NOT NULL REFERENCES identities(id),
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+
+  -- What changed
+  files_changed TEXT DEFAULT '[]', -- JSON array
+  claim_ids TEXT DEFAULT '[]', -- JSON array of task_claims IDs
+  fact_ids TEXT DEFAULT '[]', -- JSON array of fact IDs
+
+  -- Context for recipient
+  known_limitations TEXT,
+  next_steps TEXT,
+
+  status TEXT DEFAULT 'ready' CHECK (status IN ('ready','received','in_progress','complete')),
+  received_at TEXT,
+
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);
@@ -358,3 +432,12 @@ CREATE INDEX IF NOT EXISTS idx_automation_metrics_type ON automation_metrics(met
 CREATE INDEX IF NOT EXISTS idx_identities_team ON identities(team_id);
 CREATE INDEX IF NOT EXISTS idx_runtimes_identity ON runtimes(identity_id);
 CREATE INDEX IF NOT EXISTS idx_standups_date ON standups(standup_date);
+CREATE INDEX IF NOT EXISTS idx_facts_status ON facts(status);
+CREATE INDEX IF NOT EXISTS idx_facts_category ON facts(category);
+CREATE INDEX IF NOT EXISTS idx_facts_repository ON facts(repository);
+CREATE INDEX IF NOT EXISTS idx_facts_expires ON facts(expires_at);
+CREATE INDEX IF NOT EXISTS idx_task_claims_task ON task_claims(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_claims_status ON task_claims(status);
+CREATE INDEX IF NOT EXISTS idx_handoffs_from ON handoffs(from_agent);
+CREATE INDEX IF NOT EXISTS idx_handoffs_to ON handoffs(to_agent);
+CREATE INDEX IF NOT EXISTS idx_handoffs_task ON handoffs(task_id);

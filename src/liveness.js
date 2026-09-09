@@ -93,12 +93,22 @@ function observeLiveness(identityIds, options = {}) {
     return { id, liveness: 'OFFLINE', evidence: `No live socket with cwd exactly ".../${hint}" found at time of check.`, pid: null };
   });
 
-  const pidCounts = new Map();
-  for (const r of firstPass) if (r.pid) pidCounts.set(r.pid, (pidCounts.get(r.pid) || 0) + 1);
+  // Collision check must be against ALL known identities sharing a hint, not
+  // just whichever subset was passed to this call - `mya wake atlas` and
+  // `mya wake astra` are two separate one-agent calls (Atlas and Astra share
+  // the same cwd hint), and each call in isolation would otherwise never see
+  // the other and would both confidently claim the same live socket as LIVE.
+  const hintSharedBy = new Map(); // hint -> [ids using it]
+  for (const [id, hint] of Object.entries(IDE_CWD_HINTS)) {
+    if (!hintSharedBy.has(hint)) hintSharedBy.set(hint, []);
+    hintSharedBy.get(hint).push(id);
+  }
 
   const agents = firstPass.map((r) => {
-    if (r.pid && pidCounts.get(r.pid) > 1) {
-      return { ...r, liveness: 'UNKNOWN', evidence: `PID ${r.pid} is live in the expected directory, but ${pidCounts.get(r.pid)} identities share that cwd with no way to tell which one this session is.` };
+    const hint = IDE_CWD_HINTS[r.id];
+    const sharedWith = hint ? (hintSharedBy.get(hint) || []).filter((id) => id !== r.id) : [];
+    if (r.liveness === 'LIVE' && sharedWith.length > 0) {
+      return { ...r, liveness: 'UNKNOWN', evidence: `PID ${r.pid} is live in the expected directory, but ${sharedWith.join(', ')} share that same expected cwd with no way to tell which one this session actually is.` };
     }
     return r;
   });

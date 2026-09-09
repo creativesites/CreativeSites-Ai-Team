@@ -151,7 +151,7 @@ async function main() {
         console.log(`   └─ Note: A .wake note was still written to the inbox so the agent sees why it was pinged, but this session was already running independently of this wake call - there is currently no way to inject a message into a live IDE session from the CLI.`);
         if (myaos.registry) { try { myaos.registry.updateAgentStatus(agentName, 'AVAILABLE'); } catch (e) {} }
       } else if (observed) {
-        console.log(`[MyaOS] Wake result for @${agentName}: Status = OFFLINE (observed just now)`);
+        console.log(`[MyaOS] Wake result for @${agentName}: Status = ${observed.liveness} (observed just now)`);
         console.log(`   └─ Evidence: ${observed.evidence}`);
       }
 

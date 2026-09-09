@@ -86,44 +86,75 @@ export async function POST(request: Request) {
             encoding: 'utf8',
             timeout: 8000,
           });
-          wakeResults[target] = out.includes('ALREADY_LIVE') || out.includes('AGENT_ACTIVE') ? 'LIVE' : 'DISPATCHED';
+          // Read the real per-agent liveness word the CLI printed
+          // ("Status = LIVE/OFFLINE/UNKNOWN/ALREADY_LIVE") instead of
+          // collapsing everything non-live into one bucket - UNKNOWN
+          // (e.g. Atlas/Astra sharing one cwd, so neither can be told
+          // apart) is not the same claim as OFFLINE.
+          const statusMatch = out.match(/Status = (\w+)/);
+          const word = statusMatch ? statusMatch[1] : 'UNKNOWN';
+          wakeResults[target] = word === 'ALREADY_LIVE' ? 'LIVE' : word === 'AGENT_ACTIVE' ? 'LIVE' : word;
         } catch (e: any) {
           wakeResults[target] = 'FAILED';
         }
       }
 
-      return NextResponse.json({ 
-        success: true, 
-        message: 'All agents notified to wake; real process wake commands dispatched.',
+      const live = Object.entries(wakeResults).filter(([, v]) => v === 'LIVE').map(([k]) => k);
+      const offline = Object.entries(wakeResults).filter(([, v]) => v === 'OFFLINE').map(([k]) => k);
+      const unknown = Object.entries(wakeResults).filter(([, v]) => v === 'UNKNOWN').map(([k]) => k);
+      const failed = Object.entries(wakeResults).filter(([, v]) => v === 'FAILED').map(([k]) => k);
+      const message = [
+        live.length ? `Already live: ${live.join(', ')}.` : null,
+        offline.length ? `Offline - wake note left for when opened manually: ${offline.join(', ')}.` : null,
+        unknown.length ? `Unknown - cannot be distinguished from another identity sharing the same session, or no tracking exists: ${unknown.join(', ')}.` : null,
+        failed.length ? `Wake command itself failed to run for: ${failed.join(', ')}.` : null,
+      ].filter(Boolean).join(' ') || 'No agents matched.';
+
+      return NextResponse.json({
+        success: true,
+        message,
         wakeResults
       });
     }
 
-    if (action === 'wrap_up') {
+    // wrap_up/sleep_all write a real inbox note to every known agent (same
+    // mechanism src/orchestrator.js uses) instead of a single DB-only row
+    // addressed to a "Team" identity nothing actually reads. The response
+    // says exactly that a note was written - not that anyone saw it, saved
+    // work, or stopped, since none of that can be verified from here.
+    if (action === 'wrap_up' || action === 'sleep_all') {
       const { minutes = 30 } = body;
+      const isWrapUp = action === 'wrap_up';
       const ts = new Date().toISOString();
-      runDb(`
-        INSERT INTO events (type, sender, payload, ts)
-        VALUES ('orchestrator.wrap_up', 'Winston', '{"minutes":${minutes}}', '${ts}')
-      `);
-      runDb(`
-        INSERT INTO messages (from_identity, to_identity, type, priority, subject, body, read, ts, original_file_path)
-        VALUES ('Winston', 'Team', 'COORDINATION', 'high', 'Wrap Up Directive', 'Team notice: Please wrap up in-progress commits and document task state. Winston has a meeting in ${minutes} minutes.', 0, '${ts}', 'tam_db_dashboard')
-      `);
-      return NextResponse.json({ success: true, message: `Wrap-up broadcast sent: Meeting in ${minutes} minutes.` });
-    }
+      const subject = isWrapUp ? 'Wrap-up requested' : 'Stand-down requested';
+      const bodyText = isWrapUp
+        ? `Winston has a meeting in ${minutes} minutes. Please finish or commit your current work and note your status.`
+        : `Winston has asked the team to stand down for the day. Please note your current status before stopping.`;
 
-    if (action === 'sleep_all') {
-      const ts = new Date().toISOString();
       runDb(`
         INSERT INTO events (type, sender, payload, ts)
-        VALUES ('orchestrator.sleep_all', 'Winston', '{"action":"sleep_all_agents"}', '${ts}')
+        VALUES ('orchestrator.${action}', 'Winston', '${JSON.stringify({ minutes: isWrapUp ? minutes : undefined }).replace(/'/g, "''")}', '${ts}')
       `);
-      runDb(`
-        INSERT INTO messages (from_identity, to_identity, type, priority, subject, body, read, ts, original_file_path)
-        VALUES ('Winston', 'Team', 'COORDINATION', 'normal', 'Team Sleep Directive', 'Stand down for the day. State preserved in TAM database.', 0, '${ts}', 'tam_db_dashboard')
-      `);
-      return NextResponse.json({ success: true, message: 'Sleep broadcast sent. All agents standing down.' });
+
+      const targets = ['atlas', 'iris', 'lyra', 'vela', 'astra', 'kael', 'nexus', 'meridian'];
+      const notified: string[] = [];
+      const fs = require('fs');
+      const baseDir = path.resolve(process.cwd(), '..');
+      for (const target of targets) {
+        try {
+          const dir = path.join(baseDir, 'community', 'inboxes', target);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          const filename = `${ts.replace(/[:.]/g, '-')}_${subject.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.md`;
+          fs.writeFileSync(path.join(dir, filename), `# Message from Orchestrator\n\n**Type**: COORDINATION\n**Timestamp**: ${ts}\n**Subject**: ${subject}\n\n${bodyText}\n`);
+          notified.push(target);
+        } catch (e) {}
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `${subject} note written to ${notified.length} agent inbox(es): ${notified.join(', ')}. This does not confirm anyone has seen it, saved work, or stopped - check the Agents page for real liveness.`,
+        notified,
+      });
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
