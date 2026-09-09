@@ -193,6 +193,109 @@ arguably behave differently; today both just escalate the same way), and
 no learning loop reading `model_performance` to influence future routing —
 that table exists and nothing writes to it yet.
 
+## PHASE G — orchestrator integration (2026-09-09, later same session)
+
+**Real, important finding first**: `src/orchestrator.js`'s event handlers
+listen to a *different*, legacy task store (`community/tasks.json` via
+`TaskManager`/`EventBus`) than the SQLite `tasks` table this entire
+Intelligence Layer is built against. Checked directly: `TASK-QA-001` exists
+in the JSON store but not (yet) in SQLite - the two are not reliably synced.
+Reconciling them is a real, separate project. Rather than paper over that
+with a fragile dual-write, **Phase G is built SQLite-native** and states
+this limitation plainly: it does not hook into the legacy JSON event system.
+
+**`src/intelligence/orchestratorIntegration.js`** —
+`attemptAutomaticExecution(taskId)`: reads a real SQLite task, maps its
+`required_capabilities` to a real, narrow set of task types that actually
+have an executable path (`large-context`/`summarization` → Gemini; nothing
+else maps to anything, on purpose — most real work in this org needs a
+human-spawned session, and pretending otherwise would be dishonest). If it
+executes successfully, records real `evidence` (class `OBSERVED`, matching
+this org's own Planner/Verifier distinction — technical pass moves the task
+to `in_review`, not `done`) and updates task status for real.
+
+Tested three real cases: a `large-context` task executed automatically
+(evidence row inserted, status → `in_review`); a `coding`/`architecture`
+task correctly refused automatic execution and was left untouched
+(`status` stayed `open`); a nonexistent task ID returned `TASK_NOT_FOUND`.
+
+## PHASE F — token telemetry (2026-09-09, later same session)
+
+**`src/intelligence/tokenTelemetry.js`** — `getUsageSummary()` aggregates
+real `attempt_log` data by model (attempts, successes, real token sums, avg
+latency). Cost is reported as the string `'UNKNOWN - no verified pricing
+exists'` in every row, not a number — consistent with Phase A's finding that
+no real pricing was ever obtained. `checkBudget(taskId, budget)` compares a
+task's real summed token usage against caller-supplied thresholds. Tested
+against a real execution: correctly reported real totals, correctly flagged
+`WITHIN_EXPECTED` against a generous budget and `HARD_LIMIT_EXCEEDED`
+against a deliberately tiny one using the *same* real usage number.
+
+## PHASE E — context manager (2026-09-09, later same session)
+
+**`src/intelligence/contextManager.js`** — `buildContextPackage(taskId,
+tier)`, tiers 0-3, strictly additive. Tier 2's `findRelevantFacts()` does
+real keyword/tag overlap matching against the live `facts` table (explicitly
+NOT semantic search - no embedding model exists anywhere in this system, so
+claiming "semantic relevance" would be fabricated). Tested with a real task
+titled around "BlockType protocol duplication": correctly surfaced the two
+real, actually-relevant facts about that exact issue, correctly ranked by
+match strength, and correctly did *not* surface an unrelated fact (about a
+missing hairstyle field) that shares no keywords. Tier 3 (organizational
+policies/lessons) honestly reports `available: false` — no such populated
+store exists yet, stated rather than silently returning an empty array that
+would look like "checked, found nothing."
+
+## PHASE I — dashboard (2026-09-09, later same session)
+
+**`dashboard/src/app/api/intelligence/route.ts`** + **`/intelligence`
+page**, added to the sidebar. Live queries only - models, availability,
+recent routing decisions with their real recorded reason, recent
+escalations, and token usage. Cost is rendered as `UNKNOWN`, not blank or
+zero. Verified against the actual running dashboard (port 47821, both the
+API and the page return 200 with real data).
+
+## PHASE J — learning loop (2026-09-09, later same session)
+
+**Found and fixed a real integration gap while building this**:
+`escalationRouter` (Phase D) never wrote to `model_selection_history` -
+only `intelligenceService.route()` (Phase C) did. The two code paths for
+recording "why a model was chosen" were silently inconsistent since Phase D
+was built. Caught because `learningLoop`'s join returned zero rows on real
+data that should have produced results - didn't paper over the zero, traced
+it to the actual cause and fixed the earlier phase's file.
+
+**`src/intelligence/learningLoop.js`** — `recomputeModelPerformance()`
+aggregates real `attempt_log` + `model_selection_history` (joined on
+task_id to recover task_type) into `model_performance`, idempotently (upsert,
+not append). `getHistoricalSuccessRate(modelId, taskType)` returns a rate
+**with its sample size**, and an explicit `confidence` field
+(`NO_DATA`/`LOW_SAMPLE_SIZE`/`SUFFICIENT_SAMPLE`, threshold n=5, stated not
+hidden) - a rate without a sample size is not information.
+
+**Deliberate scope boundary, not a gap I missed**: this does not feed back
+into routing decisions yet. Reordering a deterministic escalation chain
+based on a handful of manual test calls (n=2 in this session's real data)
+would be manufacturing statistical confidence that doesn't exist - that's
+exactly the class of fabrication this whole effort exists to prevent. The
+aggregation is real and tested; acting on it is correctly gated behind
+having enough real volume for a rate to mean something.
+
+## All phases A-J: summary
+
+| Phase | Real | Tested | Notes |
+|---|---|---|---|
+| A - Provider foundation | ✅ | ✅ | Gemini only; no Claude/DeepSeek/OpenAI API |
+| B - Model registry | ✅ | ✅ | Live health check for Gemini; honest UNKNOWN for session-based runtimes |
+| C - IntelligenceService | ✅ | ✅ | Real execute-or-honest-handback |
+| D - Escalation router | ✅ | ✅ | 2 real bugs caught by forcing failure, not trusting the code |
+| E - Context manager | ✅ | ✅ | Keyword matching, not semantic search |
+| F - Token telemetry | ✅ | ✅ | Cost always UNKNOWN, never estimated |
+| G - Orchestrator integration | ✅ | ✅ | SQLite-native only; legacy JSON task store NOT wired in (stated limitation) |
+| H - Planner/Verifier integration | Deferred to Winston | — | Prompts exist (community/*_AGENT_PROMPT.md); wiring them to this code is his own task |
+| I - Dashboard | ✅ | ✅ | `/intelligence`, live data only |
+| J - Learning loop | ✅ | ✅ | Aggregation real; NOT wired into routing decisions (deliberate, stated why) |
+
 ## CONFIGURED BUT UNVERIFIED
 
 - Rate limits, quota ceiling, and any real per-token pricing for the Gemini

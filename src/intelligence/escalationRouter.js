@@ -52,6 +52,19 @@ async function executeWithEscalation(task) {
     return { ok: false, reason: 'NO_ESCALATION_CHAIN_DEFINED', taskType: task.taskType, attempts: [] };
   }
 
+  // Record the routing decision up front (Section 31: explainable routing).
+  // This was missing entirely until caught by learningLoop's join returning
+  // zero rows - escalationRouter attempted real executions and logged them
+  // to attempt_log/escalation_decisions, but never recorded the "why" to
+  // model_selection_history the way intelligenceService.route() does,
+  // leaving the two Phase C/D code paths silently inconsistent.
+  const selectionId = `sel-esc-${crypto.randomBytes(6).toString('hex')}`;
+  runDb(`INSERT INTO model_selection_history
+    (id, task_id, task_type, candidates, selected_model, selected_reason, created_at)
+    VALUES (${escape(selectionId)}, ${escape(task.taskId)}, ${escape(task.taskType)},
+      ${escape(JSON.stringify(chain.map((c) => ({ model_id: c.model_id, step: c.step }))))},
+      ${escape(chain[0].model_id)}, ${escape('Escalation chain start: ' + chain[0].reason)}, ${escape(new Date().toISOString())})`);
+
   const attempts = [];
   // attempt_number must be unique per task_id across the task's WHOLE
   // history (schema: UNIQUE(task_id, attempt_number)), not per invocation
@@ -89,6 +102,11 @@ async function executeWithEscalation(task) {
       attempts.push({ step: step.step, modelId: step.model_id, outcome: result.ok ? 'SUCCESS' : 'FAILED', errorClass: result.ok ? null : result.errorClass, result: result.ok ? result : null });
 
       if (result.ok) {
+        runDb(`UPDATE model_selection_history SET
+            selected_model = ${escape(step.model_id)}, success = 1,
+            tokens_used = ${escape(result.usage?.totalTokens)}, completed_at = ${escape(new Date().toISOString())},
+            escalated_to = ${previousModelId ? escape(step.model_id) : 'NULL'}
+          WHERE id = ${escape(selectionId)}`);
         return { ok: true, finalModel: step.model_id, escalated: attemptNumber > 1, attempts, result };
       }
 
@@ -107,6 +125,10 @@ async function executeWithEscalation(task) {
     if (step.provider === 'Claude') {
       // No API path. This correctly ends automated escalation.
       attempts.push({ step: step.step, modelId: step.model_id, outcome: 'HAND_TO_CURRENT_SESSION' });
+      runDb(`UPDATE model_selection_history SET
+          selected_model = ${escape(step.model_id)}, success = 0, completed_at = ${escape(new Date().toISOString())},
+          escalated_to = ${escape(step.model_id)}
+        WHERE id = ${escape(selectionId)}`);
       return {
         ok: false,
         finalModel: step.model_id,
@@ -119,6 +141,7 @@ async function executeWithEscalation(task) {
     attempts.push({ step: step.step, modelId: step.model_id, outcome: 'UNSUPPORTED_PROVIDER' });
   }
 
+  runDb(`UPDATE model_selection_history SET success = 0, completed_at = ${escape(new Date().toISOString())} WHERE id = ${escape(selectionId)}`);
   return { ok: false, finalModel: null, escalated: attempts.length > 1, attempts, note: 'Exhausted the entire escalation chain with no success and no executable Claude step to hand off to.' };
 }
 

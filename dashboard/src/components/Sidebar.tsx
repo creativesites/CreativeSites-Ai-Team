@@ -56,6 +56,7 @@ const NAV: { section: string; items: { href: string; label: string; icon: any }[
     items: [
       { href: '/bridge', label: 'DeployFleet Bridge', icon: Database },
       { href: '/phase5', label: 'Governance Console', icon: Terminal },
+      { href: '/intelligence', label: 'Intelligence Layer', icon: Zap },
     ],
   },
 ];
