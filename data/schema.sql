@@ -595,3 +595,173 @@ CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_events_model ON task_events(model_used);
 CREATE INDEX IF NOT EXISTS idx_model_performance_model ON model_performance(model_id);
 CREATE INDEX IF NOT EXISTS idx_model_performance_type ON model_performance(task_type);
+
+-- ============================================================
+-- PHASE 3: EVENT BUS & AUTONOMOUS ORCHESTRATION
+-- Event-driven task flow, dependency tracking, human escalation
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS task_workflow (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id),
+
+  -- Current state
+  current_state TEXT NOT NULL DEFAULT 'ready' CHECK (current_state IN ('ready','queued','assigned','in_progress','blocked','verification','completed','failed','escalated','human_decision')),
+
+  -- Assignment
+  assigned_agent_id TEXT REFERENCES identities(id),
+  assigned_model_id TEXT REFERENCES model_registry(id),
+  assignment_time TEXT,
+  assignment_reason TEXT,
+
+  -- Execution
+  started_at TEXT,
+  attempt_count INT DEFAULT 0,
+  current_model_attempt INT DEFAULT 0,
+  estimated_completion_time TEXT,
+
+  -- Blocking/dependencies
+  blocked_by_tasks TEXT DEFAULT '[]', -- JSON array of task IDs blocking this
+  blocks_tasks TEXT DEFAULT '[]', -- JSON array of task IDs waiting for this
+
+  -- Escalation
+  escalation_chain_position INT, -- which step in escalation chain
+  max_escalation_steps INT,
+  escalated_at TEXT,
+
+  -- Human decision required
+  human_decision_required INTEGER DEFAULT 0,
+  human_decision_reason TEXT,
+  human_decision_deadline TEXT,
+  decided_by TEXT,
+  decision_note TEXT,
+
+  -- Outcome
+  outcome TEXT CHECK (outcome IN ('success','failure','partial','unknown')),
+  outcome_reason TEXT,
+
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS event_bus (
+  id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'task_created','task_queued','task_assigned','task_claimed',
+    'task_started','task_in_progress','task_blocked','task_unblocked',
+    'model_selected','model_escalated','attempt_started','attempt_completed',
+    'verification_started','verification_passed','verification_failed',
+    'human_escalation_needed','human_decision_made',
+    'task_completed','task_failed','task_retry'
+  )),
+
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  agent_id TEXT REFERENCES identities(id),
+  model_id TEXT REFERENCES model_registry(id),
+
+  -- Event details
+  previous_state TEXT,
+  new_state TEXT,
+  reason TEXT,
+  payload TEXT, -- JSON: arbitrary event data
+
+  -- Timing
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  processed_at TEXT, -- when orchestrator processed this event
+  processed_by TEXT -- which system processed it
+
+);
+
+CREATE TABLE IF NOT EXISTS dependency_graph (
+  id TEXT PRIMARY KEY,
+  dependent_task_id TEXT NOT NULL REFERENCES tasks(id),
+  blocking_task_id TEXT NOT NULL REFERENCES tasks(id),
+  dependency_type TEXT CHECK (dependency_type IN ('must_complete','must_pass','must_not_fail')),
+  created_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (dependent_task_id, blocking_task_id)
+);
+
+CREATE TABLE IF NOT EXISTS escalation_decisions (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  from_model_id TEXT REFERENCES model_registry(id),
+  to_model_id TEXT REFERENCES model_registry(id),
+  attempt_count INT,
+  failure_reason TEXT,
+  escalation_reason TEXT,
+  escalated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  triggered_by TEXT -- agent or system
+);
+
+CREATE TABLE IF NOT EXISTS human_escalations (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  escalation_reason TEXT NOT NULL,
+  escalation_type TEXT CHECK (escalation_type IN ('model_exhausted','ambiguous_failure','decision_required','timeout','policy_violation')),
+  escalated_by TEXT, -- agent or system
+  escalated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  
+  -- Decision
+  human_assigned_to TEXT,
+  decision_status TEXT DEFAULT 'pending' CHECK (decision_status IN ('pending','approved','rejected','delegated','deferred')),
+  decision_note TEXT,
+  decided_at TEXT,
+  decided_by TEXT REFERENCES identities(id),
+  
+  -- Outcome
+  resolution TEXT
+);
+
+CREATE TABLE IF NOT EXISTS attempt_log (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  attempt_number INT NOT NULL,
+  model_id TEXT NOT NULL REFERENCES model_registry(id),
+  agent_id TEXT REFERENCES identities(id),
+  
+  -- Execution
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT,
+  duration_ms INT,
+  
+  -- Resource usage
+  tokens_input INT,
+  tokens_output INT,
+  tokens_cached INT,
+  cost_usd REAL,
+  
+  -- Outcome
+  success INTEGER,
+  exit_code INT,
+  error_message TEXT,
+  
+  -- What happened
+  escalation_triggered INTEGER DEFAULT 0,
+  PRIMARY KEY (task_id, attempt_number)
+);
+
+-- Task state transitions (audit trail)
+CREATE TABLE IF NOT EXISTS state_transitions (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  from_state TEXT,
+  to_state TEXT,
+  triggered_by TEXT, -- agent or event type
+  triggered_at TEXT NOT NULL DEFAULT (datetime('now')),
+  reason TEXT
+);
+
+-- Indexes for Phase 3
+CREATE INDEX IF NOT EXISTS idx_task_workflow_state ON task_workflow(current_state);
+CREATE INDEX IF NOT EXISTS idx_task_workflow_agent ON task_workflow(assigned_agent_id);
+CREATE INDEX IF NOT EXISTS idx_task_workflow_model ON task_workflow(assigned_model_id);
+CREATE INDEX IF NOT EXISTS idx_event_bus_type ON event_bus(event_type);
+CREATE INDEX IF NOT EXISTS idx_event_bus_task ON event_bus(task_id);
+CREATE INDEX IF NOT EXISTS idx_event_bus_agent ON event_bus(agent_id);
+CREATE INDEX IF NOT EXISTS idx_event_bus_created ON event_bus(created_at);
+CREATE INDEX IF NOT EXISTS idx_dependency_blocking ON dependency_graph(blocking_task_id);
+CREATE INDEX IF NOT EXISTS idx_dependency_dependent ON dependency_graph(dependent_task_id);
+CREATE INDEX IF NOT EXISTS idx_escalation_task ON escalation_decisions(task_id);
+CREATE INDEX IF NOT EXISTS idx_human_escalation_status ON human_escalations(decision_status);
+CREATE INDEX IF NOT EXISTS idx_attempt_log_task ON attempt_log(task_id);
+CREATE INDEX IF NOT EXISTS idx_state_transitions_task ON state_transitions(task_id);
