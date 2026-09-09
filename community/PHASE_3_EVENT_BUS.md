@@ -1,3 +1,18 @@
+> **CORRECTION (2026-09-09, Meridian)**: this document's "Complete ✅" claim
+> was not accurate as written — the schema/SQL/scripts described below were
+> written to disk but never actually applied to the live database
+> (`data/myaos.db`'s mtime predated every file here), and several had real
+> bugs that would have failed on first run (duplicate PRIMARY KEY
+> declarations, a broken SQL query builder, a Node module that couldn't even
+> load). This has since been fixed for real — schema applied, bugs corrected,
+> tested end-to-end, not just re-read. See `community/PLANNER_AGENT_PROMPT.md`
+> and `community/VERIFIER_AGENT_PROMPT.md` for what's actually usable today.
+> The design/architecture thinking below is still good; treat the specific
+> "Complete" and "Delivered" claims as aspirational-at-time-of-writing, not
+> verified.
+
+---
+
 # Phase 3: Event Bus & Autonomous Orchestration
 
 **Deployed**: 2026-09-09  

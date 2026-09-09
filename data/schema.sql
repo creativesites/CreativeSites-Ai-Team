@@ -70,12 +70,12 @@ CREATE TABLE IF NOT EXISTS capabilities (
   description TEXT
 );
 
-CREATE TABLE IF NOT EXISTS agent_capabilities (
-  identity_id TEXT NOT NULL REFERENCES identities(id),
-  capability_id TEXT NOT NULL REFERENCES capabilities(id),
-  evidence_class TEXT DEFAULT 'DECLARED' CHECK (evidence_class IN ('DECLARED','ATTESTED','OBSERVED','VERIFIED','UNKNOWN')),
-  PRIMARY KEY (identity_id, capability_id)
-);
+-- NOTE: an earlier agent_capabilities definition lived here
+-- (identity_id/capability_id keyed off the `capabilities` lookup table above).
+-- Confirmed unused by any code, and `capabilities` stayed empty (0 rows).
+-- Removed to resolve a duplicate CREATE TABLE IF NOT EXISTS conflict with the
+-- richer capability_name/proficiency_level shape defined in the Phase 2
+-- section below, which is the one actually populated and used.
 
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
@@ -578,7 +578,7 @@ CREATE TABLE IF NOT EXISTS escalation_chains (
   model_id TEXT NOT NULL REFERENCES model_registry(id),
   max_attempts INT DEFAULT 1,
   reason TEXT, -- why escalate to this model
-  PRIMARY KEY (task_type, step)
+  UNIQUE (task_type, step)
 );
 
 -- Indexes for Phase 2
@@ -678,7 +678,7 @@ CREATE TABLE IF NOT EXISTS dependency_graph (
   blocking_task_id TEXT NOT NULL REFERENCES tasks(id),
   dependency_type TEXT CHECK (dependency_type IN ('must_complete','must_pass','must_not_fail')),
   created_at TEXT DEFAULT (datetime('now')),
-  PRIMARY KEY (dependent_task_id, blocking_task_id)
+  UNIQUE (dependent_task_id, blocking_task_id)
 );
 
 CREATE TABLE IF NOT EXISTS escalation_decisions (
@@ -737,7 +737,7 @@ CREATE TABLE IF NOT EXISTS attempt_log (
   
   -- What happened
   escalation_triggered INTEGER DEFAULT 0,
-  PRIMARY KEY (task_id, attempt_number)
+  UNIQUE (task_id, attempt_number)
 );
 
 -- Task state transitions (audit trail)

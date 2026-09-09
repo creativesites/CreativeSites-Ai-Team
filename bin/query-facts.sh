@@ -72,7 +72,15 @@ fi
 
 WHERE_SQL=""
 if [ ${#WHERE_CLAUSES[@]} -gt 0 ]; then
-  WHERE_SQL="WHERE $(IFS=" AND "; echo "${WHERE_CLAUSES[*]}")"
+  # Note: `IFS=" AND "` does NOT join with the literal string " AND " - array
+  # expansion with ${arr[*]} only ever uses the FIRST character of IFS as the
+  # separator, so the original version silently joined clauses with a bare
+  # space, producing invalid SQL like "status = 'active' claim LIKE '%x%'".
+  # Build the join explicitly instead.
+  WHERE_SQL="WHERE ${WHERE_CLAUSES[0]}"
+  for ((i = 1; i < ${#WHERE_CLAUSES[@]}; i++)); do
+    WHERE_SQL="$WHERE_SQL AND ${WHERE_CLAUSES[$i]}"
+  done
 fi
 
 # Query and format
