@@ -1,19 +1,19 @@
 {
   "verification_type": "AUTOMATED_SUITE_EXECUTION",
-  "timestamp": "2026-09-05T10:41:04.309Z",
-  "completed_at": "2026-09-05T10:41:04.721Z",
-  "commit_sha": "7ecae333b6a4c0b7a797614c1b5a16eb0b1d90da",
-  "git_working_tree_clean": true,
-  "git_uncommitted_changes_count": 0,
+  "timestamp": "2026-09-09T13:06:26.493Z",
+  "completed_at": "2026-09-09T13:06:27.079Z",
+  "commit_sha": "91a856b278fbcf004be1d05af97477dfe176c638",
+  "git_working_tree_clean": false,
+  "git_uncommitted_changes_count": 41,
   "test_command": "node --test tests/*.test.js",
   "exit_code": 0,
   "passed": true,
   "metrics": {
-    "total": 26,
-    "passed": 26,
+    "total": 31,
+    "passed": 31,
     "failed": 0,
     "skipped": 0,
     "cancelled": 0
   },
-  "raw_summary": "[Orchestrator] Auto-routing unassigned task: TASK_INTEGRITY_001\n[Orchestrator] Task TASK_INTEGRITY_001 routed to @Atlas\n[Orchestrator] Task TASK_INTEGRITY_001 completed by @Atlas. Triggering independent verification by @Kael...\n[Orchestrator] Note: Verifier @Kael wake notice: Cannot wake unknown agent: Kael\n✔ End-to-End Vertical Slice: Registration -> Capability Routing -> Execution -> Handoff -> Review -> Verification (91.218416ms)\n✔ Integrity & False-State Rejection: Insufficient evidence yields UNKNOWN/UNRESOLVED (77.256541ms)\nℹ tests 26\nℹ suites 0\nℹ pass 26\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 294.986083\n"
+  "raw_summary": "ok 31 - Integrity & False-State Rejection: Insufficient evidence yields UNKNOWN/UNRESOLVED\n  ---\n  duration_ms: 55.840245\n  type: 'test'\n  ...\n1..31\n# tests 31\n# suites 0\n# pass 31\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 505.031998\n"
 }
