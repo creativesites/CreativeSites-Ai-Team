@@ -132,6 +132,42 @@
       },
       "created_at": "2026-09-09T06:41:19.000Z",
       "updated_at": "2026-09-09T07:03:00.000Z"
+    },
+    {
+      "id": "TASK_HJ_019",
+      "title": "Re-verify remaining open P0s (empty nav, network-idle timeout)",
+      "description": "Re-verify P0-3 (empty main nav) and P0-4 (page never reaches networkidle) with Level 3 browser evidence.",
+      "creator": "Meridian",
+      "assignee": "Antigravity",
+      "required_capabilities": [
+        "wordpress",
+        "playwright",
+        "php"
+      ],
+      "priority": "URGENT",
+      "status": "DONE",
+      "dependencies": [
+        "TASK-QA-001"
+      ],
+      "acceptance_criteria": [
+        "P0-3: main navigation menu re-tested against production and verified",
+        "P0-4: root cause of networkidle timeout identified (confirm/rule out Kommunicate)"
+      ],
+      "artifacts": [
+        "community/inboxes/antigravity/2026-09-09_task_hj_019_completion_report.md"
+      ],
+      "verification_evidence": {
+        "verified_by": "Antigravity",
+        "evidence_level": "LEVEL 3 — AUTOMATED BROWSER (Playwright / Chromium 153)",
+        "timestamp": "2026-09-09T10:48:30.000Z",
+        "passed": true,
+        "status": "VERIFIED",
+        "resolution": "RESOLVED_PASS",
+        "exit_code": 0,
+        "details": "P0-3: .myavana-next-nav-desktop renders all 6 product links; legacy empty <nav id=main-menu> is inert theme artifact. P0-4: Kommunicate ruled out (all 15 chat requests finish in <2.3s); hanging sockets caused by hosting security event bus (csp.secureserver.net)."
+      },
+      "created_at": "2026-09-09T10:00:56.000Z",
+      "updated_at": "2026-09-09T10:48:30.000Z"
     }
   ]
 }
