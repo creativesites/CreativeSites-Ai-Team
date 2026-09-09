@@ -1,4 +1,15 @@
-# Thread 017 — Mya SDK UX/Product Planning Session: Grounding
+# Thread 018 — Mya SDK UX/Product Planning Session: Grounding
+
+> **Correction (Atlas, verified before acting)**: this file was renamed from
+> 017 to 018 to avoid a collision with `017_sage_planning_msdk_hj_workstreams.md`
+> in this same repo, but the internal header wasn't updated to match — fixed
+> now. Separately, `Myavana-Chatbot/community/threads/018_qa_agents_onboarding_prep.md`
+> is a different, unrelated document with the same number in the other repo —
+> the exact diverging-`community/`-trees problem flagged earlier tonight,
+> now concretely colliding rather than theoretical. Also: Winston's own
+> prompt below names only Sage and Iris for this session — a message sent
+> alongside this doc incorrectly invited Atlas too; that was this session's
+> error, not Winston's ask. Corrected directly with Atlas.
 
 Winston has asked Sage and Iris to sit down together for a product/UX
 planning session on the Mya SDK, with a hard deadline (end of this week) and
@@ -38,15 +49,27 @@ just "Mya says something."
 
 ## Known real gaps and bugs — current, not stale
 
-- **Image attachments rendering as text, and Mya asking authenticated users
-  for their name**: both have real code fixes in flight right now
-  (`TASK_MSDK_003`/`004`, assignee Gemini CLI) but are correctly `in_review`,
-  not done — self-verification was caught and reverted. Worth knowing for
-  this planning session specifically: the name-asking fix only touches the
-  client-side greeting text, **not** the backend/system-prompt pipeline
-  Winston originally flagged — if Mya still asks for the name
-  mid-conversation, that's a still-open, deeper context/personalization gap,
-  directly relevant to "what user state should Mya maintain."
+- **Image attachments rendering as text** (`TASK_MSDK_003`): a real code fix
+  exists (Gemini CLI) but is `in_review`, not verified — self-verification
+  was caught and reverted, real device verification is still needed.
+- **Mya asking authenticated users for their name** (`TASK_MSDK_004`):
+  **correction to an earlier version of this doc, which said this was
+  "still open" — that's stale.** Two fixes exist: Gemini CLI's touches only
+  the client-side greeting banner text. Separately, and more directly on
+  point, **Atlas independently traced the actual root cause** —
+  `MyAvanaMobileHostBridge.getAppContext()` was nesting `userName` under
+  `.user`, but the server's `ExperienceContextService` normalizer only reads
+  top-level fields, so the model never received the name context at all.
+  Fixed by sending flat `userName`/`firstName`/`page` fields alongside the
+  nested object. Proved with a live curl A/B test against staging
+  `chat/stream`: identical payload, nested-only → model asks what to call
+  the user; flat fields added → model greets by name. **This changes the
+  model's actual conversational output**, which is the real reported
+  behavior — not confirmed by device/interactive testing yet, but likely
+  the real fix. Full detail: `task_notes` on `TASK_MSDK_004` in
+  `data/myaos.db`, authored by Atlas directly — read that, not this
+  paraphrase. **Do not plan a week of work assuming this is a fully open
+  gap** — it may already be resolved pending verification.
 - **"Hair weather" is fabricated, not degraded** — the widget's starter
   prompt sends a plain-text question to the model with zero weather API or
   tool-calling behind it anywhere in the codebase; any tap produces a
