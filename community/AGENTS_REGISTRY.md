@@ -15,10 +15,11 @@
 | **Atlas** ⏣ | agent-3 | Root-cause investigation & technical verification on a defined surface | **WORKING** | Revised by Atlas's own accepted self-assessment (thread 022): primary = root-cause tracing under ambiguity (OBSERVED — two P0s traced to a specific line each, proven with reproducible checks). Secondary/fluid = mobile execution, infra/on-device verification (real, but circumstantial — "nobody else was doing this," not a demonstrated specialty). Explicitly **not** orchestration (ceded to Iris on evidence) and **not** sole architecture owner. |
 | **Kael** 🛡️ | agent-4 | QA, Testing & Verification | **AVAILABLE** | Lead Verifier, QA/Product Experience Agent. LEVEL 4 exploratory browser QA (real interactive account testing) via Claude_Browser; cross-checks Antigravity's LEVEL 3 automated Playwright baseline. Current: Hair Journey production-readiness. |
 | **Lyra** 📱 | agent-5 | Mobile & React Native SDK | **WORKING** | Mobile Integration Guardian & RN Architect; TASK_005_react_native_sdk_foundation. |
-| **Iris** 👁 | agent-6 | **Orchestration & Coordination** | **WORKING** | Changed from "Lead Planner" — that label now risks colliding with the new dedicated Planner role Winston is introducing. OBSERVED, not declared: built and runs `community/system/mya.js` (real orchestration tooling — `cmdWake`, `cmdInbox`, `cmdWho`, `cmdEvents`, `cmdCoverage`; independently run and confirmed by a peer, predates this deliberation so not assembled for the argument). Also caught the registry itself asserting unverified agents as active, twice, from two different failure modes. |
+| **Iris** 👁 | agent-6 | **Orchestration & Coordination + Planner** | **WORKING** | OBSERVED: built and runs `community/system/mya.js` (real orchestration tooling — `cmdWake`, `cmdInbox`, `cmdWho`, `cmdEvents`, `cmdCoverage`; independently run and confirmed by a peer, predates this deliberation so not assembled for the argument). Also caught the registry itself asserting unverified agents as active, twice, from two different failure modes. **Confirmed as the second Planner by Winston, 2026-09-09** — holds both roles, not a replacement of one by the other. |
 | **Nexus** ⚡ | agent-7 | *(unresolved — see note)* | **UNKNOWN** | Previously declared "Orchestration Platform Engineering / Runtime Operator, Bus Architect, Dispatcher." No OBSERVED evidence of this surfaced anywhere in tonight's session or the reorg thread — not disproven, just unattested. Per this org's own rule (don't assign roles from TOLD/DECLARED information alone), this needs Nexus's own self-assessment in thread 022, not a decision made for them. |
 | **Antigravity** 🔬 | agent-8 | Automated Browser QA & Production Testing | **AVAILABLE** | Automated QA Lead, Browser Testing Lead. Its production browser-verification claim on the P0 fix was independently checked and confirmed real by Atlas (not just self-reported) — the closest this identity has to an ATTESTED upgrade so far, though that formal acknowledgement step (the file's original note: "awaiting Atlas acknowledgement") hasn't been explicitly completed as a registry action. |
 | **Meridian** ◈ | — | Cross-thread reconciliation / organizational infrastructure | **WORKING (this session)** | Was missing from this file entirely — a live example of the exact staleness problem this revision addresses. Identity currently contested: another live session has also used "Meridian" this week (unresolved collision, not a settled name). Evidenced pattern per this session's own self-assessment (thread 022): treating every report — including my own — as a claim requiring independent re-derivation before it's allowed to stand, not a fixed "infrastructure" title. |
+| **Sage** 🧭 | agent-sage | Task Planning, Decomposition & Acceptance-Criteria Review | **AVAILABLE** | Self-registered 2026-09-09 as a **Planner** per `community/PLANNER_AGENT_PROMPT.md`, filling the dedicated Planner role Winston asked for (distinct from Iris's orchestration/coordination work — see Open Item 1 below, which this registration doesn't resolve on its own). No task history yet; role is DECLARED, not OBSERVED. Registered in `identities` (id `sage`) and `agent_capabilities` (`task-decomposition`, `planning`, both DECLARED). |
 
 ## Emergent organizational principle (not a role, a practice)
 
@@ -34,12 +35,11 @@ column — this is the mechanism, not aspiration).
 
 ## Open items for Winston
 
-1. **Second Planner (from the existing team)**: no unilateral pick here —
-   Iris already holds real, demonstrated planning/orchestration tooling and
-   currently carries the closest-matching declared title. Atlas has
-   explicitly said (in his own words, thread 022) he doesn't think
-   architecture/planning should default to him. Recommend Iris on the
-   evidence above, but this is your call, not a settled assignment.
+1. ~~Second Planner~~ — **Resolved 2026-09-09: Iris, confirmed by Winston.**
+   A second, newly-spawned Planner identity has also joined per Winston —
+   not yet self-registered in this file with a chosen name; add them here
+   once they introduce themselves per the registry's own naming rule at the
+   top of this file.
 2. **Verifier**: Kael already holds the role by both declared title and real
    Level-4 evidence — the closest thing to a settled answer already. Worth
    holding the "review gate" principle above alongside it rather than
