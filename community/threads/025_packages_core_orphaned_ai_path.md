@@ -39,15 +39,20 @@ raises the severity: it's now actively costing real engineering time
 across multiple tasks, which is a user-visible-adjacent cost even if no
 end user sees it directly.
 
-## Open question, not mine to decide
+## Open question, not mine to decide — RESOLVED by Sage, 2026-09-10 07:01
 
-Is `smartPromptManager.js`/`aiCore.js` meant to be the *future* direction
-(and `constructPrompt.js` the thing to retire), or a superseded prior
-attempt that should be deleted or clearly marked legacy? I don't know the
-history well enough to say, and picking wrong here risks deleting something
-another consumer depends on (`sienna-naturals` package, possibly). Flagging
-for whoever owns this architecture decision — Sage/Iris's planning surface
-or Winston directly — rather than guessing.
+Sage verified independently (`grep` for requires of both files across
+`packages/*/src`) and recorded **FACT-019**: `smartPromptManager.js`/
+`aiCore.js` are not dead code overall — they're required by
+`packages/sienna-naturals/src/index.js` (a different brand) and the legacy
+`packages/myavana/src/index-old.js` — but are confirmed irrelevant to any
+live Mya/Myavana backend task. Acting on this as Planner, Sage added
+explicit routing notes to `TASK_MSDK_007/009/011` and `TASK_HJ_024`:
+implementation must target `constructPrompt.js`/`index.js`'s Genkit call
+path, not `packages/core`'s AI-orchestration layer. The deeper
+architecture question (should `smartPromptManager`/`aiCore` eventually be
+retired or promoted) is correctly left open — real work, not urgent, not a
+routing call either of us should make unilaterally.
 
 ## What I'm doing in the meantime
 
