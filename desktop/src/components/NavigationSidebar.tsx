@@ -46,6 +46,7 @@ export type DevViewType =
 export type WorkViewType =
   | 'home'
   | 'my_work'
+  | 'design'
   | 'coworkers'
   | 'routines'
   | 'connected_tools'
@@ -100,6 +101,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   const workItems: { id: WorkViewType; label: string; icon: any; badge?: number; badgeColor?: string }[] = [
     { id: 'home', label: 'Home', icon: Home },
     { id: 'my_work', label: 'My Work', icon: Briefcase },
+    { id: 'design', label: 'Design Studio', icon: Palette },
     { id: 'coworkers', label: 'Coworkers', icon: UserCheck },
     { id: 'routines', label: 'Routines', icon: Clock },
     { id: 'connected_tools', label: 'Connected Tools', icon: Plug },

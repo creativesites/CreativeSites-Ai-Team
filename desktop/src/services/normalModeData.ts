@@ -2,6 +2,18 @@ import { Coworker, ConnectedTool, Job, Routine, ActivityItem, Approval, Skill } 
 
 export const DEFAULT_COWORKERS: Coworker[] = [
   {
+    id: 'muse',
+    name: 'Muse',
+    title: 'Design & Prototyping Specialist',
+    description: 'Turns concepts into live interactive prototypes, visual user flows, and brand design systems.',
+    avatar: '/app-icon.png',
+    monogram: 'MU',
+    color: 'bg-fuchsia-600',
+    status: 'available',
+    capabilities: ['UI/UX Prototyping', 'Interactive Canvas', 'Brand Systems', 'Accessibility Audits'],
+    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team',
+  },
+  {
     id: 'astra',
     name: 'Astra',
     title: 'Product & AI Specialist',
@@ -82,7 +94,7 @@ export const DEFAULT_CONNECTED_TOOLS: ConnectedTool[] = [
     status: 'connected',
     iconName: 'Globe',
     description: 'Real-time search, website scraping, and Playwright browser QA.',
-    usedByCoworkers: ['Vela', 'Kael', 'Astra'],
+    usedByCoworkers: ['Vela', 'Kael', 'Astra', 'Muse'],
     permissions: { read: true, write: false, execute: true, delete: false },
   },
   {
@@ -92,7 +104,7 @@ export const DEFAULT_CONNECTED_TOOLS: ConnectedTool[] = [
     status: 'connected',
     iconName: 'Folder',
     description: 'Desktop files, git repositories, and project assets.',
-    usedByCoworkers: ['Astra', 'Vela', 'Iris', 'Kael', 'Atlas'],
+    usedByCoworkers: ['Astra', 'Vela', 'Iris', 'Kael', 'Atlas', 'Muse'],
     permissions: { read: true, write: true, execute: true, delete: false },
   },
   {
@@ -272,7 +284,7 @@ export const DEFAULT_SKILLS: Skill[] = [
     id: 'sk_landing_page',
     title: 'UI Landing Page Generator',
     description: 'Decomposes landing page requirements into polished HTML/CSS React components.',
-    coworkerId: 'astra',
+    coworkerId: 'muse',
     templatePrompt: 'Build a modern landing page concept with hero section and feature cards.',
     category: 'Design & Code',
     toolsRequired: ['Local Files'],

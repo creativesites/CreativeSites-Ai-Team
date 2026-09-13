@@ -2,7 +2,7 @@ export type RiskLevel = 'safe' | 'moderate' | 'consequential' | 'dangerous';
 export type JobStatus = 'planning' | 'awaiting_approval' | 'working' | 'paused' | 'completed' | 'failed';
 
 export interface Coworker {
-  id: string; // e.g. 'astra', 'iris', 'vela', 'kael', 'atlas'
+  id: string; // e.g. 'astra', 'iris', 'vela', 'kael', 'atlas', 'muse'
   name: string; // e.g. 'Astra'
   title: string; // e.g. 'Product & AI Specialist'
   description: string;
@@ -121,4 +121,64 @@ export interface ActivityItem {
   coworkerId?: string;
   timestamp: string;
   status?: 'success' | 'warning' | 'info' | 'error';
+}
+
+// --- MyaOS Normal Mode Design Studio Architecture ---
+export interface DesignDirection {
+  id: string;
+  name: string; // e.g., 'Editorial & Warm', 'SaaS Minimalist', 'High-Contrast Dark'
+  description: string;
+  primaryColor: string;
+  accentColor: string;
+  fontHeading: string;
+  fontBody: string;
+}
+
+export interface DesignComment {
+  id: string;
+  screenId: string;
+  selector: string;
+  text: string;
+  author: string;
+  xPercentage: number;
+  yPercentage: number;
+  status: 'open' | 'resolved';
+  createdAt: string;
+}
+
+export interface DesignScreen {
+  id: string;
+  projectId: string;
+  name: string; // e.g. '01 Landing Hero', '02 Checkout Flow'
+  htmlContent: string;
+  versionNumber: number;
+  comments: DesignComment[];
+  createdAt: string;
+}
+
+export interface DesignFlow {
+  id: string;
+  name: string; // e.g. 'Customer Onboarding Flow'
+  screenIds: string[];
+}
+
+export interface DesignSystemToken {
+  category: 'Colors' | 'Typography' | 'Components' | 'Spacing';
+  name: string;
+  value: string;
+}
+
+export interface DesignProject {
+  id: string;
+  title: string;
+  description: string;
+  workspaceCwd: string;
+  selectedDirection?: DesignDirection;
+  screens: DesignScreen[];
+  activeScreenId: string;
+  flows: DesignFlow[];
+  extractedTokens: DesignSystemToken[];
+  accessibilityScore?: number;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -26,6 +26,7 @@ import { ConnectedToolsView } from './views/normal/ConnectedToolsView';
 import { ApprovalCenterView } from './views/normal/ApprovalCenterView';
 import { RoutinesView } from './views/normal/RoutinesView';
 import { ActivityView } from './views/normal/ActivityView';
+import { DesignStudioNormalView } from './views/normal/DesignStudioNormalView';
 
 import { FleetDrawer } from './components/FleetDrawer';
 import { appendTerminalBuffer, clearTerminalBuffer } from './components/XTermTerminal';
@@ -558,6 +559,15 @@ export function App() {
                   }}
                   onSelectCoworker={(cwId) => {
                     handleStartNormalJob(`Execute task with ${cwId.toUpperCase()}`, cwId);
+                  }}
+                />
+              )}
+
+              {workView === 'design' && (
+                <DesignStudioNormalView
+                  currentWorkspace={currentWorkspace}
+                  onBuildWithMyaOS={(title, html) => {
+                    handleStartNormalJob(`Implement verified React component for design '${title}'`, 'astra');
                   }}
                 />
               )}
