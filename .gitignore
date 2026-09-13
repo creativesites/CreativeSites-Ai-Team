@@ -10,3 +10,6 @@ community/secrets/
 data/myaos.db-shm
 data/myaos.db-wal
 data/*.bak-*
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/

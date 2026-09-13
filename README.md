@@ -97,6 +97,32 @@ npm test
 
 ---
 
+## 🖥️ MyaOS Desktop Control Plane (`desktop/`)
+
+The repository includes the native macOS desktop application (`desktop/`) built with **Tauri v2**, **React 19**, **Tailwind CSS v3**, **xterm.js**, and direct native SQLite substrate integration (`data/myaos.db`).
+
+### Features:
+- **CleanMyMac-Inspired Cockpit**: Frosted liquid-glass interface with real-time mission pipelines, live token metrics, and autonomous handoff status.
+- **Autonomous Agent Handoff**: Auto-Pilot routing where Gemini 3.8 Flash assesses changes and dispatches Lead Verifier Kael [KL] for independent verification.
+- **In-Chat Interactive Artifacts**: Live diff inspector (`git add .` staging), feature blueprints, bug repro harnesses, and executive sign-off cards.
+- **Designer Workspace**: Always-available AI HTML UI generator with live iframe canvas, 1-click starter blueprints, and prompt refinement.
+- **Project Matrix & Workspaces**: Direct project creation, git clone, local folder attachment, and interactive terminal sessions.
+
+### Quickstart:
+
+```bash
+# Run desktop in dev mode
+npm run desktop:dev
+
+# Compile production frontend & Rust binary
+npm run desktop:build
+
+# Package macOS DMG installer
+npm run desktop:dmg
+```
+
+---
+
 ## 🔒 Security & Human Escalation Policy
 The AI team operates autonomously within defined technical boundaries. The following actions strictly require **Winston's explicit approval**:
 1. Production deployments to live customer environments.

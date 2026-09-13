@@ -1,0 +1,974 @@
+[
+  {
+    "id": "media_curl_4c_macro_001",
+    "title": "Macro Close-up 4C Afro-Coily Hair Texture with High Shrinkage",
+    "category": "hair_type",
+    "subcategory": "type_4c",
+    "hair_attributes": {
+      "type": "4C",
+      "porosity_relevance": "Low to Medium",
+      "density": "High",
+      "strand_thickness": "Fine to Coarse"
+    },
+    "style_tags": [
+      "4C",
+      "tight_coils",
+      "natural",
+      "shrinkage",
+      "kinky_hair",
+      "z_pattern"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "4528x3019",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/0/04/1LIVE_Krone_2015-3060.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:1LIVE_Krone_2015-3060.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Sven Sebastian Sajak (1LIVE Krone 2015)",
+    "description": "Ultra high-resolution macro portrait showing natural 4C coily/kinky hair texture, highlighting tight spring geometries, inter-strand friction, light refraction on dark melanin, and natural volume.",
+    "educational_notes": "Benchmark visual reference for Mya computer vision training to identify unmanipulated 4C coil clusters, high-density growth patterns, and characteristic curl compaction."
+  },
+  {
+    "id": "media_curl_4b_definition_002",
+    "title": "Defined 4B Z-Pattern Crimp and Coil Architecture",
+    "category": "hair_type",
+    "subcategory": "type_4b",
+    "hair_attributes": {
+      "type": "4B",
+      "porosity_relevance": "Medium to High",
+      "density": "High",
+      "strand_thickness": "Fine to Medium"
+    },
+    "style_tags": [
+      "4B",
+      "z_pattern",
+      "crimp",
+      "defined_coils",
+      "natural_hair"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "2056x3088",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/4/4b/Bantu_Knots_hairstyle_-_model_Gwyneth_Ellis.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Bantu_Knots_hairstyle_-_model_Gwyneth_Ellis.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Augustus Binu / Wikimedia Commons",
+    "description": "Close perspective showing sectioned 4B natural hair with sharp angular turns (Z pattern), illustrating subtle curl clump formation along the parting lines and base.",
+    "educational_notes": "Used by Mya to differentiate Type 4B angular bends from the cylindrical spiral springs of Type 4A and the micro-interlocked coils of 4C."
+  },
+  {
+    "id": "media_curl_4a_spiral_003",
+    "title": "Type 4A Defined S-to-O Spiral Miniature Ringlets",
+    "category": "hair_type",
+    "subcategory": "type_4a",
+    "hair_attributes": {
+      "type": "4A",
+      "porosity_relevance": "Medium",
+      "density": "Medium to High",
+      "strand_thickness": "Fine to Medium"
+    },
+    "style_tags": [
+      "4A",
+      "ringlets",
+      "defined_springs",
+      "s_pattern",
+      "crochet_texture"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1933x2900",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/9/9c/Ayobami_Adebayo.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Ayobami_Adebayo.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Ayobami Adebayo / Wikimedia Commons",
+    "description": "Defined miniature spiral coils characteristic of 4A hair texture, demonstrating visible circumference (~crochet needle diameter), distinct spring-back, and natural moisture retention.",
+    "educational_notes": "Enables Mya to demonstrate how 4A coils form distinct circular groupings when properly hydrated, contrasting with the zig-zag geometry of 4B."
+  },
+  {
+    "id": "media_curl_3c_corkscrew_004",
+    "title": "Type 3C Tight Corkscrew Ringlets with Volume",
+    "category": "hair_type",
+    "subcategory": "type_3c",
+    "hair_attributes": {
+      "type": "3C",
+      "porosity_relevance": "Medium",
+      "density": "High",
+      "strand_thickness": "Medium"
+    },
+    "style_tags": [
+      "3C",
+      "corkscrew",
+      "curly",
+      "pencil_circumference",
+      "spiral_curls"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "3456x2592",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/b/b4/2011_May_Day_in_Brno_%28054%29.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:2011_May_Day_in_Brno_(054).jpg",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "High-density head of 3C tight corkscrew curls with pencil-sized circumference, showing consistent helix structure from root to tip and defined clumping.",
+    "educational_notes": "Serves as the visual boundary asset for Mya between curly (Type 3) and coily (Type 4) categories, showing spiral formation without structural zig-zag angles."
+  },
+  {
+    "id": "media_curl_3b_bouncy_005",
+    "title": "Type 3B Springy Bouncy Ringlets (Sharpie Marker Circumference)",
+    "category": "hair_type",
+    "subcategory": "type_3b",
+    "hair_attributes": {
+      "type": "3B",
+      "porosity_relevance": "Normal/Medium",
+      "density": "Medium",
+      "strand_thickness": "Medium"
+    },
+    "style_tags": [
+      "3B",
+      "springy_curls",
+      "ringlets",
+      "high_elasticity",
+      "spiral"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "3264x2448",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/4/44/Bill_de_Blasio_and_family.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Bill_de_Blasio_and_family.jpg",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Bill de Blasio campaign / Wikimedia Commons",
+    "description": "Prominent showcase of 3B bouncy spiral ringlets (as seen on Dante de Blasio iconic rounded curl halo), showing loose corkscrew grouping and voluminous circumference.",
+    "educational_notes": "Exemplary visual for educating users on curl clumping and perimeter volume distribution for Type 3B ringlets."
+  },
+  {
+    "id": "media_curl_3a_loose_006",
+    "title": "Type 3A Loose Shiny Loops and Cascading S-Waves",
+    "category": "hair_type",
+    "subcategory": "type_3a",
+    "hair_attributes": {
+      "type": "3A",
+      "porosity_relevance": "Low to Normal",
+      "density": "Medium",
+      "strand_thickness": "Fine to Medium"
+    },
+    "style_tags": [
+      "3A",
+      "loose_curls",
+      "sidewalk_chalk_circumference",
+      "shiny_curls"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1944x2592",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/0/01/Apinya_Sakuljaroensuk_June_1_2007.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Apinya_Sakuljaroensuk_June_1_2007.jpg",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Apinya Sakuljaroensuk Media / Wikimedia Commons",
+    "description": "Demonstration of loose, large-diameter loop curls (Type 3A), displaying high cuticle reflection, well-defined loop circumference, and minimal root shrinkage.",
+    "educational_notes": "Diagnostic tool for Mya in identifying low shrinkage index and advising on lightweight moisture formulations that prevent curl flattening."
+  },
+  {
+    "id": "media_curl_2_wavy_007",
+    "title": "Type 2 Wavy Hair Anatomy (2B/2C Defined S-Bends)",
+    "category": "hair_type",
+    "subcategory": "type_2_wavy",
+    "hair_attributes": {
+      "type": "2C",
+      "porosity_relevance": "Low to Medium",
+      "density": "Medium",
+      "strand_thickness": "Medium"
+    },
+    "style_tags": [
+      "2B",
+      "2C",
+      "wavy",
+      "s_bend",
+      "texture"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1600x1200",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/5/59/%D0%92%D0%BE%D0%BB%D0%BE%D1%81%D1%8B_%D1%82%D1%80%D0%B5%D1%85_%D1%80%D0%B0%D0%B7%D0%BD%D1%8B%D1%85_%D0%BB%D1%8E%D0%B4%D0%B5%D0%B9.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Волосы_трех_разных_людей.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "Comparative macro study of hair fibers from three different individuals, showing defined structural wave curvature and fiber thickness variation.",
+    "educational_notes": "Enables Mya to visually guide users through multi-textural strand identification across wavy to curly transitions."
+  },
+  {
+    "id": "media_curl_1_straight_008",
+    "title": "Type 1 Straight Hair Fiber Alignment and Uniform Cylindrical Geometry",
+    "category": "hair_type",
+    "subcategory": "type_1_straight",
+    "hair_attributes": {
+      "type": "1A",
+      "porosity_relevance": "Low",
+      "density": "High",
+      "strand_thickness": "Fine to Medium"
+    },
+    "style_tags": [
+      "1A",
+      "straight_hair",
+      "cylindrical_shaft",
+      "specular_reflection"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "4912x3264",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/b/bb/%D0%A7%D0%B5%D0%BB%D0%BE%D0%B2%D0%B5%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9_%D0%B2%D0%BE%D0%BB%D0%BE%D1%81.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Человеческий_волос.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "High-magnification photography of straight human hair fiber showing zero curvature, smooth longitudinal alignment, and uniform specular light reflection.",
+    "educational_notes": "Serves as the structural baseline (control) for hair classification algorithms within Mya curl-recognition models."
+  },
+  {
+    "id": "media_micro_cuticle_sem_2000x_009",
+    "title": "Scanning Electron Micrograph (SEM) of Human Hair Cuticle Scales (2,000X)",
+    "category": "microscopic_anatomy",
+    "subcategory": "cuticle_architecture",
+    "hair_attributes": {
+      "type": "All Types (Textured/Straight)",
+      "porosity_relevance": "Normal/Healthy Cuticle Architecture",
+      "density": "N/A (Microscopic)",
+      "strand_thickness": "Strand Surface"
+    },
+    "style_tags": [
+      "microscopy",
+      "SEM",
+      "cuticle_scales",
+      "keratin_envelope",
+      "2000x"
+    ],
+    "asset_type": "micrograph",
+    "format": "tif/jpg",
+    "resolution": "2048x1536",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/8/81/Human_hair_2000X_-_SEM_MUSE.tif",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Human_hair_2000X_-_SEM_MUSE.tif",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "MUSE - Science Museum of Trento, Italy",
+    "description": "Scanning Electron Microscope (SEM) image at 2,000X magnification showing the shingle-like imbricated keratin scales of the human hair cuticle.",
+    "educational_notes": "Foundational visual aid for Mya Strand Diagnostics to explain cuticle scale integrity, light reflection, and the mechanical barrier protecting the cortex."
+  },
+  {
+    "id": "media_micro_cuticle_sem_5000x_010",
+    "title": "Scanning Electron Micrograph (SEM) of Cuticle Scale Edges (5,000X)",
+    "category": "microscopic_anatomy",
+    "subcategory": "cuticle_architecture",
+    "hair_attributes": {
+      "type": "All Types",
+      "porosity_relevance": "Low to Normal Porosity Edge Integrity",
+      "density": "N/A",
+      "strand_thickness": "Ultrastructure"
+    },
+    "style_tags": [
+      "SEM",
+      "cuticle_edge",
+      "5000X",
+      "nanoscale",
+      "scale_margin"
+    ],
+    "asset_type": "micrograph",
+    "format": "tif/jpg",
+    "resolution": "2048x1536",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/3/36/Human_hair_5000X_-_SEM_MUSE.tif",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Human_hair_5000X_-_SEM_MUSE.tif",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "MUSE - Science Museum of Trento, Italy",
+    "description": "5,000X high-resolution SEM depicting individual cuticle scale margins, demonstrating smooth, tightly adhering scale boundaries characteristic of low-to-medium porosity hair.",
+    "educational_notes": "Used in Mya Porosity Deep Dives to explain how acidic pH treatments and cold water rinses help cuticle scales lay flat."
+  },
+  {
+    "id": "media_micro_cuticle_sem_10000x_011",
+    "title": "Ultra-High Magnification SEM of Cuticle Surface Nanostructure (10,000X)",
+    "category": "microscopic_anatomy",
+    "subcategory": "cuticle_architecture",
+    "hair_attributes": {
+      "type": "All Types",
+      "porosity_relevance": "Epicuticle Lipid Layer & Porosity",
+      "density": "N/A",
+      "strand_thickness": "Nanostructure"
+    },
+    "style_tags": [
+      "SEM",
+      "10000X",
+      "epicuticle",
+      "18_mea",
+      "lipid_layer"
+    ],
+    "asset_type": "micrograph",
+    "format": "tif/jpg",
+    "resolution": "2048x1536",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/d/da/Human_hair_10000X_-_SEM_MUSE.tif",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Human_hair_10000X_-_SEM_MUSE.tif",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "MUSE - Science Museum of Trento, Italy",
+    "description": "Extreme close-up SEM at 10,000X resolving the fine topography of the epicuticle, illustrating the molecular sheath where 18-methyleicosanoic acid (18-MEA) fatty acid lipids anchor.",
+    "educational_notes": "Allows Mya to educate on how chemical processing, heat styling, and bleach strip the protective 18-MEA lipid layer, inducing high porosity."
+  },
+  {
+    "id": "media_micro_split_end_trichoptilosis_012",
+    "title": "Trichoptilosis (Split End) Longitudinal Fissure and Cortex Exposure",
+    "category": "microscopic_anatomy",
+    "subcategory": "strand_damage",
+    "hair_attributes": {
+      "type": "Type 3 & 4 Curly/Coily Vulnerability",
+      "porosity_relevance": "Extreme High Porosity / Cortex Fracture",
+      "density": "N/A",
+      "strand_thickness": "Split Tip"
+    },
+    "style_tags": [
+      "split_ends",
+      "trichoptilosis",
+      "cortex_exposure",
+      "damage",
+      "micrograph"
+    ],
+    "asset_type": "micrograph",
+    "format": "jpg",
+    "resolution": "1532x1816",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/8/8b/Proper_care_of_the_hair_and_scalp_%281917%29_%2814768851455%29.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Proper_care_of_the_hair_and_scalp_(1917)_(14768851455).jpg",
+    "license": "Public Domain (No known copyright restrictions / Internet Archive)",
+    "author_attribution": "Internet Archive Book Images / Medical Heritage Library",
+    "description": "Scientific clinical micrograph showing longitudinal splitting of the hair shaft (trichoptilosis), where outer cuticle scales have peeled away to reveal frayed cortical fibrils.",
+    "educational_notes": "Diagnostic card visual when Mya analyzes user photos showing end breakage, explaining why trimming is the only permanent solution for bifurcated ends."
+  },
+  {
+    "id": "media_micro_split_end_macro_013",
+    "title": "Severe Terminal Trichoptilosis (Feathering Split End)",
+    "category": "microscopic_anatomy",
+    "subcategory": "strand_damage",
+    "hair_attributes": {
+      "type": "All Types",
+      "porosity_relevance": "High Porosity / Mechanical Trauma",
+      "density": "N/A",
+      "strand_thickness": "Frayed Ends"
+    },
+    "style_tags": [
+      "split_end",
+      "trichoptilosis",
+      "macro_damage",
+      "frayed_cuticle"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1432x1424",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/e5/Monilethrix_hair.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Monilethrix_hair.jpg",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Wikimedia Commons Contributor / Dermatology Archive",
+    "description": "Microscopic view of hair shaft node deformities and severe structural fracturing, demonstrating points of structural failure under mechanical tension.",
+    "educational_notes": "Utilized by Mya to explain how textured hair has natural elliptical stress points along the twists of the curl where breakage frequently initiates."
+  },
+  {
+    "id": "media_anat_follicle_cross_section_diagram_014",
+    "title": "Comprehensive Hair Follicle and Shaft Anatomical Cross-Section Diagram",
+    "category": "microscopic_anatomy",
+    "subcategory": "follicle_biology",
+    "hair_attributes": {
+      "type": "Universal Follicle Anatomy",
+      "porosity_relevance": "Follicular Generation",
+      "density": "High Follicular Density",
+      "strand_thickness": "Bulb, Cortex, Medulla, Cuticle"
+    },
+    "style_tags": [
+      "hair_follicle",
+      "anatomy",
+      "vector_diagram",
+      "dermal_papilla",
+      "sebaceous_gland"
+    ],
+    "asset_type": "diagram",
+    "format": "svg",
+    "resolution": "Vector (Scalable)",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/3/38/Human_hair_SEM.svg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Human_hair_SEM.svg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Wikimedia Commons Graphic Artists",
+    "description": "Detailed vector diagram illustrating the histological layers of the human hair follicle: dermal papilla, hair bulb, inner and outer root sheaths, sebaceous gland, and arrector pili muscle.",
+    "educational_notes": "Primary diagram used in Mya Strand Science curriculum to explain how hair matrix cells differentiate into cuticle, cortex, and medulla."
+  },
+  {
+    "id": "media_anat_curly_follicle_curvature_015",
+    "title": "Cross-Sectional Follicle Geometry: Oval/Elliptical (Curly/Coily) vs. Circular (Straight)",
+    "category": "microscopic_anatomy",
+    "subcategory": "curl_biomechanics",
+    "hair_attributes": {
+      "type": "Type 3 & 4 vs. Type 1",
+      "porosity_relevance": "Structural Ellipticity",
+      "density": "Follicular Curvature",
+      "strand_thickness": "Major vs Minor Axis Ratio"
+    },
+    "style_tags": [
+      "follicle_curvature",
+      "elliptical_cross_section",
+      "curl_biomechanics",
+      "royal_society"
+    ],
+    "asset_type": "scientific_figure",
+    "format": "png/open_access",
+    "resolution": "Open Access Scientific PMC6894537",
+    "source_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6894537/table/RSPA20190516TB1/",
+    "page_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6894537/",
+    "license": "CC BY 4.0",
+    "author_attribution": "Cloete E, Khumalo NP, Ngoepe MN (Proc. R. Soc. A 2019, PMC6894537)",
+    "description": "Scientific morphological comparison from Royal Society review demonstrating the retrocurvature of curly hair follicles and the resulting flat elliptical cross-section of Type 4 strands.",
+    "educational_notes": "Crucial scientific evidence cited by Mya to explain why coily hair is prone to dryness: sebum cannot easily travel down an elliptical, spiraling fiber."
+  },
+  {
+    "id": "media_micro_cut_surface_4700x_016",
+    "title": "Scanning Electron Micrograph of Cut Hair Shaft Cross-Section Showing Cortex Core",
+    "category": "microscopic_anatomy",
+    "subcategory": "internal_structure",
+    "hair_attributes": {
+      "type": "All Types",
+      "porosity_relevance": "Internal Cortex Exposure",
+      "density": "N/A",
+      "strand_thickness": "Cross-Sectional Area"
+    },
+    "style_tags": [
+      "cortex",
+      "cuticle_ring",
+      "cross_section",
+      "SEM",
+      "keratin_fibrils"
+    ],
+    "asset_type": "micrograph",
+    "format": "tif/jpg",
+    "resolution": "4748x3165",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/8/8f/%D0%9F%D0%BE%D0%B2%D0%B5%D1%80%D1%85%D0%BD%D0%BE%D1%81%D1%82%D1%8C_%D1%87%D0%B5%D0%BB%D0%BE%D0%B2%D0%B5%D1%87%D0%B5%D1%81%D0%BA%D0%BE%D0%B3%D0%BE_%D0%B2%D0%BE%D0%BB%D0%BE%D1%81%D0%B0.tif",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Поверхность_человеческого_волоса.tif",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Wikimedia Commons Contributor / Scientific Microanalysis",
+    "description": "High-definition scanning electron micrograph capturing the transverse cut surface of a human hair fiber, clearly showing the concentric outer cuticle ring encircling the dense cortical core.",
+    "educational_notes": "Visual proof of where tensile strength resides (the cortex disulfide keratin bonds) and how cuticle damage leaves the cortex vulnerable to splitting."
+  },
+  {
+    "id": "media_scalp_seborrheic_dermatitis_017",
+    "title": "Clinical Manifestation of Scalp Seborrheic Dermatitis vs. Dry Flakes",
+    "category": "microscopic_anatomy",
+    "subcategory": "scalp_diagnostics",
+    "hair_attributes": {
+      "type": "Scalp Condition (All Types)",
+      "porosity_relevance": "Sebum Imbalance",
+      "density": "Scalp Microbiome",
+      "strand_thickness": "Follicle Base"
+    },
+    "style_tags": [
+      "scalp_health",
+      "seborrheic_dermatitis",
+      "dandruff",
+      "malassezia",
+      "erythema"
+    ],
+    "asset_type": "clinical_image",
+    "format": "jpg",
+    "resolution": "1024x768",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cf/Common_causes_of_an_itchy_scalp.jpg/800px-Common_causes_of_an_itchy_scalp.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Common_causes_of_an_itchy_scalp.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Medical Dermatology Contributor / Wikimedia Commons",
+    "description": "Clinical overview image identifying common etiologies of itchy scalp, comparing yellowish oily adherent plaques (seborrheic dermatitis) with loose white flakes (pityriasis capitis / dry scalp).",
+    "educational_notes": "Integrated into Mya scalp questionnaire to help users distinguish between dry scalp needing hydrating oils and Malassezia yeast overgrowth requiring zinc pyrithione or ketoconazole."
+  },
+  {
+    "id": "media_scalp_traction_alopecia_018",
+    "title": "Traction Alopecia Clinical Pattern along Frontal and Temporal Hairline",
+    "category": "microscopic_anatomy",
+    "subcategory": "scalp_diagnostics",
+    "hair_attributes": {
+      "type": "Textured Hair Vulnerability",
+      "porosity_relevance": "Mechanical Follicle Stress",
+      "density": "Focal Thinning",
+      "strand_thickness": "Miniaturized / Lost Strands"
+    },
+    "style_tags": [
+      "traction_alopecia",
+      "hairline_thinning",
+      "protective_style_tension",
+      "folliculitis"
+    ],
+    "asset_type": "clinical_image",
+    "format": "jpg",
+    "resolution": "1200x800",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Traction_alopecia.jpg/800px-Traction_alopecia.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Traction_alopecia.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Dermatology Research Archive / Wikimedia Commons",
+    "description": "Clinical dermatological record exhibiting marginal traction alopecia along the frontotemporal border caused by sustained mechanical pulling from excessively tight braids or extensions.",
+    "educational_notes": "Vital warning visual for Mya when counseling clients on tension-free braiding methods and the fringe sign of early follicle preservation."
+  },
+  {
+    "id": "media_style_bantu_knots_019",
+    "title": "Bantu Knots (Nubian Knots) Sectioned Protective Styling",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "3C, 4A, 4B, 4C",
+      "porosity_relevance": "Moisture-Locking Style",
+      "density": "Medium to High",
+      "strand_thickness": "Fine to Coarse"
+    },
+    "style_tags": [
+      "bantu_knots",
+      "nubian_knots",
+      "protective_style",
+      "heatless_curls",
+      "traditional"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "2056x3088",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/d/df/Bantu_Knots_2_-_hairstyle_-_model_Gwyneth_Ellis.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Bantu_Knots_2_-_hairstyle_-_model_Gwyneth_Ellis.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Augustus Binu / Wikimedia Commons",
+    "description": "Professional styling portrait of Bantu knots with geometric partings, showing twisted coils stacked into secure conical buns that protect fragile hair tips.",
+    "educational_notes": "Exemplifies both a dual-purpose protective style and the pre-styling foundation for a defined, heatless Bantu Knot-Out."
+  },
+  {
+    "id": "media_style_cornrows_traditional_020",
+    "title": "Precision Straight-Back Cornrows on Natural Textured Hair",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "3B to 4C",
+      "porosity_relevance": "Low to High",
+      "density": "High",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "cornrows",
+      "canerows",
+      "feed_in",
+      "scalp_braids",
+      "underhand_braiding"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1536x2048",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/e0/Cornrows.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Cornrows.jpg",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "Classic straight-back cornrow braiding pattern executed directly against the scalp using the underhand three-strand technique, showing uniform tension and neat parting alleys.",
+    "educational_notes": "Demonstrates foundational cornrowing for protective maintenance, under-wig preparation, and scalp hydration access."
+  },
+  {
+    "id": "media_style_cornrow_bun_021",
+    "title": "Cornrows Gathered into an Elegant Braided High Bun Updo",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "3C, 4A, 4B, 4C",
+      "porosity_relevance": "Protective Ends",
+      "density": "High",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "cornrows",
+      "braided_bun",
+      "protective_updo",
+      "feed_in",
+      "tucked_ends"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "2304x3072",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/ea/Cornrows_Into_Braided_Bun.JPG",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Cornrows_Into_Braided_Bun.JPG",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "Elevated protective styling featuring curvilinear feeder cornrows converging into a crowned braided chignon bun, completely shielding hair ends from atmospheric friction.",
+    "educational_notes": "Recommended by Mya for clients seeking low-manipulation styles that require zero heat and maintain length retention over 4-6 week intervals."
+  },
+  {
+    "id": "media_style_box_braids_022",
+    "title": "Classic Long Box Braids with Square Parting Grid",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "3A to 4C",
+      "porosity_relevance": "Moisture Sealant",
+      "density": "All Densities",
+      "strand_thickness": "Medium"
+    },
+    "style_tags": [
+      "box_braids",
+      "individual_braids",
+      "synthetic_extensions",
+      "protective_style"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1920x1080",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/8/82/Box_Braids.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Box_Braids.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "Individual three-strand box braids partitioned into clean square/grid sections, demonstrating uniform weight distribution and sealed ends.",
+    "educational_notes": "Used to explain protective styling hygiene: daily scalp misting with water-based humectants and bi-weekly cleansing without unraveling."
+  },
+  {
+    "id": "media_style_flat_twists_curls_023",
+    "title": "Flat Twists Combined with Defined Curl Finishes",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "3C, 4A, 4B",
+      "porosity_relevance": "Medium",
+      "density": "Medium to High",
+      "strand_thickness": "Fine to Medium"
+    },
+    "style_tags": [
+      "flat_twists",
+      "two_strand_twists",
+      "hybrid_style",
+      "low_tension"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1800x1200",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/f/fc/Flat_twists_and_curls.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Flat_twists_and_curls.jpg",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "Two-strand flat twists rolled along the scalp transitioning into loose curly tips, offering a lower-tension alternative to traditional three-strand cornrows.",
+    "educational_notes": "Key style recommendation for users prone to traction sensitivity or fragile temple edges who still desire neat cornrow aesthetics."
+  },
+  {
+    "id": "media_style_twist_out_defined_024",
+    "title": "Two-Strand Twist-Out Definition on Coily Hair",
+    "category": "hairstyles",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "4A, 4B, 4C",
+      "porosity_relevance": "Cream & Butter Styling",
+      "density": "High",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "twist_out",
+      "two_strand_twist",
+      "texture_definition",
+      "heatless_curls"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1600x1200",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/e3/Twist-out.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Twist-out.jpg",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Natural Hair Contributor / Wikimedia Commons",
+    "description": "High-volume, defined twist-out showcasing the distinct wavy-crimped curl pattern resulting from untwisting dry two-strand twists previously set with curling cream.",
+    "educational_notes": "Core educational asset for Mya when instructing clients on setting styles: emphasizing 100% complete drying before takedown to prevent frizz."
+  },
+  {
+    "id": "media_style_afro_voluminous_025",
+    "title": "Iconic Rounded Natural Afro with Full Volumetric Crown",
+    "category": "hairstyles",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "4A, 4B, 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "High to Very High",
+      "strand_thickness": "Fine to Coarse"
+    },
+    "style_tags": [
+      "afro",
+      "natural_hair",
+      "volume",
+      "afro_pick",
+      "cultural_icon"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "3442x2314",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/2/29/Billy_Preston_perforning_in_1971.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Billy_Preston_perforning_in_1971.jpg",
+    "license": "Public Domain (CC0 / Press photo expired copyright)",
+    "author_attribution": "A&M Records / Wikimedia Commons Archive",
+    "description": "Historical high-resolution photograph of the quintessential spherical Afro silhouette, showcasing the natural anti-gravity elevation and interlocking spring matrix of Type 4 hair.",
+    "educational_notes": "Used by Mya to explain hair pick techniques at the roots to maximize volume while preserving curl clump hydration on the outer perimeter."
+  },
+  {
+    "id": "media_style_twa_short_afro_026",
+    "title": "Teeny Weeny Afro (TWA) Post-Big Chop Natural Texture",
+    "category": "hairstyles",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "4B, 4C",
+      "porosity_relevance": "Virgin / Low Porosity",
+      "density": "High",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "twa",
+      "teeny_weeny_afro",
+      "big_chop",
+      "short_natural",
+      "virgin_hair"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "2602x3315",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/6/61/ASC_Leiden_-_NSAG_-_Crebolder_1_-_053_-_A_portrait_of_a_standing_boy_with_frizzy_hair_-_Kampala%2C_Uganda_-_November-December_1961.tif",
+    "page_url": "https://commons.wikimedia.org/wiki/File:ASC_Leiden_-_NSAG_-_Crebolder_1_-_053_-_A_portrait_of_a_standing_boy_with_frizzy_hair_-_Kampala,_Uganda_-_November-December_1961.tif",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "African Studies Centre Leiden / H.F. Crebolder",
+    "description": "Short, cropped virgin natural Afro (TWA) illustrating natural coil tight-spring clustering close to the scalp in an un-manipulated healthy state.",
+    "educational_notes": "Guidance visual for users undergoing the Big Chop transition from relaxed to natural hair, highlighting easy scalp access and moisture absorption."
+  },
+  {
+    "id": "media_style_mature_locs_027",
+    "title": "Mature Dreadlocks with Cylindrical Density and Defined Parting",
+    "category": "hairstyles",
+    "subcategory": "locs",
+    "hair_attributes": {
+      "type": "3C, 4A, 4B, 4C Base",
+      "porosity_relevance": "Internal Moisture Retention",
+      "density": "High",
+      "strand_thickness": "Compacted Fibrils"
+    },
+    "style_tags": [
+      "locs",
+      "dreadlocks",
+      "mature_locs",
+      "retwist",
+      "interlocking"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "3484x2336",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/6/60/Bad_brains_1983.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Bad_brains_1983.jpg",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Wikimedia Commons Contributor / Music Archive",
+    "description": "Full-head mature locs showcasing completely unified cylindrical rope-like formations where shed hairs have naturally meshed within the internal core matrix.",
+    "educational_notes": "Assists Mya in coaching loc maintenance: emphasizing residue-free clarifying shampoos and lightweight oil sprays to avoid internal mold/buildup."
+  },
+  {
+    "id": "media_style_short_textured_cut_028",
+    "title": "Short Clean Precision Taper and Line Work on Textured Coils",
+    "category": "hairstyles",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "4B, 4C",
+      "porosity_relevance": "Low to Normal",
+      "density": "Medium to High",
+      "strand_thickness": "Coarse"
+    },
+    "style_tags": [
+      "taper_cut",
+      "fade",
+      "short_texture",
+      "lineup",
+      "360_waves"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "2048x1536",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/7/7b/Boy_feeling_Barack_Obama%27s_hair.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Boy_feeling_Barack_Obama%27s_hair.jpg",
+    "license": "Public Domain (White House / Pete Souza)",
+    "author_attribution": "Pete Souza / Executive Office of the President",
+    "description": "Close interaction displaying short, well-manicured cropped natural hair texture, showing scalp health, neat line work, and uniform natural hair grain.",
+    "educational_notes": "Used by Mya for natural taper haircuts, low-cut maintenance routines, and wave brush training."
+  },
+  {
+    "id": "media_regimen_wash_cleansing_029",
+    "title": "Hair Cleansing & Scalp Massage Mechanics during Wash Day",
+    "category": "regimen_steps",
+    "subcategory": "cleansing",
+    "hair_attributes": {
+      "type": "All Textures",
+      "porosity_relevance": "Cuticle Cleansing / Buildup Removal",
+      "density": "Scalp Contact",
+      "strand_thickness": "Wet State"
+    },
+    "style_tags": [
+      "wash_day",
+      "shampooing",
+      "scalp_massage",
+      "sulfate_free",
+      "cleansing"
+    ],
+    "asset_type": "illustration",
+    "format": "png",
+    "resolution": "1024x768",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Shampoo.png/800px-Shampoo.png",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Shampoo.png",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Wikimedia Commons Graphic / Health Education",
+    "description": "Step-by-step schematic illustrating fingertips (not fingernails) stimulating the scalp with cleansing lather, lifting sebum without abrading the dermal barrier.",
+    "educational_notes": "Core infographic for Mya Wash Day Routine explaining why clarifying is required every 3-4 weeks for coily hair using heavy plant butters."
+  },
+  {
+    "id": "media_regimen_detangling_wet_030",
+    "title": "Mechanical Detangling Protocol on Saturated Hair with Conditioner",
+    "category": "regimen_steps",
+    "subcategory": "detangling",
+    "hair_attributes": {
+      "type": "3A to 4C",
+      "porosity_relevance": "Slip Optimization",
+      "density": "Sectioned",
+      "strand_thickness": "Vulnerable when Wet"
+    },
+    "style_tags": [
+      "detangling",
+      "wide_tooth_comb",
+      "wet_hair",
+      "slip",
+      "bottom_up_combing"
+    ],
+    "asset_type": "illustration",
+    "format": "png",
+    "resolution": "800x600",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Hair_Care_Combing_Hair.png/800px-Hair_Care_Combing_Hair.png",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Hair_Care_Combing_Hair.png",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Wikimedia Commons Educational Media",
+    "description": "Illustration of proper detangling mechanics: working in small sections from the tips upwards toward the roots using wide-tooth comb implements under lubricated slip.",
+    "educational_notes": "Mya primary visual rule to prevent tensile snap: never detangle textured hair dry without leave-in conditioner or slippery elm / marshmallow root slip."
+  },
+  {
+    "id": "media_regimen_conditioning_products_031",
+    "title": "Deep Conditioning and Hydration Emulsion Product Architecture",
+    "category": "regimen_steps",
+    "subcategory": "conditioning",
+    "hair_attributes": {
+      "type": "All Types (Especially High Porosity)",
+      "porosity_relevance": "Cortex Moisture Infusion",
+      "density": "Heavy Saturation",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "deep_conditioning",
+      "emulsions",
+      "hair_mask",
+      "steam_therapy",
+      "moisture"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "2448x3264",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Hair_shampoos%2C_conditioners_and_other_hair_care_products_in_liter_bottles_for_use_in_hair_salon.jpg/800px-Hair_shampoos%2C_conditioners_and_other_hair_care_products_in_liter_bottles_for_use_in_hair_salon.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Hair_shampoos,_conditioners_and_other_hair_care_products_in_liter_bottles_for_use_in_hair_salon.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Wikimedia Commons Salon Documentation",
+    "description": "Professional salon hair care formulations detailing balanced cationic surfactants, fatty alcohols (cetyl/stearyl), and humectant matrices.",
+    "educational_notes": "Supports Mya product recommendation engine when matching hydrolyzed proteins vs. moisturizing fatty conditioners to user strand porosity."
+  },
+  {
+    "id": "media_regimen_night_bonnet_protection_032",
+    "title": "Nighttime Friction Protection: Satin/Silk Bonnet Wrap Mechanism",
+    "category": "regimen_steps",
+    "subcategory": "night_protection",
+    "hair_attributes": {
+      "type": "3A to 4C Essential",
+      "porosity_relevance": "Moisture Conservation",
+      "density": "Compact Bundle",
+      "strand_thickness": "Preservation"
+    },
+    "style_tags": [
+      "satin_bonnet",
+      "silk_wrap",
+      "night_protection",
+      "moisture_retention",
+      "friction_prevention"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "3000x2057",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/d/d3/A_black_child%2C_Chicago._-_NARA_-_556138.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:A_black_child,_Chicago._-_NARA_-_556138.jpg",
+    "license": "Public Domain (US National Archives / John H. White)",
+    "author_attribution": "John H. White / US National Archives (DOCUMERICA)",
+    "description": "Portrait documenting traditional fabric head-wrapping and scarf protection used to enclose natural hair against abrasive cotton fiber surfaces.",
+    "educational_notes": "Used by Mya in Night Routine recommendations: explains how hydrophobic silk/satin preserves natural lipids compared to hydrophilic cotton which absorbs hair oils."
+  },
+  {
+    "id": "media_micro_oil_absorption_treatment_033",
+    "title": "Microscopic Evaluation of Sebum & Oil Absorption on Hair Shaft (100X)",
+    "category": "microscopic_anatomy",
+    "subcategory": "surface_chemistry",
+    "hair_attributes": {
+      "type": "All Types",
+      "porosity_relevance": "Lipid Layer Deposition",
+      "density": "N/A",
+      "strand_thickness": "100X Field"
+    },
+    "style_tags": [
+      "oil_absorption",
+      "microscope_100x",
+      "sebum_coating",
+      "lipid_film",
+      "LOC_method"
+    ],
+    "asset_type": "micrograph",
+    "format": "jpg",
+    "resolution": "806x794",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/e0/Oil_Absorption_Test_Result_of_Dry_Herbal_Shampoo_under_Microscope_100X_FI.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Oil_Absorption_Test_Result_of_Dry_Herbal_Shampoo_under_Microscope_100X_FI.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Pharmaceutical & Cosmetic Sciences Research / Wikimedia Commons",
+    "description": "Scientific light microscopy test (100X) recording oil absorption and lipid coating uniformity across the hair fiber surface under natural conditioning treatments.",
+    "educational_notes": "Visually justifies the O (Oil) step in the LOC/LCO method: showing how occlusive oils create a hydrophobic seal over water-based leave-in conditioners."
+  },
+  {
+    "id": "media_micro_oily_sebum_buildup_100x_034",
+    "title": "Microscopic Surface of Hair Strand with Heavy Sebum Buildup (100X)",
+    "category": "microscopic_anatomy",
+    "subcategory": "scalp_diagnostics",
+    "hair_attributes": {
+      "type": "All Types",
+      "porosity_relevance": "Occluded Cuticle / Low Penetration",
+      "density": "N/A",
+      "strand_thickness": "Coated Shaft"
+    },
+    "style_tags": [
+      "sebum_buildup",
+      "product_residue",
+      "microscopy_100x",
+      "clarifying_need"
+    ],
+    "asset_type": "micrograph",
+    "format": "jpg",
+    "resolution": "776x764",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/5/5e/Oily_Hair_under_Microscopic_100X_%28L%29.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Oily_Hair_under_Microscopic_100X_(L).jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Cosmetic Dermatology Research / Wikimedia Commons",
+    "description": "Microscopic analysis at 100X showing dense lipid and sebum accumulation along the shaft perimeter, obscuring clear cuticle scale visualization.",
+    "educational_notes": "Educational asset for Mya when diagnosing product buildup that prevents moisture absorption, guiding the recommendation of clarifying chelating treatments."
+  },
+  {
+    "id": "media_micro_cut_shaft_geometry_035",
+    "title": "Transverse Optical Micrograph of Cleanly Cut Human Hair Shaft",
+    "category": "microscopic_anatomy",
+    "subcategory": "strand_damage",
+    "hair_attributes": {
+      "type": "All Types",
+      "porosity_relevance": "Sharp Shear vs Dull Shear",
+      "density": "N/A",
+      "strand_thickness": "Cross Cut"
+    },
+    "style_tags": [
+      "hair_cut",
+      "shear_precision",
+      "cross_cut",
+      "trichology",
+      "cortex_rim"
+    ],
+    "asset_type": "micrograph",
+    "format": "jpg",
+    "resolution": "5513x5512",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/b/bc/%D0%9E%D0%B1%D1%80%D0%B5%D0%B7%D0%B0%D0%BD%D0%BD%D1%8B%D0%B9_%D0%B2%D0%BE%D0%BB%D0%BE%D1%81.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Обрезанный_волос.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "High-Resolution Microscopy Contributor / Wikimedia Commons",
+    "description": "5,500x5,500 pixel microscopic view of a cleanly sheared hair shaft end, showcasing the circular/elliptical perimeter and uncrushed internal cortical matrix.",
+    "educational_notes": "Mya uses this to educate users on salon-grade convex trimming shears: dull scissors crush the hair cortex and accelerate premature split ends."
+  }
+]

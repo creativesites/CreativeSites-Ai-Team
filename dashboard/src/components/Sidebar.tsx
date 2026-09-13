@@ -14,6 +14,7 @@ import {
   Zap,
   Terminal,
   Clock,
+  FolderOpen,
 } from '@/components/icons';
 
 const NAV: { section: string; items: { href: string; label: string; icon: any }[] }[] = [
@@ -27,6 +28,7 @@ const NAV: { section: string; items: { href: string; label: string; icon: any }[
   {
     section: 'Work',
     items: [
+      { href: '/work/projects', label: 'Projects', icon: FolderOpen },
       { href: '/work', label: 'Tasks', icon: Layers },
       { href: '/evidence', label: 'Evidence & Verification', icon: ShieldCheck },
     ],

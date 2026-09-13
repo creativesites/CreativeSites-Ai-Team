@@ -62,6 +62,21 @@ function route(task) {
       ${escape(selected ? selected.id : null)}, ${escape(reason)}, ${escape(now)}
     )`);
 
+  if (task.taskId) {
+    const evbId = `evb-${crypto.randomBytes(6).toString('hex')}`;
+    runDb(`INSERT INTO event_bus (id, event_type, task_id, agent_id, model_id, reason, payload, created_at)
+      VALUES (
+        ${escape(evbId)},
+        'model_selected',
+        ${escape(task.taskId)},
+        ${escape(task.agentId || 'gemini_cli')},
+        ${escape(selected ? selected.id : null)},
+        ${escape(reason)},
+        ${escape(JSON.stringify({ selectionId }))},
+        datetime('now')
+      )`);
+  }
+
   return { selectionId, candidates, selected, reason };
 }
 

@@ -91,10 +91,21 @@ async function generateContent(prompt, opts = {}) {
   const model = opts.model || 'gemini-flash-latest';
   const started = Date.now();
 
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }]
+  };
+
+  if (opts.responseSchema) {
+    payload.generationConfig = {
+      responseMimeType: 'application/json',
+      responseSchema: opts.responseSchema
+    };
+  }
+
   const res = await fetch(`${BASE_URL}/models/${model}:generateContent?key=${key}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+    body: JSON.stringify(payload),
   });
   const body = await res.json();
   const latencyMs = Date.now() - started;

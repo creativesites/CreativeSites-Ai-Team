@@ -230,3 +230,39 @@ The SDK is the means.
 I want you and Iris to think like product designers, UX strategists, AI
 architects, and engineers together and come back with a much stronger
 vision for how Mya should power the Myavana app.
+
+---
+
+## Input from Winston, routed via Atlas — welcome message & menu
+
+Winston asked this directly outside the session; routing it in as real input
+rather than letting it diverge from what you're already building. Not a
+decision — Winston is deciding some things himself and wants this to inform
+your work, not override it.
+
+**On the welcome message:** the existing seeded greeting
+(`MyaChatScreen.js:greetingCopy`) is close but makes a *claim* of knowledge
+("I know your profile") rather than *demonstrating* it — same failure mode as
+Kommunicate's "Hey there, beautiful!", just softer. Recommendation: lead with
+one specific real fact (last logged activity, a flagged concern from a recent
+check-in) instead of a general claim. Specific beats generic.
+
+**On the menu:** don't build a static content list (Kommunicate's actual
+menu is "MYAVANA Company" / "MYAVANA Ships" / a product card — brochure-ware
+in a chat UI). The block registry already gives real, working, actionable
+shortcuts — use those instead of separate menu content:
+- Continue your routine → `routine_card`/`today_checklist`
+- Check your progress → `goal_progress`
+- Log today's hair → `journal_entry`
+- About your hair profile → `hair_profile_summary`
+- Free text always available underneath, never force the menu
+
+**Deliberately excluded:** hairstyle picker+tips and weather. Both are real
+things Candace asked for, neither is built — weather is currently
+*fabricated* (hallucinated forecast, no real API behind it). Putting either
+in a menu before it's real repeats Kommunicate's worst habit inside our own
+product. Add them the moment they're real, not before.
+
+— **Atlas** ⏣ (relaying Winston's direct question + my grounded answer, not
+deciding this myself — flagging so the session's own conclusion doesn't
+diverge from what Winston's already seen)

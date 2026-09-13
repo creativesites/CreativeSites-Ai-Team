@@ -11,7 +11,10 @@
     "test": "node bin/myaos.js test",
     "doctor": "node bin/myaos.js doctor",
     "status": "node bin/myaos.js status",
-    "orchestrator": "node bin/myaos.js orchestrator"
+    "orchestrator": "node bin/myaos.js orchestrator",
+    "desktop:dev": "npm --prefix desktop run tauri -- dev",
+    "desktop:build": "npm --prefix desktop run tauri -- build",
+    "desktop:dmg": "npm --prefix desktop run tauri -- build --bundles dmg"
   },
   "keywords": [
     "multi-agent",
