@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { PanelLeft } from 'lucide-react';
-import { NavigationSidebar, ViewType } from './components/NavigationSidebar';
+import { PanelLeft, Sparkles, Code2 } from 'lucide-react';
+import { NavigationSidebar, DevViewType, WorkViewType, AppMode } from './components/NavigationSidebar';
 import { JulesMissionFlowView } from './views/JulesMissionFlowView';
 import { JulesCockpitView } from './views/JulesCockpitView';
 import { WorkspaceExplorerView } from './views/WorkspaceExplorerView';
@@ -16,8 +16,29 @@ import { OKRIntelligenceView } from './views/OKRIntelligenceView';
 import { DesignStudioView } from './views/DesignStudioView';
 import { AgentWorkspaceView } from './views/AgentWorkspaceView';
 import { SettingsView } from './views/SettingsView';
+
+// Normal Mode Views
+import { HomeView } from './views/normal/HomeView';
+import { JobDetailView } from './views/normal/JobDetailView';
+import { JobsListView } from './views/normal/JobsListView';
+import { CoworkersView } from './views/normal/CoworkersView';
+import { ConnectedToolsView } from './views/normal/ConnectedToolsView';
+import { ApprovalCenterView } from './views/normal/ApprovalCenterView';
+import { RoutinesView } from './views/normal/RoutinesView';
+import { ActivityView } from './views/normal/ActivityView';
+
 import { FleetDrawer } from './components/FleetDrawer';
 import { appendTerminalBuffer, clearTerminalBuffer } from './components/XTermTerminal';
+import {
+  DEFAULT_COWORKERS,
+  DEFAULT_CONNECTED_TOOLS,
+  DEFAULT_JOBS,
+  DEFAULT_APPROVALS,
+  DEFAULT_ROUTINES,
+  DEFAULT_SKILLS,
+  DEFAULT_ACTIVITIES,
+} from './services/normalModeData';
+import { Job, Coworker, ConnectedTool, Approval, Routine, Skill, ActivityItem } from './types/normalMode';
 
 export interface PtySession {
   session_id: string;
@@ -32,7 +53,20 @@ export interface PtySession {
 
 export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<ViewType>('jules_flow');
+  const [appMode, setAppMode] = useState<AppMode>('work');
+  const [devView, setDevView] = useState<DevViewType>('jules_flow');
+  const [workView, setWorkView] = useState<WorkViewType>('home');
+
+  // Normal Mode Data State
+  const [jobs, setJobs] = useState<Job[]>(DEFAULT_JOBS);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [coworkers, setCoworkers] = useState<Coworker[]>(DEFAULT_COWORKERS);
+  const [connectedTools, setConnectedTools] = useState<ConnectedTool[]>(DEFAULT_CONNECTED_TOOLS);
+  const [approvals, setApprovals] = useState<Approval[]>(DEFAULT_APPROVALS);
+  const [routines, setRoutines] = useState<Routine[]>(DEFAULT_ROUTINES);
+  const [skills, setSkills] = useState<Skill[]>(DEFAULT_SKILLS);
+  const [activities, setActivities] = useState<ActivityItem[]>(DEFAULT_ACTIVITIES);
+
   const [selectedAgentId, setSelectedAgentId] = useState<string>('astra');
   const [summary, setSummary] = useState<any>(null);
   const [identities, setIdentities] = useState<any[]>([]);
@@ -45,7 +79,7 @@ export function App() {
   );
   const [fleetDrawerOpen, setFleetDrawerOpen] = useState(false);
 
-  // Global keyboard shortcut to toggle navigation sidebar (⌘B / Ctrl+B)
+  // Global keyboard shortcut to toggle navigation sidebar (⌘B)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
@@ -82,7 +116,7 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Listen to native PTY output stream - buffered directly without triggering React re-render choke
+  // Listen to native PTY output stream
   useEffect(() => {
     const unlistenOutput = listen<{ session_id: string; data: string }>('pty_output', (event) => {
       const { session_id, data } = event.payload;
@@ -236,7 +270,7 @@ export function App() {
     }
   };
 
-  // Generic Adapter Spawn (backward compatible for TerminalsView)
+  // Generic Adapter Spawn
   const handleSpawnSession = async (agentId: string, runtimeType: string) => {
     if (runtimeType === 'claude_code') {
       return handleSpawnClaude(agentId);
@@ -340,202 +374,387 @@ export function App() {
     }
   };
 
+  // Normal Mode Job Creators & Action Handlers
+  const handleStartNormalJob = (userPrompt: string, coworkerIdPreference?: string) => {
+    const assignedCoworker = coworkerIdPreference || 'vela';
+    const newJob: Job = {
+      id: `job_${Date.now()}`,
+      title: userPrompt.length > 50 ? `${userPrompt.slice(0, 50)}...` : userPrompt,
+      userPrompt,
+      status: 'working',
+      progressPercentage: 35,
+      assignedCoworkers: [assignedCoworker, 'kael'],
+      targetWorkspace: currentWorkspace,
+      connectedToolsUsed: ['web_search', 'local_files', 'sqlite_substrate'],
+      stages: [
+        { id: 's1', stepNumber: 1, label: 'Understanding Request', status: 'completed' },
+        { id: 's2', stepNumber: 2, label: 'Coworker Execution', status: 'working' },
+        { id: 's3', stepNumber: 3, label: 'Independent Verification', status: 'pending' },
+        { id: 's4', stepNumber: 4, label: 'Artifact Delivery', status: 'pending' },
+      ],
+      humanizedLog: [
+        `Assigned ${assignedCoworker.toUpperCase()} and KAEL to task.`,
+        'Analyzing parameters and inspecting workspace context.',
+        'Executing work pipeline with live substrate logging...',
+      ],
+      technicalLogs: [
+        `pty_spawn_claude agent=${assignedCoworker} prompt="${userPrompt}"`,
+        `myaos_log_mission_event event=job.started cwd=${currentWorkspace}`,
+      ],
+      artifacts: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setJobs((prev) => [newJob, ...prev]);
+    setSelectedJobId(newJob.id);
+    setWorkView('my_work');
+
+    // Trigger actual background agent execution via PTY CLI
+    handleSpawnClaude(assignedCoworker, currentWorkspace, true, userPrompt);
+  };
+
+  const handleApproveAction = (approvalId: string) => {
+    setApprovals((prev) =>
+      prev.map((a) => (a.id === approvalId ? { ...a, status: 'approved' } : a))
+    );
+    setJobs((prev) =>
+      prev.map((j) => {
+        if (j.pendingApproval?.id === approvalId) {
+          return {
+            ...j,
+            status: 'completed',
+            progressPercentage: 100,
+            pendingApproval: { ...j.pendingApproval, status: 'approved' },
+          };
+        }
+        return j;
+      })
+    );
+  };
+
+  const handleDeclineAction = (approvalId: string) => {
+    setApprovals((prev) =>
+      prev.map((a) => (a.id === approvalId ? { ...a, status: 'declined' } : a))
+    );
+    setJobs((prev) =>
+      prev.map((j) => {
+        if (j.pendingApproval?.id === approvalId) {
+          return {
+            ...j,
+            status: 'paused',
+            pendingApproval: { ...j.pendingApproval, status: 'declined' },
+          };
+        }
+        return j;
+      })
+    );
+  };
+
+  const selectedJob = jobs.find((j) => j.id === selectedJobId) || jobs[0];
+
   return (
-    <div className="flex h-screen w-screen bg-[#faf9f6] text-zinc-800 overflow-hidden font-sans">
+    <div className="flex h-screen w-screen bg-[#faf9f6] text-zinc-800 overflow-hidden font-sans select-none">
       <NavigationSidebar
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen((prev) => !prev)}
-        currentView={currentView}
-        onViewSelect={(v) => setCurrentView(v)}
+        appMode={appMode}
+        onModeChange={setAppMode}
+        devView={devView}
+        onDevViewSelect={setDevView}
+        workView={workView}
+        onWorkViewSelect={setWorkView}
         activeSessionsCount={sessions.filter((s) => s.is_alive).length}
         pendingDecisionsCount={summary?.pending_decisions_count || 0}
+        pendingApprovalsCount={approvals.filter((a) => a.status === 'pending').length}
         sleepPrevented={sleepPrevented}
         onToggleSleepPrevention={handleToggleSleepPrevention}
         onWakeTeam={handleWakeTeam}
         onSleepTeam={handleSleepTeam}
         currentWorkspace={currentWorkspace}
+        onStartNewJob={() => setWorkView('home')}
       />
 
       <div className="flex-1 flex flex-col h-full min-w-0 bg-[#faf9f6] overflow-hidden">
-        {/* Zero-Waste Top Titlebar Row (Active when sidebar is closed) */}
-        {!sidebarOpen && (
-          <div className="h-10 px-3 flex items-center justify-between border-b border-black/[0.05] bg-[#faf9f6]/95 backdrop-blur-md shrink-0 select-none z-30">
-            <div className="flex items-center gap-2">
-              {/* Native macOS Traffic Lights */}
-              <div className="flex items-center gap-1.5 px-1">
-                <span className="w-3 h-3 rounded-full bg-[#ff5f57] border border-[#e0443e] cursor-pointer hover:brightness-95 transition shadow-2xs" />
-                <span className="w-3 h-3 rounded-full bg-[#febc2e] border-[#d89e24] cursor-pointer hover:brightness-95 transition shadow-2xs" />
-                <span className="w-3 h-3 rounded-full bg-[#28c840] border-[#1aab29] cursor-pointer hover:brightness-95 transition shadow-2xs" />
-              </div>
+        {/* Zero-Waste Top Titlebar Row */}
+        <div className="h-10 px-3 flex items-center justify-between border-b border-black/[0.05] bg-[#faf9f6]/95 backdrop-blur-md shrink-0 select-none z-30">
+          <div className="flex items-center gap-2">
+            {!sidebarOpen && (
+              <>
+                <div className="flex items-center gap-1.5 px-1">
+                  <span className="w-3 h-3 rounded-full bg-[#ff5f57] border border-[#e0443e] cursor-pointer hover:brightness-95 transition shadow-2xs" />
+                  <span className="w-3 h-3 rounded-full bg-[#febc2e] border-[#d89e24] cursor-pointer hover:brightness-95 transition shadow-2xs" />
+                  <span className="w-3 h-3 rounded-full bg-[#28c840] border-[#1aab29] cursor-pointer hover:brightness-95 transition shadow-2xs" />
+                </div>
 
-              {/* Minimalist Sidebar Toggle (Zero App Space Taken) */}
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="w-7 h-7 rounded-lg hover:bg-black/5 text-zinc-500 hover:text-zinc-800 transition flex items-center justify-center cursor-pointer ml-1"
+                  title="Open Sidebar (⌘B)"
+                >
+                  <PanelLeft className="w-4 h-4" />
+                </button>
+
+                <div className="h-3 w-px bg-zinc-200 mx-1" />
+              </>
+            )}
+
+            {/* Titlebar Dual Mode Switcher Pill */}
+            <div className="p-0.5 rounded-lg bg-zinc-200/60 flex items-center gap-1">
               <button
-                onClick={() => setSidebarOpen(true)}
-                className="w-7 h-7 rounded-lg hover:bg-black/5 text-zinc-500 hover:text-zinc-800 transition flex items-center justify-center cursor-pointer ml-1"
-                title="Open Sidebar (⌘B)"
+                onClick={() => setAppMode('work')}
+                className={`py-0.5 px-2 rounded-md text-[10.5px] font-semibold transition flex items-center gap-1 cursor-pointer ${
+                  appMode === 'work'
+                    ? 'bg-white text-zinc-900 shadow-2xs'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
               >
-                <PanelLeft className="w-4 h-4" />
+                <Sparkles className="w-3 h-3 text-indigo-600" />
+                <span>Work Mode</span>
               </button>
-
-              <div className="h-3 w-px bg-zinc-200 mx-1" />
-
-              {/* Minimalist Breadcrumb */}
-              <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-medium">
-                <span className="text-zinc-400">MyaOS</span>
-                <span className="text-zinc-300">/</span>
-                <span className="text-zinc-800 font-semibold">
-                  {currentView === 'jules_flow'
-                    ? 'MyaDesktop Flow'
-                    : currentView === 'jules_cockpit'
-                    ? 'Executive Cockpit'
-                    : currentView === 'team'
-                    ? 'Team & Org Chart'
-                    : currentView === 'agent_workspace'
-                    ? `Agent Workspace (@${selectedAgentId})`
-                    : currentView === 'projects'
-                    ? 'Projects & Tasks'
-                    : currentView === 'okrs'
-                    ? 'Strategic OKRs'
-                    : currentView === 'workspace'
-                    ? 'Codebases & Repos'
-                    : currentView === 'chat'
-                    ? 'Agent Communication Hub'
-                    : currentView === 'quality'
-                    ? 'Quality & Evidence'
-                    : currentView === 'automation'
-                    ? 'Autonomy & Costs'
-                    : currentView === 'settings'
-                    ? 'Settings & Substrate Governance'
-                    : 'PTY Hub'}
-                </span>
-              </div>
+              <button
+                onClick={() => setAppMode('developer')}
+                className={`py-0.5 px-2 rounded-md text-[10.5px] font-semibold transition flex items-center gap-1 cursor-pointer ${
+                  appMode === 'developer'
+                    ? 'bg-zinc-900 text-white shadow-2xs'
+                    : 'text-zinc-500 hover:text-zinc-800'
+                }`}
+              >
+                <Code2 className="w-3 h-3" />
+                <span>Developer Cockpit</span>
+              </button>
             </div>
 
-            <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-400">
-              <span>{currentWorkspace.split('/').pop()}</span>
+            <div className="h-3 w-px bg-zinc-200 mx-1" />
+
+            {/* Breadcrumb */}
+            <div className="flex items-center gap-1.5 text-xs text-zinc-500 font-medium">
+              <span className="text-zinc-400">MyaOS</span>
+              <span className="text-zinc-300">/</span>
+              <span className="text-zinc-800 font-semibold capitalize">
+                {appMode === 'work' ? workView.replace('_', ' ') : devView.replace('_', ' ')}
+              </span>
             </div>
           </div>
-        )}
 
+          <div className="flex items-center gap-2 text-[11px] font-mono text-zinc-400">
+            <span>{currentWorkspace.split('/').pop()}</span>
+          </div>
+        </div>
+
+        {/* Main Content Pane */}
         <main className="flex-1 overflow-y-auto p-4 md:p-5 bg-[#faf9f6]">
-        {currentView === 'jules_flow' && (
-          <JulesMissionFlowView
-            summary={summary}
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            currentWorkspace={currentWorkspace}
-            onWorkspaceChange={setCurrentWorkspace}
-            onSelectSession={setActiveSessionId}
-            onKillSession={handleKillSession}
-            onSendData={handleSendData}
-            onSpawnClaude={handleSpawnClaude}
-            onSpawnGemini={handleSpawnGemini}
-            onSpawnAntigravity={handleSpawnAntigravity}
-            onSpawnShell={handleSpawnShell}
-          />
-        )}
-        {currentView === 'jules_cockpit' && (
-          <JulesCockpitView
-            summary={summary}
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            currentWorkspace={currentWorkspace}
-            sleepPrevented={sleepPrevented}
-            onToggleSleepPrevention={handleToggleSleepPrevention}
-            onWorkspaceChange={setCurrentWorkspace}
-            onSelectSession={setActiveSessionId}
-            onKillSession={handleKillSession}
-            onSendData={handleSendData}
-            onSpawnClaude={handleSpawnClaude}
-            onSpawnGemini={handleSpawnGemini}
-            onSpawnShell={handleSpawnShell}
-            onWakeTeam={handleWakeTeam}
-            onSleepTeam={handleSleepTeam}
-            onRefreshState={fetchState}
-          />
-        )}
-        {currentView === 'team' && (
-          <TeamOrgChartView
-            identities={identities}
-            onOpenTerminal={handleSpawnSession}
-            onRefreshIdentities={fetchState}
-            onOpenAgentProfile={(agentId) => {
-              setSelectedAgentId(agentId);
-              setCurrentView('agent_workspace');
-            }}
-            onLaunchWithPrompt={(agentId, engine, prompt) => {
-              if (engine === 'gemini') {
-                handleSpawnGemini(agentId, currentWorkspace, false, prompt);
-              } else if (engine === 'antigravity') {
-                handleSpawnAntigravity(agentId, currentWorkspace, false, prompt);
-              } else {
-                handleSpawnClaude(agentId, currentWorkspace, false, prompt);
-              }
-              setCurrentView('terminals');
-            }}
-          />
-        )}
-        {currentView === 'agent_workspace' && (
-          <AgentWorkspaceView
-            agentId={selectedAgentId}
-            onBack={() => setCurrentView('team')}
-            onOpenSession={(agentId, runtimeType) => handleSpawnSession(agentId, runtimeType)}
-            activeSessions={sessions}
-            onSendData={handleSendData}
-            onKillSession={handleKillSession}
-          />
-        )}
-        {currentView === 'workspace' && (
-          <WorkspaceExplorerView
-            currentWorkspace={currentWorkspace}
-            onSelectWorkspace={setCurrentWorkspace}
-            onSpawnClaude={handleSpawnClaude}
-            onSpawnGemini={handleSpawnGemini}
-            onSpawnShell={handleSpawnShell}
-          />
-        )}
-        {currentView === 'chat' && (
-          <DirectChatView
-            onSpawnClaude={handleSpawnClaude}
-            onSpawnGemini={handleSpawnGemini}
-          />
-        )}
-        {currentView === 'projects' && (
-          <ProjectBoardView
-            onSpawnClaude={handleSpawnClaude}
-            onSpawnGemini={handleSpawnGemini}
-            onSpawnShell={handleSpawnShell}
-            currentWorkspace={currentWorkspace}
-          />
-        )}
-        {currentView === 'okrs' && (
-          <OKRIntelligenceView
-            onSpawnClaude={handleSpawnClaude}
-            currentWorkspace={currentWorkspace}
-          />
-        )}
-        {currentView === 'design' && <DesignStudioView />}
-        {currentView === 'quality' && <QualityView />}
-        {currentView === 'automation' && (
-          <AutomationView
-            sleepPrevented={sleepPrevented}
-            onToggleSleepPrevention={handleToggleSleepPrevention}
-            onOpenTerminal={handleSpawnSession}
-          />
-        )}
-        {currentView === 'settings' && <SettingsView />}
-        {currentView === 'terminals' && (
-          <TerminalsView
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            adapters={adapters}
-            onSelectSession={setActiveSessionId}
-            onSpawnSession={handleSpawnSession}
-            onKillSession={handleKillSession}
-            onSendData={handleSendData}
-          />
-        )}
-      </main>
+          {/* ──────────────────  WORK MODE VIEWS  ────────────────── */}
+          {appMode === 'work' && (
+            <>
+              {workView === 'home' && (
+                <HomeView
+                  coworkers={coworkers}
+                  activeJobs={jobs.filter((j) => j.status !== 'completed')}
+                  onStartJob={handleStartNormalJob}
+                  onSelectJob={(jobId) => {
+                    setSelectedJobId(jobId);
+                    setWorkView('my_work');
+                  }}
+                  onSelectCoworker={(cwId) => {
+                    handleStartNormalJob(`Execute task with ${cwId.toUpperCase()}`, cwId);
+                  }}
+                />
+              )}
+
+              {workView === 'my_work' && selectedJobId && (
+                <JobDetailView
+                  job={selectedJob}
+                  coworkers={coworkers}
+                  onBack={() => setSelectedJobId(null)}
+                  onApprove={handleApproveAction}
+                  onDecline={handleDeclineAction}
+                />
+              )}
+
+              {workView === 'my_work' && !selectedJobId && (
+                <JobsListView
+                  jobs={jobs}
+                  onSelectJob={(id) => setSelectedJobId(id)}
+                  onStartNewJob={() => setWorkView('home')}
+                />
+              )}
+
+              {workView === 'coworkers' && (
+                <CoworkersView
+                  coworkers={coworkers}
+                  onStartJobWithCoworker={(cwId) => {
+                    handleStartNormalJob(`Execute task with ${cwId.toUpperCase()}`, cwId);
+                  }}
+                />
+              )}
+
+              {workView === 'connected_tools' && (
+                <ConnectedToolsView tools={connectedTools} />
+              )}
+
+              {workView === 'approvals' && (
+                <ApprovalCenterView
+                  approvals={approvals}
+                  onApprove={handleApproveAction}
+                  onDecline={handleDeclineAction}
+                />
+              )}
+
+              {workView === 'routines' && (
+                <RoutinesView
+                  routines={routines}
+                  skills={skills}
+                  coworkers={coworkers}
+                  onToggleRoutine={(id) => {
+                    setRoutines((prev) =>
+                      prev.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r))
+                    );
+                  }}
+                  onRunRoutineNow={(id) => {
+                    const r = routines.find((item) => item.id === id);
+                    if (r) handleStartNormalJob(r.prompt, r.coworkerId);
+                  }}
+                  onCreateRoutine={() => setWorkView('home')}
+                />
+              )}
+
+              {workView === 'activity' && (
+                <ActivityView
+                  activities={activities}
+                  coworkers={coworkers}
+                  onSelectJob={(id) => {
+                    setSelectedJobId(id);
+                    setWorkView('my_work');
+                  }}
+                />
+              )}
+            </>
+          )}
+
+          {/* ──────────────────  DEVELOPER MODE VIEWS  ────────────────── */}
+          {appMode === 'developer' && (
+            <>
+              {devView === 'jules_flow' && (
+                <JulesMissionFlowView
+                  summary={summary}
+                  sessions={sessions}
+                  activeSessionId={activeSessionId}
+                  currentWorkspace={currentWorkspace}
+                  onWorkspaceChange={setCurrentWorkspace}
+                  onSelectSession={setActiveSessionId}
+                  onKillSession={handleKillSession}
+                  onSendData={handleSendData}
+                  onSpawnClaude={handleSpawnClaude}
+                  onSpawnGemini={handleSpawnGemini}
+                  onSpawnAntigravity={handleSpawnAntigravity}
+                  onSpawnShell={handleSpawnShell}
+                />
+              )}
+              {devView === 'jules_cockpit' && (
+                <JulesCockpitView
+                  summary={summary}
+                  sessions={sessions}
+                  activeSessionId={activeSessionId}
+                  currentWorkspace={currentWorkspace}
+                  sleepPrevented={sleepPrevented}
+                  onToggleSleepPrevention={handleToggleSleepPrevention}
+                  onWorkspaceChange={setCurrentWorkspace}
+                  onSelectSession={setActiveSessionId}
+                  onKillSession={handleKillSession}
+                  onSendData={handleSendData}
+                  onSpawnClaude={handleSpawnClaude}
+                  onSpawnGemini={handleSpawnGemini}
+                  onSpawnShell={handleSpawnShell}
+                  onWakeTeam={handleWakeTeam}
+                  onSleepTeam={handleSleepTeam}
+                  onRefreshState={fetchState}
+                />
+              )}
+              {devView === 'team' && (
+                <TeamOrgChartView
+                  identities={identities}
+                  onOpenTerminal={handleSpawnSession}
+                  onRefreshIdentities={fetchState}
+                  onOpenAgentProfile={(agentId) => {
+                    setSelectedAgentId(agentId);
+                    setDevView('agent_workspace');
+                  }}
+                  onLaunchWithPrompt={(agentId, engine, prompt) => {
+                    if (engine === 'gemini') {
+                      handleSpawnGemini(agentId, currentWorkspace, false, prompt);
+                    } else if (engine === 'antigravity') {
+                      handleSpawnAntigravity(agentId, currentWorkspace, false, prompt);
+                    } else {
+                      handleSpawnClaude(agentId, currentWorkspace, false, prompt);
+                    }
+                    setDevView('terminals');
+                  }}
+                />
+              )}
+              {devView === 'agent_workspace' && (
+                <AgentWorkspaceView
+                  agentId={selectedAgentId}
+                  onBack={() => setDevView('team')}
+                  onOpenSession={(agentId, runtimeType) => handleSpawnSession(agentId, runtimeType)}
+                  activeSessions={sessions}
+                  onSendData={handleSendData}
+                  onKillSession={handleKillSession}
+                />
+              )}
+              {devView === 'workspace' && (
+                <WorkspaceExplorerView
+                  currentWorkspace={currentWorkspace}
+                  onSelectWorkspace={setCurrentWorkspace}
+                  onSpawnClaude={handleSpawnClaude}
+                  onSpawnGemini={handleSpawnGemini}
+                  onSpawnShell={handleSpawnShell}
+                />
+              )}
+              {devView === 'chat' && (
+                <DirectChatView
+                  onSpawnClaude={handleSpawnClaude}
+                  onSpawnGemini={handleSpawnGemini}
+                />
+              )}
+              {devView === 'projects' && (
+                <ProjectBoardView
+                  onSpawnClaude={handleSpawnClaude}
+                  onSpawnGemini={handleSpawnGemini}
+                  onSpawnShell={handleSpawnShell}
+                  currentWorkspace={currentWorkspace}
+                />
+              )}
+              {devView === 'okrs' && (
+                <OKRIntelligenceView
+                  onSpawnClaude={handleSpawnClaude}
+                  currentWorkspace={currentWorkspace}
+                />
+              )}
+              {devView === 'design' && <DesignStudioView />}
+              {devView === 'quality' && <QualityView />}
+              {devView === 'automation' && (
+                <AutomationView
+                  sleepPrevented={sleepPrevented}
+                  onToggleSleepPrevention={handleToggleSleepPrevention}
+                  onOpenTerminal={handleSpawnSession}
+                />
+              )}
+              {devView === 'settings' && <SettingsView />}
+              {devView === 'terminals' && (
+                <TerminalsView
+                  sessions={sessions}
+                  activeSessionId={activeSessionId}
+                  adapters={adapters}
+                  onSelectSession={setActiveSessionId}
+                  onSpawnSession={handleSpawnSession}
+                  onKillSession={handleKillSession}
+                  onSendData={handleSendData}
+                />
+              )}
+            </>
+          )}
+        </main>
       </div>
 
       {/* Agent Fleet Roster Drawer */}
