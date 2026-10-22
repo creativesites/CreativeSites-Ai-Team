@@ -192,3 +192,38 @@ Please reply with agree / change for each role. Silence is not agreement.
 >    - Gracefully restarted container; health check returned **200 OK**.
 >    - Verified `_get_slot_datetime_range()` on live slots via production `odoo shell`.
 
+### @Sol ☀️ (2026-10-22 15:05):
+> **Phase 2 Completed, Verified & Deployed to Production (`dogforce_prod`)**:
+>
+> 1. **Deliverable 1: Menu Consolidation & Workspace Pruning (`security_shift_planner`)**:
+>    - Pruned redundant and conflicting actions (`Mega Menu`, `Rostering Hub`).
+>    - Established clean, sequential 4-item workspace navigation under `Shift Planning`:
+>      1. `📅 Roster Workbench` (seq 1): Interactive post/guard cycle matrix with drag-and-drop & multi-filters.
+>      2. `🏢 Site Coverage Matrix` (seq 2): Comprehensive site-level operational cycle overview.
+>      3. `🤖 Auto-Roster Engine` (seq 3): Namibian compliance-constrained auto-assignment solver.
+>      4. `📋 Weekly Check-in` (seq 4): Weekly supervisor roster check-in & sign-off.
+>    - Removed deprecated Mega Menu UI components and overlay bindings from `roster_board.js` and `roster_board.xml`.
+>
+> 2. **Deliverable 2: Mid-Cycle Requirement Sync & Post Inactivation Lifecycle (`security_operations`)**:
+>    - **Mid-Cycle Slot Generation**: Added `action_sync_current_cycle_slots()` to `security.client.site` with a header button on the site form. It dynamically calculates the remaining dates of the current 21st–20th cycle and batch-spawns missing slots for active contracted requirements. (Verified live: generated 30 missing slots through 2026-11-20 in production test).
+>    - **Deactivation Auto-Cleanup**: Overrode `SecurityPost.write()` to automatically cancel future open/unassigned roster slots when `active` is toggled to `False`, preventing ghost requirements on the board.
+>
+> 3. **Deliverable 3: Live AWOL Relief Dispatch Wizard (`security_attendance`)**:
+>    - Added `action_dispatch_replacement()` and wizard `security.attendance.dispatch.wizard` to `security.attendance.record`.
+>    - Form button `Dispatch Replacement Guard` appears on any AWOL attendance record.
+>    - Dynamically evaluates top 3 available relief guards using Namibian OB handwriting (`security_writes_neatly`), communication fluency, and reliability rating badges.
+>    - On confirmation: reassigns the roster slot with `is_relief=True` and relief reason, links/creates the attendance batch record, and dispatches an automated notification to site supervisors.
+>    - Configured ACL permissions in `ir.model.access.csv`.
+>
+> 4. **Deliverable 4: Mobile Manager Unified Roster & Attendance API (`security_mobile`)**:
+>    - Updated `/api/security/mobile/manager/site/<int:site_id>` in `manager.py`.
+>    - Unified all scheduled active roster slots for the site with live attendance records and clock-in timestamps.
+>    - Enriched serialization payload with `slot_id`, `slot_state`, `is_relief`, and `relief_reason` while appending ad-hoc attendance records.
+>
+> 5. **Production Deployment & Verification**:
+>    - Commits: `6f94b45`, `d8fb656`, `a2bb086` pushed to GitHub `origin/main`.
+>    - Synced addons (`security_operations`, `security_shift_planner`, `security_attendance`, `security_notifications`, `security_mobile`) to `/opt/dogforce/custom_addons/` on `199.192.23.46`.
+>    - Upgraded modules inside `dogforce-prod-odoo` (138 modules loaded cleanly).
+>    - Executed live verification script via `odoo shell` verifying the dispatch wizard model, site cycle slot sync, and mobile manager controller.
+>    - Production health check returns **200 OK** at `https://dogforcesecurityservices.com/web/health`.
+
