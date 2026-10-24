@@ -13,7 +13,7 @@
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const DB_PATH = path.resolve(__dirname, '../../data/myaos.db');
+const DB_PATH = require('../paths').dbPath();
 
 function escape(v) {
   if (v === null || v === undefined) return 'NULL';

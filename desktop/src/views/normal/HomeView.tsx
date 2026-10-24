@@ -217,7 +217,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                     </div>
                   </div>
 
-                  <span className={`w-2 h-2 rounded-full ${cw.status === 'working' ? 'bg-indigo-600 animate-ping' : 'bg-emerald-500'}`} />
+                  <span className={`w-2 h-2 rounded-full ${cw.status === 'working' ? 'bg-indigo-600 animate-ping' : cw.status === 'unknown' ? 'bg-zinc-300' : 'bg-emerald-500'}`} />
                 </div>
 
                 <p className="text-xs text-zinc-500 leading-relaxed line-clamp-2">

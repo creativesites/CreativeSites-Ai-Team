@@ -9,7 +9,7 @@ export interface Coworker {
   avatar: string;
   monogram: string;
   color: string;
-  status: 'available' | 'working' | 'sleeping';
+  status: 'available' | 'working' | 'sleeping' | 'unknown';
   currentJobTitle?: string;
   capabilities: string[];
   defaultWorkspace: string;
@@ -19,7 +19,7 @@ export interface ConnectedTool {
   id: string; // e.g. 'google_workspace', 'web_search', 'local_files', 'wordpress', 'slack', 'github', 'sqlite'
   name: string;
   category: 'Workspace' | 'Browser' | 'Code' | 'Database' | 'CMS' | 'Communication';
-  status: 'connected' | 'disconnected' | 'requires_auth';
+  status: 'connected' | 'disconnected' | 'requires_auth' | 'unchecked';
   iconName: string;
   description: string;
   usedByCoworkers: string[];

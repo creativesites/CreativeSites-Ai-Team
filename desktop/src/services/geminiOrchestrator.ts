@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { agentWorkspace, configuredWorkspaces } from './appConfig';
 
 export interface GitFileDiff {
   path: string;
@@ -123,16 +124,16 @@ export interface JulesMissionPlan {
   suggestedActions: string[];
 }
 
-const SYSTEM_INSTRUCTION = `You are the MyaOS System AI Orchestrator, inspired by Google Jules, running natively on macOS for Winston Zulu and executive leadership.
+const systemInstruction = () => `You are the MyaOS System AI Orchestrator, inspired by Google Jules, running natively on macOS for Winston Zulu and executive leadership.
 You manage an autonomous AI engineering organization across several codebases:
-1. Astra [AS]: Widget SDK, AI streaming & UI in "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot"
-2. Iris [IR]: Telemetry, Dashboard, and customer 360 in "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard"
-3. Vela [VE]: WordPress host bridge & hair journey in "/Users/winstonzulu/Documents/GitHub/Myavana-Hair-Journey"
-4. Lyra [LY]: Mobile client & React Native SDK in "/Users/winstonzulu/WebstormProjects/MyAvana_FrontEnd_RN"
-5. Atlas [AT]: Interim Coordinator, Docker, Git & Cloud Run in "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team"
-6. Kael [KL]: Lead Verifier, anti-self-verification auditor in "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot"
-7. Antigravity [AG]: Automated browser QA & Playwright testing in "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team"
-8. DeployFleet repos: "/Users/winstonzulu/Documents/GitHub/DeployFleet", "DeployFleet-website", "DeployFleet-Team"
+1. Astra [AS]: Widget SDK, AI streaming & UI in "${agentWorkspace('astra')}"
+2. Iris [IR]: Telemetry, Dashboard, and customer 360 in "${agentWorkspace('iris')}"
+3. Vela [VE]: WordPress host bridge & hair journey in "${agentWorkspace('vela')}"
+4. Lyra [LY]: Mobile client & React Native SDK in "${agentWorkspace('lyra')}"
+5. Atlas [AT]: Interim Coordinator, Docker, Git & Cloud Run in "${agentWorkspace('atlas')}"
+6. Kael [KL]: Lead Verifier, anti-self-verification auditor in "${agentWorkspace('kael')}"
+7. Antigravity [AG]: Automated browser QA & Playwright testing in "${agentWorkspace('antigravity')}"
+8. Other configured repos: ${configuredWorkspaces().map((w) => `"${w.path}"`).join(', ') || 'none configured'}
 
 When the user asks you to do something, investigate, plan, or dispatch:
 1. Respond concisely, professionally, and authoritatively as the System Orchestrator.
@@ -194,8 +195,8 @@ export const callGeminiOrchestrator = async (
   try {
     const okrsContext = await getActiveOkrsContext();
     const systemInstructionWithOkrs = okrsContext
-      ? `${SYSTEM_INSTRUCTION}\n\n${okrsContext}\nCRITICAL MANDATE: Ensure your mission plan, acceptance criteria, and task delegations directly support and reference the above active Strategic OKRs.`
-      : SYSTEM_INSTRUCTION;
+      ? `${systemInstruction()}\n\n${okrsContext}\nCRITICAL MANDATE: Ensure your mission plan, acceptance criteria, and task delegations directly support and reference the above active Strategic OKRs.`
+      : systemInstruction();
 
     const contents = [
       {

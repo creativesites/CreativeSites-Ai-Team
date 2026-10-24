@@ -12,7 +12,7 @@
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const DB_PATH = path.resolve(__dirname, '../../data/myaos.db');
+const DB_PATH = require('../paths').dbPath();
 
 function queryDb(sql) {
   const out = execFileSync('sqlite3', ['-json', DB_PATH, sql], { encoding: 'utf8' });

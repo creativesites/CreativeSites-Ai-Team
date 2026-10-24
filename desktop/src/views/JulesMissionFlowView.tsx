@@ -59,6 +59,7 @@ import {
   OrchestratorSynthesisResult,
 } from '../services/geminiOrchestrator';
 import { AGENT_DIRECTORY_MAP, getAgentDirectoryInfo } from '../utils/agentWorkspaces';
+import { agentWorkspace } from '../services/appConfig';
 import {
   playExecutiveChime,
   playSuccessChime,
@@ -79,14 +80,22 @@ export interface MissionTab {
   updatedAt: string;
 }
 
+// Each pill's repo is read from config (~/.myaos/config.json), never hard-coded.
+const pill = (p: { id: string; name: string; monogram: string; domain: string; color: string }) => ({
+  ...p,
+  get repo() {
+    return agentWorkspace(p.id);
+  },
+});
+
 export const AGENT_PILLS = [
-  { id: 'astra', name: 'Astra', monogram: 'AS', repo: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot', domain: 'UI & Widget SDK', color: 'bg-violet-500' },
-  { id: 'iris', name: 'Iris', monogram: 'IR', repo: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard', domain: 'Telemetry & 360', color: 'bg-blue-500' },
-  { id: 'vela', name: 'Vela', monogram: 'VE', repo: '/Users/winstonzulu/Documents/GitHub/Myavana-Hair-Journey', domain: 'WordPress Host Bridge', color: 'bg-emerald-500' },
-  { id: 'lyra', name: 'Lyra', monogram: 'LY', repo: '/Users/winstonzulu/WebstormProjects/MyAvana_FrontEnd_RN', domain: 'React Native SDK', color: 'bg-amber-500' },
-  { id: 'atlas', name: 'Atlas', monogram: 'AT', repo: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team', domain: 'Coordinator & Deploy', color: 'bg-slate-700' },
-  { id: 'kael', name: 'Kael', monogram: 'KL', repo: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot', domain: 'Lead Verifier', color: 'bg-rose-500' },
-  { id: 'antigravity', name: 'Antigravity', monogram: 'AG', repo: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team', domain: 'Browser QA', color: 'bg-cyan-600' },
+  pill({ id: 'astra', name: 'Astra', monogram: 'AS', domain: 'UI & Widget SDK', color: 'bg-violet-500' }),
+  pill({ id: 'iris', name: 'Iris', monogram: 'IR', domain: 'Telemetry & 360', color: 'bg-blue-500' }),
+  pill({ id: 'vela', name: 'Vela', monogram: 'VE', domain: 'WordPress Host Bridge', color: 'bg-emerald-500' }),
+  pill({ id: 'lyra', name: 'Lyra', monogram: 'LY', domain: 'React Native SDK', color: 'bg-amber-500' }),
+  pill({ id: 'atlas', name: 'Atlas', monogram: 'AT', domain: 'Coordinator & Deploy', color: 'bg-slate-700' }),
+  pill({ id: 'kael', name: 'Kael', monogram: 'KL', domain: 'Lead Verifier', color: 'bg-rose-500' }),
+  pill({ id: 'antigravity', name: 'Antigravity', monogram: 'AG', domain: 'Browser QA', color: 'bg-cyan-600' }),
 ];
 
 interface JulesMissionFlowViewProps {
@@ -103,57 +112,6 @@ interface JulesMissionFlowViewProps {
   onSpawnAntigravity: (agentId?: string, cwd?: string, resume?: boolean, prompt?: string) => void;
   onSpawnShell: (cwd?: string) => void;
 }
-
-const AVAILABLE_WORKSPACES = [
-  {
-    name: 'Myavana-Chatbot',
-    path: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot',
-    short: 'WebstormProjects/Myavana-Chatbot',
-    agent: 'astra',
-    agentMonogram: 'AS',
-    agentName: 'Astra (UI & Protocol)',
-  },
-  {
-    name: 'Myavana-Chatbot-Dashboard',
-    path: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard',
-    short: 'WebstormProjects/Myavana-Chatbot-Dashboard',
-    agent: 'iris',
-    agentMonogram: 'IR',
-    agentName: 'Iris (Telemetry & Observability)',
-  },
-  {
-    name: 'CreativeSites-Ai-Team',
-    path: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team',
-    short: 'WebstormProjects/CreativeSites-Ai-Team',
-    agent: 'atlas',
-    agentMonogram: 'AT',
-    agentName: 'Atlas (Coordinator & Substrate)',
-  },
-  {
-    name: 'Myavana-Hair-Journey',
-    path: '/Users/winstonzulu/Documents/GitHub/Myavana-Hair-Journey',
-    short: 'GitHub/Myavana-Hair-Journey',
-    agent: 'vela',
-    agentMonogram: 'VE',
-    agentName: 'Vela (WordPress Host Bridge)',
-  },
-  {
-    name: 'MyAvana_FrontEnd_RN',
-    path: '/Users/winstonzulu/WebstormProjects/MyAvana_FrontEnd_RN',
-    short: 'WebstormProjects/MyAvana_FrontEnd_RN',
-    agent: 'lyra',
-    agentMonogram: 'LY',
-    agentName: 'Lyra (React Native SDK)',
-  },
-  {
-    name: 'DeployFleet',
-    path: '/Users/winstonzulu/Documents/GitHub/DeployFleet',
-    short: 'GitHub/DeployFleet',
-    agent: 'atlas',
-    agentMonogram: 'AT',
-    agentName: 'Atlas (Platform Deployment)',
-  },
-];
 
 // --- Circular Progress Dial ---
 const CircularProgressDial: React.FC<{
@@ -829,7 +787,7 @@ export const JulesMissionFlowView: React.FC<JulesMissionFlowViewProps> = ({
   // Active Jules Mission Plan
   const [activePlan, setActivePlan] = useState<JulesMissionPlan>({
     title: 'Autonomous Multi-Agent Mission Routing',
-    targetWorkspace: currentWorkspace || '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot',
+    targetWorkspace: currentWorkspace || agentWorkspace('astra'),
     assignee: 'astra',
     recommendedEngine: 'gemini',
     summary: 'Coordinate team across dedicated directories with live PTY sessions and verified proofs.',
@@ -875,7 +833,7 @@ export const JulesMissionFlowView: React.FC<JulesMissionFlowViewProps> = ({
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       plan: {
         title: 'Initial Mission Calibration',
-        targetWorkspace: currentWorkspace || '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot',
+        targetWorkspace: currentWorkspace || agentWorkspace('astra'),
         assignee: 'astra',
         recommendedEngine: 'gemini',
         summary: 'Target workspace verified. Astra mapped to Chatbot SDK, ready for execution dispatch.',
@@ -898,11 +856,11 @@ export const JulesMissionFlowView: React.FC<JulesMissionFlowViewProps> = ({
     {
       id: 'mission_default_astra',
       title: 'Autonomous Multi-Agent Mission Routing',
-      targetWorkspace: currentWorkspace || '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot',
+      targetWorkspace: currentWorkspace || agentWorkspace('astra'),
       assignee: 'astra',
       plan: {
         title: 'Autonomous Multi-Agent Mission Routing',
-        targetWorkspace: currentWorkspace || '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot',
+        targetWorkspace: currentWorkspace || agentWorkspace('astra'),
         assignee: 'astra',
         recommendedEngine: 'gemini',
         summary: 'Coordinate team across dedicated directories with live PTY sessions and verified proofs.',
@@ -926,7 +884,7 @@ export const JulesMissionFlowView: React.FC<JulesMissionFlowViewProps> = ({
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           plan: {
             title: 'Initial Mission Calibration',
-            targetWorkspace: currentWorkspace || '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot',
+            targetWorkspace: currentWorkspace || agentWorkspace('astra'),
             assignee: 'astra',
             recommendedEngine: 'gemini',
             summary: 'Target workspace verified. Astra mapped to Chatbot SDK, ready for execution dispatch.',

@@ -85,42 +85,18 @@ pub fn resolve_agent_working_directory(agent_id: &str, requested_cwd: Option<Str
         }
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/winstonzulu".to_string());
-    let webstorm = format!("{}/WebstormProjects", home);
-    let github = format!("{}/Documents/GitHub", home);
-
-    match agent_id.to_lowercase().as_str() {
-        "astra" => {
-            let p = format!("{}/Myavana-Chatbot", webstorm);
-            if std::path::Path::new(&p).exists() { return p; }
+    // Per-agent repos come from ~/.myaos/config.json ("agentWorkspaces").
+    let cfg = crate::system::config::config();
+    if let Some(p) = cfg.agent_workspace(agent_id) {
+        if std::path::Path::new(&p).exists() {
+            return p;
         }
-        "iris" => {
-            let p = format!("{}/Myavana-Chatbot-Dashboard", webstorm);
-            if std::path::Path::new(&p).exists() { return p; }
-        }
-        "vela" => {
-            let p1 = format!("{}/Myavana-Hair-Journey", github);
-            let p2 = format!("{}/myavana-hair-journey-next", webstorm);
-            if std::path::Path::new(&p1).exists() { return p1; }
-            if std::path::Path::new(&p2).exists() { return p2; }
-        }
-        "lyra" => {
-            let p = format!("{}/MyAvana_FrontEnd_RN", webstorm);
-            if std::path::Path::new(&p).exists() { return p; }
-        }
-        "kael" => {
-            let p = format!("{}/Myavana-Chatbot", webstorm);
-            if std::path::Path::new(&p).exists() { return p; }
-        }
-        _ => {}
     }
 
-    let default_root = format!("{}/CreativeSites-Ai-Team", webstorm);
-    if std::path::Path::new(&default_root).exists() {
-        default_root
-    } else {
-        home
-    }
+    cfg.resolve_team_repo()
+        .or_else(crate::system::config::home_dir)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".to_string())
 }
 
 #[tauri::command]
@@ -271,13 +247,21 @@ pub fn pty_spawn_shell(
 }
 
 #[tauri::command]
+pub fn myaos_get_config() -> crate::system::config::ResolvedConfig {
+    crate::system::config::config().resolved()
+}
+
+#[tauri::command]
 pub fn myaos_get_gemini_api_key() -> Result<String, String> {
     // 1. Check user-configured secret in SQLite DB
-    let db_bridge = crate::system::db::DbBridge::new("/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/data/myaos.db");
-    if let Ok(Some(custom_key)) = db_bridge.get_secret("gemini_api_key") {
-        let clean = custom_key.trim().to_string();
-        if !clean.is_empty() {
-            return Ok(clean);
+    let cfg = crate::system::config::config();
+    if let Some(db_path) = cfg.resolve_db_path() {
+        let db_bridge = crate::system::db::DbBridge::new(&db_path);
+        if let Ok(Some(custom_key)) = db_bridge.get_secret("gemini_api_key") {
+            let clean = custom_key.trim().to_string();
+            if !clean.is_empty() {
+                return Ok(clean);
+            }
         }
     }
     if let Ok(key) = std::env::var("GEMINI_API_KEY") {
@@ -285,8 +269,8 @@ pub fn myaos_get_gemini_api_key() -> Result<String, String> {
             return Ok(key);
         }
     }
-    let env_path = std::path::Path::new("/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/.env");
-    if env_path.exists() {
+    let env_path = cfg.resolve_team_repo().map(|r| r.join(".env"));
+    if let Some(env_path) = env_path.filter(|p| p.exists()) {
         if let Ok(content) = std::fs::read_to_string(env_path) {
             for line in content.lines() {
                 if let Some(stripped) = line.strip_prefix("GEMINI_API_KEY=") {
@@ -405,20 +389,6 @@ pub fn myaos_create_task(
         priority.as_deref(),
         repo.as_deref(),
     )
-}
-
-#[tauri::command]
-pub fn myaos_wake_all_agents(
-    system_manager: State<'_, SystemManager>,
-) -> Result<(), String> {
-    system_manager.db_bridge.wake_all_agents()
-}
-
-#[tauri::command]
-pub fn myaos_sleep_all_agents(
-    system_manager: State<'_, SystemManager>,
-) -> Result<(), String> {
-    system_manager.db_bridge.sleep_all_agents()
 }
 
 #[tauri::command]
@@ -1817,6 +1787,16 @@ pub fn myaos_simulate_rate_limit_and_resume(
 mod tests {
     use super::*;
 
+    /// A throwaway database per test, so tests never touch the team's real store.
+    fn temp_db() -> crate::system::db::DbBridge {
+        let path = std::env::temp_dir().join(format!("myaos-test-{}.db", uuid::Uuid::new_v4()));
+        let conn = rusqlite::Connection::open(&path).expect("open temp db");
+        conn.execute_batch(include_str!("../../../../data/myaos.schema.sql"))
+            .expect("load data/myaos.schema.sql");
+        drop(conn);
+        crate::system::db::DbBridge::new(&path)
+    }
+
     #[tokio::test]
     async fn test_gemini_orchestrator_call() {
         let contents = serde_json::json!([
@@ -1833,7 +1813,7 @@ mod tests {
 
     #[test]
     fn test_git_diff_retrieval() {
-        let cwd = "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team".to_string();
+        let cwd = env!("CARGO_MANIFEST_DIR").to_string();
         let diff_res = myaos_get_git_diff(cwd);
         assert!(diff_res.is_ok(), "Git diff failed: {:?}", diff_res.err());
         let diff = diff_res.unwrap();
@@ -1842,13 +1822,14 @@ mod tests {
 
     #[test]
     fn test_workspace_and_identity_management() {
-        let db_bridge = crate::system::db::DbBridge::new("/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/data/myaos.db");
+        let db_bridge = temp_db();
         
         // Test workspace registration
+        let ws_path = std::env::temp_dir().to_string_lossy().to_string();
         let ws = db_bridge.register_workspace(
             "test_proj",
             "Test Project",
-            "/Users/winstonzulu/Downloads",
+            &ws_path,
             None,
         );
         assert!(ws.is_ok(), "Failed to register workspace: {:?}", ws.err());
@@ -1856,7 +1837,7 @@ mod tests {
         assert_eq!(w.id, "test_proj");
 
         // Test workspace removal
-        let rem = db_bridge.remove_workspace("/Users/winstonzulu/Downloads");
+        let rem = db_bridge.remove_workspace(&ws_path);
         assert!(rem.is_ok(), "Failed to remove workspace: {:?}", rem.err());
 
         // Test identity create and update
@@ -1877,7 +1858,7 @@ mod tests {
 
     #[test]
     fn test_secrets_and_users_and_approvals() {
-        let db_bridge = crate::system::db::DbBridge::new("/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/data/myaos.db");
+        let db_bridge = temp_db();
 
         // 1. Test secret set, get, delete
         let set_res = db_bridge.set_secret("test_api_key", "secret12345", Some("Test secret"));
@@ -1890,12 +1871,9 @@ mod tests {
         let del_res = db_bridge.delete_secret("test_api_key");
         assert!(del_res.is_ok());
 
-        // 2. Test user retrieval
+        // 2. Test user retrieval (a fresh database has no seeded users)
         let users = db_bridge.get_users();
         assert!(users.is_ok());
-        let u_list = users.unwrap();
-        assert!(!u_list.is_empty(), "Should have default user Winston Zulu");
-        assert!(u_list.iter().any(|u| u.name.contains("Winston")));
 
         // 3. Test pending approvals
         let approvals = db_bridge.get_pending_approvals();
@@ -1904,13 +1882,12 @@ mod tests {
 
     #[test]
     fn test_autopilot_queue_and_history() {
-        let db_bridge = crate::system::db::DbBridge::new("/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/data/myaos.db");
+        let db_bridge = temp_db();
 
         // Test queue query
         let queue = db_bridge.get_autopilot_queue();
         assert!(queue.is_ok(), "Failed to get queue: {:?}", queue.err());
-        let q = queue.unwrap();
-        assert!(!q.is_empty(), "Queue should have seeded items");
+        assert!(queue.unwrap().is_empty(), "A fresh database must not contain sample queue items");
 
         // Test history query
         let hist = db_bridge.get_autopilot_history();
@@ -1919,7 +1896,7 @@ mod tests {
 
     #[test]
     fn test_okrs_and_design_projects() {
-        let db_bridge = crate::system::db::DbBridge::new("/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/data/myaos.db");
+        let db_bridge = temp_db();
 
         // 1. Test OKR objective save & list
         let test_obj = crate::system::db::OkrObjectiveRow {

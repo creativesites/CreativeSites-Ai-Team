@@ -121,6 +121,12 @@ npm run desktop:build
 npm run desktop:dmg
 ```
 
+### Machine config and the database:
+
+- Paths that differ per machine (team repo, project repos per agent, workspace list) live in `~/.myaos/config.json`, or the file named by `$MYAOS_CONFIG`. Copy `myaos.config.example.json` to start. Nothing in the code hard-codes a home directory.
+- The SQLite store `data/myaos.db` is **not in git**: it changes on every run. A fresh clone gets an empty store built from `data/myaos.schema.sql`. Point everything at another file with `$MYAOS_DB_PATH`.
+- Order of precedence everywhere (CLI, desktop, dashboard): environment variable, then config file, then this repository.
+
 ---
 
 ## 🔒 Security & Human Escalation Policy

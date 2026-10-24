@@ -47,6 +47,8 @@ export const CoworkersView: React.FC<CoworkersViewProps> = ({
                   className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold capitalize ${
                     cw.status === 'working'
                       ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 animate-pulse'
+                      : cw.status === 'unknown'
+                      ? 'bg-zinc-50 text-zinc-500 border border-zinc-200'
                       : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                   }`}
                 >

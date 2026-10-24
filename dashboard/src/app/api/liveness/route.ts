@@ -1,4 +1,4 @@
-import { queryDb } from '@/lib/db';
+import { queryDb, dbPath } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import path from 'path';
 import { execFileSync } from 'child_process';
@@ -6,7 +6,6 @@ import { execFileSync } from 'child_process';
 export async function GET() {
   try {
     const baseDir = path.resolve(process.cwd(), '..');
-    const dbPath = path.resolve(baseDir, 'data', 'myaos.db');
     const identityIds = queryDb(`SELECT id FROM identities ORDER BY joined_at ASC`).map((r: any) => r.id);
 
     // Call src/liveness.js using Node child_process - guaranteed to work across boundary

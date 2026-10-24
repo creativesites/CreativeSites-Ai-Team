@@ -31,14 +31,17 @@ export interface ObservabilitySummary {
 
 export const LiveTokenCostWidget: React.FC = () => {
   const [metrics, setMetrics] = useState<ObservabilitySummary | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
   const fetchMetrics = async () => {
     try {
       const res = await invoke<ObservabilitySummary>('myaos_get_observability_metrics');
       setMetrics(res);
+      setLoadFailed(false);
     } catch (e) {
       console.warn('Failed to load live token metrics:', e);
+      setLoadFailed(true);
     }
   };
 
@@ -48,14 +51,31 @@ export const LiveTokenCostWidget: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const totalCost = metrics?.total_cost_usd || 0.048;
-  const totalTokens = metrics?.total_tokens || 142500;
+  // No metrics means unknown, never a made-up number.
+  const totalCost = metrics ? metrics.total_cost_usd : null;
+  const totalTokens = metrics ? metrics.total_tokens : null;
+
+  // Group recorded usage by model; only what the ledger actually holds.
+  const modelUsage = Object.values(
+    (metrics?.agent_usage ?? []).reduce<Record<string, { model: string; cost: number; tokens: number }>>(
+      (acc, u) => {
+        const row = acc[u.model] ?? { model: u.model, cost: 0, tokens: 0 };
+        row.cost += u.total_cost_usd;
+        row.tokens += u.total_input_tokens + u.total_output_tokens;
+        acc[u.model] = row;
+        return acc;
+      },
+      {}
+    )
+  );
 
   const formatTokens = (num: number) => {
     if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`;
     if (num >= 1_000) return `${(num / 1_000).toFixed(1)}k`;
     return num.toString();
   };
+  const costLabel = totalCost === null ? 'unknown' : `$${totalCost.toFixed(4)}`;
+  const tokensLabel = totalTokens === null ? 'unknown' : formatTokens(totalTokens);
 
   return (
     <div className="relative font-sans select-none">
@@ -65,10 +85,10 @@ export const LiveTokenCostWidget: React.FC = () => {
         className="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono font-medium bg-white/90 hover:bg-white text-zinc-700 border border-zinc-200/90 shadow-2xs transition-all duration-150 cursor-pointer active:scale-95 group"
         title="Click to view real-time token ledger & model telemetry"
       >
-        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-        <span className="font-bold text-zinc-900">${totalCost.toFixed(4)}</span>
+        <span className={`w-2 h-2 rounded-full ${metrics && !loadFailed ? 'bg-emerald-500' : 'bg-zinc-300'}`} />
+        <span className="font-bold text-zinc-900">{costLabel}</span>
         <span className="text-zinc-300">|</span>
-        <span className="text-zinc-500">{formatTokens(totalTokens)} tok</span>
+        <span className="text-zinc-500">{tokensLabel} tok</span>
         <ChevronDown
           className={`w-3 h-3 text-zinc-400 group-hover:text-zinc-700 transition-transform ${
             isPopoverOpen ? 'rotate-180' : ''
@@ -98,7 +118,7 @@ export const LiveTokenCostWidget: React.FC = () => {
             <div className="bg-zinc-50 p-2.5 rounded-2xl border border-zinc-200/60">
               <div className="text-[10px] font-mono text-zinc-400 uppercase font-semibold">Total Spend</div>
               <div className="text-sm font-bold text-zinc-900 font-mono mt-0.5">
-                ${totalCost.toFixed(4)}
+                {costLabel}
               </div>
               <div className="text-[9px] text-emerald-600 font-mono mt-0.5">Substrate Ledger</div>
             </div>
@@ -106,7 +126,7 @@ export const LiveTokenCostWidget: React.FC = () => {
             <div className="bg-zinc-50 p-2.5 rounded-2xl border border-zinc-200/60">
               <div className="text-[10px] font-mono text-zinc-400 uppercase font-semibold">Tokens Consumed</div>
               <div className="text-sm font-bold text-zinc-900 font-mono mt-0.5">
-                {totalTokens.toLocaleString()}
+                {totalTokens === null ? 'unknown' : totalTokens.toLocaleString()}
               </div>
               <div className="text-[9px] text-indigo-600 font-mono mt-0.5">In/Out Total</div>
             </div>
@@ -118,25 +138,34 @@ export const LiveTokenCostWidget: React.FC = () => {
               Active Model Ledger
             </div>
             <div className="space-y-1 bg-zinc-50/70 p-2 rounded-2xl border border-zinc-200/60 text-xs">
-              <div className="flex items-center justify-between py-1 border-b border-zinc-100 font-mono text-[11px]">
-                <span className="text-zinc-700 font-medium">gemini-3.8-flash</span>
-                <span className="text-emerald-700 font-bold">$0.0097 • 32.8k</span>
-              </div>
-              <div className="flex items-center justify-between py-1 border-b border-zinc-100 font-mono text-[11px]">
-                <span className="text-zinc-700 font-medium">claude-3-7-sonnet</span>
-                <span className="text-indigo-700 font-bold">$0.2025 • 39.1k</span>
-              </div>
-              <div className="flex items-center justify-between py-1 font-mono text-[11px]">
-                <span className="text-zinc-700 font-medium">claude-sonnet-4-6</span>
-                <span className="text-zinc-700 font-bold">$0.1545 • 29.9k</span>
-              </div>
+              {modelUsage.length > 0 ? (
+                modelUsage.map((m) => (
+                  <div
+                    key={m.model}
+                    className="flex items-center justify-between py-1 border-b border-zinc-100 last:border-b-0 font-mono text-[11px]"
+                  >
+                    <span className="text-zinc-700 font-medium">{m.model}</span>
+                    <span className="text-zinc-700 font-bold">
+                      ${m.cost.toFixed(4)} • {formatTokens(m.tokens)}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="py-1 font-mono text-[11px] text-zinc-400">No usage recorded</div>
+              )}
             </div>
           </div>
 
           {/* Footer */}
           <div className="flex items-center justify-between pt-1 border-t border-zinc-100 text-[10px] font-mono text-zinc-400">
             <span>Poll Rate: 5000ms</span>
-            <span className="text-emerald-600 font-semibold">● Substrate Connected</span>
+            {loadFailed ? (
+              <span className="text-red-600 font-semibold">● Ledger unreachable</span>
+            ) : metrics ? (
+              <span className="text-emerald-600 font-semibold">● Ledger read</span>
+            ) : (
+              <span className="font-semibold">● Loading</span>
+            )}
           </div>
         </div>
       )}

@@ -1,3 +1,4 @@
+pub mod config;
 pub mod db;
 
 use std::sync::atomic::{AtomicBool, Ordering};

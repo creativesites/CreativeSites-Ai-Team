@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Sun,
-  Moon,
   Coffee,
   Activity,
   Layers,
@@ -28,8 +26,6 @@ interface JulesCockpitViewProps {
   onSpawnClaude: (agentId?: string) => void;
   onSpawnGemini: (agentId?: string) => void;
   onSpawnShell: () => void;
-  onWakeTeam: () => void;
-  onSleepTeam: () => void;
   onRefreshState: () => void;
 }
 
@@ -47,8 +43,6 @@ export const JulesCockpitView: React.FC<JulesCockpitViewProps> = ({
   onSpawnClaude,
   onSpawnGemini,
   onSpawnShell,
-  onWakeTeam,
-  onSleepTeam,
   onRefreshState,
 }) => {
   const [activeTask, setActiveTask] = useState<any>(
@@ -59,10 +53,11 @@ export const JulesCockpitView: React.FC<JulesCockpitViewProps> = ({
   const pendingDecisions = summary?.pending_decisions || [];
   const recentTasks = summary?.recent_tasks || [];
   const recentEvents = summary?.recent_events || [];
-  const totalIdentities = summary?.total_identities || 8;
-  const liveIdentities = summary?.live_identities || 6;
-  const openTasksCount = summary?.open_tasks || 0;
-  const totalEvents = summary?.total_events || 0;
+  // Missing summary values render as '?', never as invented counts.
+  const totalIdentities = summary?.total_identities ?? '?';
+  const liveIdentities = summary?.live_identities ?? '?';
+  const openTasksCount = summary?.open_tasks ?? '?';
+  const totalEvents = summary?.total_events ?? '?';
 
   const handleMissionDispatched = (task: any) => {
     setActiveTask(task);
@@ -108,20 +103,6 @@ export const JulesCockpitView: React.FC<JulesCockpitViewProps> = ({
 
           {/* Quick Routine Actions */}
           <div className="flex items-center gap-2">
-            <button
-              onClick={onWakeTeam}
-              className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
-            >
-              <Sun className="w-3.5 h-3.5 text-amber-500" />
-              <span>Wake Team</span>
-            </button>
-            <button
-              onClick={onSleepTeam}
-              className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-2xl text-xs font-semibold transition flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
-            >
-              <Moon className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Sleep Team</span>
-            </button>
             <button
               onClick={onToggleSleepPrevention}
               className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer active:scale-95 ${
@@ -201,7 +182,6 @@ export const JulesCockpitView: React.FC<JulesCockpitViewProps> = ({
         onMissionDispatched={handleMissionDispatched}
         onQuickLaunchClaude={() => onSpawnClaude('atlas')}
         onQuickLaunchGemini={() => onSpawnGemini('astra')}
-        onWakeTeam={onWakeTeam}
       />
 
       {/* 4. Dual-Pane Cockpit / Split View */}

@@ -5,7 +5,8 @@ const path = require('path');
 class TestVerificationRecorder {
   constructor(baseDir = path.resolve(__dirname, '..')) {
     this.baseDir = baseDir;
-    this.outputFile = path.resolve(baseDir, 'community/system/VERIFICATION_RECORD.json');
+    // Rewritten on every run, so it lives under data/ (not in git) rather than community/.
+    this.outputFile = path.resolve(baseDir, 'data/verification/VERIFICATION_RECORD.json');
   }
 
   /**

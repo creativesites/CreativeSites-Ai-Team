@@ -4,7 +4,22 @@ const path = require('path');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 
-const DB_PATH = path.resolve(__dirname, '../data/myaos.db');
+const os = require('os');
+const { ensureDb } = require('../src/paths');
+
+// A throwaway store built from data/myaos.schema.sql, so this test never
+// writes to the team's real database. Set before any src/intelligence module
+// is required, because they resolve the path when loaded.
+const DB_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'myaos-intel-')), 'myaos.db');
+process.env.MYAOS_DB_PATH = DB_PATH;
+ensureDb(DB_PATH);
+// The two models the escalation chains below point at.
+execFileSync('sqlite3', [DB_PATH, `
+  INSERT INTO model_registry (id, provider, model_id, display_name, availability)
+    VALUES ('model-gemini-api', 'Gemini', 'gemini-flash-latest', 'Gemini Flash (test)', 'available');
+  INSERT INTO model_registry (id, provider, model_id, display_name, availability)
+    VALUES ('model-gemini-pro', 'Gemini', 'gemini-pro-latest', 'Gemini Pro (test)', 'available');
+`]);
 
 function queryDb(sql) {
   const out = execFileSync('sqlite3', ['-json', DB_PATH, sql], { encoding: 'utf8' });

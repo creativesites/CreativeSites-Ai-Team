@@ -1,0 +1,13 @@
+{
+  "teamRepo": "~/path/to/CreativeSites-Ai-Team",
+  "dbPath": "~/path/to/CreativeSites-Ai-Team/data/myaos.db",
+  "workspaces": [
+    { "id": "CreativeSites-Ai-Team", "name": "CreativeSites AI Team", "path": "~/path/to/CreativeSites-Ai-Team" }
+  ],
+  "agentWorkspaces": {
+    "atlas": "~/path/to/CreativeSites-Ai-Team",
+    "astra": "~/path/to/Myavana-Chatbot"
+  },
+  "cloneParentDir": "~/path/to/clones",
+  "newProjectParentDir": "~/path/to/projects"
+}
