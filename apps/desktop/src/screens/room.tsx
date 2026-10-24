@@ -1,0 +1,166 @@
+import * as React from 'react';
+import { Hash } from 'lucide-react';
+import type { Identity, JobDetail, JobSummary, Message, Room } from '@runtime/types';
+import { Avatar, OwnerAvatar } from '@/components/app/avatar';
+import { EmptyState, EvidenceTag, jobLabel, StageBar, Tag } from '@/components/app/status';
+import { Composer } from '@/components/ui/composer';
+import { buttonVariants } from '@/components/ui/button';
+import { href } from '@/lib/route';
+import { cn } from '@/lib/utils';
+
+const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+export function RoomScreen({
+  room,
+  messages,
+  jobs,
+  identities,
+  focusJob,
+  ownerName,
+  onSend,
+}: {
+  room: Room;
+  messages: Message[];
+  jobs: JobSummary[];
+  identities: Identity[];
+  /** The job shown in the side panel: the newest open one in this room. */
+  focusJob: JobDetail | null;
+  ownerName: string;
+  onSend?: (body: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
+  const jobById = new Map(jobs.map((j) => [j.id, j]));
+  const shownJobCards = new Set<string>();
+
+  const send = async (text: string) => {
+    if (!onSend || !text.trim()) return;
+    setError(null);
+    try {
+      await onSend(text.trim());
+      setDraft('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  return (
+    <div className="flex min-h-full flex-col gap-3 lg:flex-row">
+      <main className="bg-card flex min-w-0 flex-1 flex-col rounded-xl">
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-3.5">
+          <div className="flex items-center gap-2.5">
+            <Hash className="size-4.5 text-muted-foreground" />
+            <h1 className="text-[17px] font-semibold">{room.name}</h1>
+            <span className="text-xs text-muted-foreground">{room.repoPath ? `Repo: ${room.repoPath}` : 'No repo bound yet'}</span>
+          </div>
+          {room.openJobCount > 0 && <Tag tone="observed">{room.openJobCount} open job{room.openJobCount === 1 ? '' : 's'}</Tag>}
+        </header>
+
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-5 px-6 py-5">
+          {messages.length === 0 && (
+            <EmptyState title="No messages yet">
+              Say what you want done. Agents join the conversation once they can run (Phase 1).
+            </EmptyState>
+          )}
+          {messages.map((m) => {
+            const who = identities.find((i) => i.id === m.authorId);
+            const job = m.jobId ? jobById.get(m.jobId) : undefined;
+            const showCard = job && !shownJobCards.has(job.id);
+            if (job) shownJobCards.add(job.id);
+            return (
+              <React.Fragment key={m.id}>
+                <div className="flex gap-3">
+                  {m.authorKind === 'human' ? <OwnerAvatar name={ownerName} size={32} /> : <Avatar who={who ?? { name: m.authorId }} size={32} />}
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <div className="text-sm">
+                      <span className="font-semibold">{m.authorKind === 'human' ? ownerName : (who?.name ?? m.authorId)}</span>{' '}
+                      <span className="text-xs text-muted-foreground">
+                        {who?.runtime ? `${who.runtime} · ` : ''}
+                        {time(m.createdAt)}
+                      </span>
+                    </div>
+                    <p className="text-[14.5px] leading-relaxed whitespace-pre-wrap text-foreground/90">{m.body}</p>
+                  </div>
+                </div>
+                {showCard && <JobCard job={job} />}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        <div className="mx-auto w-full max-w-3xl px-6 pb-4">
+          <Composer
+            value={draft}
+            onValueChange={setDraft}
+            onSubmit={send}
+            canSubmit={!!onSend && draft.trim().length > 0}
+            placeholder={`Message #${room.name}`}
+            textareaProps={{ 'aria-label': `Message ${room.name}` }}
+          />
+          {!onSend && <p className="mt-1.5 text-xs text-muted-foreground">Messages can be sent once the runtime is reachable.</p>}
+          {error && <p className="mt-1.5 text-xs text-risk">Not sent: {error}</p>}
+        </div>
+      </main>
+
+      <JobPanel job={focusJob} />
+    </div>
+  );
+}
+
+function JobCard({ job }: { job: JobSummary }) {
+  return (
+    <section aria-label={jobLabel(job.number)} className="glass-panel flex flex-col gap-3.5 rounded-xl px-4 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5">
+          <span className="font-mono text-xs text-muted-foreground">{jobLabel(job.number)}</span>
+          <span className="text-[15px] font-semibold">{job.title}</span>
+        </div>
+        <a href={href({ name: 'job', jobId: job.id })} className={buttonVariants({ variant: 'glass' })}>
+          Open job
+        </a>
+      </div>
+      <StageBar stage={job.stage} waitingOnYou={job.pendingApprovals > 0} />
+    </section>
+  );
+}
+
+export function JobPanel({ job, className }: { job: JobDetail | null; className?: string }) {
+  if (!job) {
+    return (
+      <aside aria-label="Job details" className={cn('bg-card flex flex-col gap-3 rounded-xl p-4.5 lg:w-90', className)}>
+        <EmptyState title="No open job in this room" />
+      </aside>
+    );
+  }
+  const pending = job.approvals.filter((a) => a.status === 'pending');
+  return (
+    <aside aria-label="Job details" className={cn('bg-card flex flex-col gap-4.5 rounded-xl p-4.5 lg:w-90', className)}>
+      <div className="flex flex-col gap-1">
+        <span className="font-mono text-xs text-muted-foreground">{jobLabel(job.number)} · in this room</span>
+        <h2 className="text-base font-semibold">{job.title}</h2>
+        <StageBar stage={job.stage} waitingOnYou={pending.length > 0} compact className="mt-1.5" />
+      </div>
+      <div className="flex flex-col gap-2.5">
+        <div className="text-xs text-muted-foreground">Done means</div>
+        {job.criteria.length === 0 ? (
+          <EmptyState title="No acceptance criteria yet">The planning step writes them (Phase 3).</EmptyState>
+        ) : (
+          job.criteria.map((c) => (
+            <div key={c.id} className="glass-panel flex flex-col gap-1.5 rounded-lg px-3 py-2.5">
+              <span className="text-[13px]">{c.text}</span>
+              <EvidenceTag value={c.evidenceClass} className="self-start" />
+            </div>
+          ))
+        )}
+      </div>
+      <div className="mt-auto flex gap-2">
+        <a href={href({ name: 'job', jobId: job.id })} className={cn(buttonVariants({ variant: 'glass' }), 'flex-1')}>
+          Open job
+        </a>
+        <a href={href({ name: 'dev', jobId: job.id })} className={cn(buttonVariants({ variant: 'glass' }), 'flex-1')}>
+          Open in Dev
+        </a>
+      </div>
+    </aside>
+  );
+}

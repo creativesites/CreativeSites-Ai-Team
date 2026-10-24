@@ -19,3 +19,9 @@ desktop/src-tauri/target/
 data/myaos.db
 data/provenance.log
 data/verification/
+
+# Desktop v2 build output
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+*.tsbuildinfo

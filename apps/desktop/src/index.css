@@ -1,0 +1,42 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+@import "./styles/solid-glass.css";
+
+/* App tokens on top of Solid Glass. Colour is only ever a status:
+   blue Observed, green Verified, amber Needs you, red Risk. Claimed is a
+   dashed neutral, never a colour, so it can't be mistaken for a check. */
+@theme inline {
+  --color-observed: var(--observed);
+  --color-verified: var(--verified);
+  --color-needs-you: var(--needs-you);
+  --color-risk: var(--risk);
+}
+
+:root {
+  --observed: oklch(0.55 0.15 255);
+  --verified: oklch(0.55 0.14 155);
+  --needs-you: oklch(0.6 0.13 70);
+  --risk: oklch(0.58 0.16 25);
+}
+
+.dark {
+  --observed: oklch(0.78 0.1 255);
+  --verified: oklch(0.79 0.12 155);
+  --needs-you: oklch(0.82 0.11 75);
+  --risk: oklch(0.76 0.11 25);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
+}

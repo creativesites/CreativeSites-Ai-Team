@@ -121,6 +121,20 @@ npm run desktop:build
 npm run desktop:dmg
 ```
 
+### Desktop v2 and the runtime (in progress)
+
+The new app (`apps/desktop/`) and its engine (`runtime/`) are being built per `community/proposals/DESKTOP_V2_BUILD_PLAN.md`. The desktop shows the runtime's records and makes no AI calls of its own.
+
+```bash
+npm run desktop2:dev   # the app; it starts the runtime itself if none is running
+npm run runtime        # the runtime alone (Node 24+, no other dependencies)
+npm run runtime:test
+```
+
+- The runtime keeps its own store at `~/.myaos/runtime.db` (or `$MYAOS_RUNTIME_DB`) and publishes its address and token in `~/.myaos/runtime.json`, readable only by you. `data/myaos.db` keeps serving the current app and the team.
+- `node bin/myaos.js status` reports the runtime as well.
+- During development, `#/preview/<screen>` shows each screen with the design's sample data. The live app never shows sample data.
+
 ### Machine config and the database:
 
 - Paths that differ per machine (team repo, project repos per agent, workspace list) live in `~/.myaos/config.json`, or the file named by `$MYAOS_CONFIG`. Copy `myaos.config.example.json` to start. Nothing in the code hard-codes a home directory.

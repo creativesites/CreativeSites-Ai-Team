@@ -27,6 +27,37 @@ function parseFlags(argv) {
   return flags;
 }
 
+/**
+ * The v2 runtime (runtime/), read through its local API: the same records the
+ * new desktop app shows. Says plainly when it is not running.
+ */
+async function printRuntimeV2() {
+  const os = require('os');
+  const file = process.env.MYAOS_RUNTIME_FILE || path.join(process.env.MYAOS_HOME || path.join(os.homedir(), '.myaos'), 'runtime.json');
+  console.log('\n🧭 RUNTIME v2 (runtime/, read through its API)');
+  console.log('------------------------------------------------------');
+  let info;
+  try {
+    info = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    console.log(`Not running (no ${file}). Start it with: npm start --prefix runtime`);
+    return;
+  }
+  try {
+    const get = async (route) => {
+      const res = await fetch(`${info.url}${route}`, { headers: { Authorization: `Bearer ${info.token}` }, signal: AbortSignal.timeout(2000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status} on ${route}`);
+      return res.json();
+    };
+    const health = await get('/health');
+    const s = await get('/v1/summary');
+    console.log(`Running at ${info.url} (pid ${health.pid}, v${health.version}, schema ${health.schemaVersion})`);
+    console.log(`Coworkers ${s.identities} · Rooms ${s.rooms} · Open jobs ${s.openJobs} · Waiting on you ${s.pendingApprovals} · Live sessions ${s.liveSessions}`);
+  } catch (e) {
+    console.log(`Not reachable at ${info.url}: ${e.message}. The info file may be left from a runtime that stopped.`);
+  }
+}
+
 async function main() {
   switch (command) {
     case 'status': {
@@ -86,6 +117,7 @@ async function main() {
       for (const e of recentEvents) {
         console.log(`[${e.timestamp.slice(11, 19)}] ${e.type.padEnd(20)} from @${e.sender}`);
       }
+      await printRuntimeV2();
       console.log('\n');
       break;
     }
