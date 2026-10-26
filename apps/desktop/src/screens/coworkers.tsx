@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { CreateIdentityInput, Identity, Session, UpdateIdentityInput } from '@runtime/types';
+import type { AdapterInfo, CreateIdentityInput, Identity, Session, UpdateIdentityInput } from '@runtime/types';
 import { Avatar, AVATAR_COLORS, AVATAR_MARKS } from '@/components/app/avatar';
 import { isLive } from '@/components/app/shell';
 import { EmptyState, SectionTitle, Tag } from '@/components/app/status';
@@ -11,18 +11,37 @@ import { cn } from '@/lib/utils';
 const RUNTIMES = [
   { name: 'Claude Code', command: 'claude-agent-acp' },
   { name: 'Codex', command: 'codex-acp' },
-  { name: 'Gemini CLI', command: 'gemini --experimental-acp' },
+  { name: 'Gemini CLI', command: 'gemini --acp' },
   { name: 'Custom agent', command: 'any command that speaks ACP over stdio' },
 ];
+
+function authTag(auth: AdapterInfo['auth']): { tone: 'observed' | 'verified' | 'needs-you' | 'claimed' | 'risk' | 'quiet'; label: string } {
+  switch (auth?.state) {
+    case 'ready':
+      return { tone: 'verified', label: 'Ready' };
+    case 'configured':
+      return { tone: 'observed', label: 'Configured' };
+    case 'needs_login':
+      return { tone: 'needs-you', label: 'Needs login' };
+    case 'missing_binary':
+      return { tone: 'claimed', label: 'Not installed' };
+    case 'unsupported':
+      return { tone: 'risk', label: 'Unsupported' };
+    default:
+      return { tone: 'quiet', label: 'Unknown' };
+  }
+}
 
 export function CoworkersScreen({
   identities,
   sessions,
+  adapters,
   onCreate,
   onUpdate,
 }: {
   identities: Identity[];
   sessions: Session[];
+  adapters?: AdapterInfo[];
   onCreate?: (input: CreateIdentityInput) => Promise<void>;
   onUpdate?: (id: string, input: UpdateIdentityInput) => Promise<void>;
 }) {
@@ -81,14 +100,26 @@ export function CoworkersScreen({
           )}
 
           <section aria-label="Agent runtimes" className="bg-card flex flex-col gap-1 rounded-xl p-4.5">
-            <SectionTitle aside="driven through the Agent Client Protocol">Agent runtimes on this Mac</SectionTitle>
-            {RUNTIMES.map((r) => (
-              <div key={r.name} className="flex flex-wrap items-center gap-3 border-t border-border/50 py-2.5 first:border-t-0">
-                <span className="flex-1 basis-40 font-medium">{r.name}</span>
-                <span className="flex-1 basis-52 font-mono text-xs text-muted-foreground">{r.command}</span>
-                <Tag>Not checked</Tag>
-              </div>
-            ))}
+            <SectionTitle aside="probed on this Mac, not assumed">Agent runtimes</SectionTitle>
+            {(adapters ?? []).length === 0 && <p className="py-2 text-sm text-muted-foreground">The runtime has not reported its adapters yet.</p>}
+            {(adapters ?? []).map((a) => {
+              const status = authTag(a.auth);
+              return (
+                <div key={a.id} className="flex flex-wrap items-center gap-3 border-t border-border/50 py-2.5 first:border-t-0">
+                  <span className="flex-1 basis-36 font-medium">{a.name}</span>
+                  <span className="flex-1 basis-44 font-mono text-xs text-muted-foreground">
+                    {a.command}
+                    {a.version ? ` · ${a.version}` : ''}
+                  </span>
+                  <span className="flex-1 basis-64 text-xs text-muted-foreground">{a.auth?.detail ?? 'Not probed'}</span>
+                  <Tag tone={status.tone}>{status.label}</Tag>
+                </div>
+              );
+            })}
+            <p className="pt-1 text-xs text-muted-foreground">
+              Claude is signed in natively; Codex uses <span className="font-mono">codex login</span>; Gemini needs a valid key via{' '}
+              <span className="font-mono">node runtime/scripts/set-adapter-key.mjs GEMINI_API_KEY &lt;key&gt;</span>. The runtime passes credentials only to the adapter process.
+            </p>
           </section>
         </main>
 

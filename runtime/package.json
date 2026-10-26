@@ -11,7 +11,8 @@
     "start": "node src/main.ts",
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "import:v1": "node scripts/apply-import.mjs"
+    "import:v1": "node scripts/apply-import.mjs",
+    "smoke": "node scripts/smoke-adapter.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

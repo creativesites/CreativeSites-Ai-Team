@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { Identity, JobSummary, Room, Session } from '@runtime/types';
+import type { AdapterInfo, Identity, JobSummary, Room, Session } from '@runtime/types';
 import { RuntimeBanner, Sidebar, useMode } from '@/components/app/shell';
 import { EmptyState } from '@/components/app/status';
 import { href, useRoute, type Route } from '@/lib/route';
@@ -45,6 +45,7 @@ function Workspace({ route }: { route: Route }) {
   const jobs = useRuntimeData((c) => c.jobs());
   const identities = useRuntimeData((c) => c.identities());
   const sessions = useRuntimeData((c) => c.sessions());
+  const adapters = useRuntimeData((c) => c.adapters());
 
   return (
     <div className="flex min-h-full flex-col gap-3 p-3 md:flex-row">
@@ -60,13 +61,13 @@ function Workspace({ route }: { route: Route }) {
       />
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <RuntimeBanner />
-        <Screen route={route} rooms={list(rooms)} jobs={list(jobs)} identities={list(identities)} sessions={list(sessions)} />
+        <Screen route={route} rooms={list(rooms)} jobs={list(jobs)} identities={list(identities)} sessions={list(sessions)} adapters={list(adapters)} />
       </div>
     </div>
   );
 }
 
-function Screen({ route, rooms, jobs, identities, sessions }: { route: Route; rooms: Room[]; jobs: JobSummary[]; identities: Identity[]; sessions: Session[] }) {
+function Screen({ route, rooms, jobs, identities, sessions, adapters }: { route: Route; rooms: Room[]; jobs: JobSummary[]; identities: Identity[]; sessions: Session[]; adapters: AdapterInfo[] }) {
   const { client } = useRuntime();
 
   const startJob = async (req: StartJobRequest) => {
@@ -97,6 +98,7 @@ function Screen({ route, rooms, jobs, identities, sessions }: { route: Route; ro
         <CoworkersScreen
           identities={identities}
           sessions={sessions}
+          adapters={adapters}
           onCreate={client ? async (i) => void (await client.createIdentity(i)) : undefined}
           onUpdate={client ? async (id, i) => void (await client.updateIdentity(id, i)) : undefined}
         />

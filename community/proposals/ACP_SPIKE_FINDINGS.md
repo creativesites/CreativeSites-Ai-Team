@@ -374,3 +374,21 @@ workspaces to `/tmp/myaos-acp-spike/<stamp>-<adapter>/`. Nothing outside those
 directories, `runtime/spikes/`, and this document was modified. `node_modules/`,
 `runs/` are gitignored; `runtime/package.json`, `runtime/src/**` and
 `apps/desktop/**` were not touched; nothing was committed.
+
+
+---
+
+## Update — 2026-10-26 16:20 (credentials/install fixed)
+
+The blockers in §3/§9 were addressed on the same machine:
+
+| Adapter | What changed | Result |
+|---|---|---|
+| Claude | OAuth session now valid (`claude auth status` → loggedIn, claude.ai pro); `claude-agent-acp` 0.97.0 installed | **Working**: harness 6/6 scenarios end_turn/cancelled, permission requests observed, cancel → `cancelled`, 0 orphans. Runtime smoke turn completed with `OK`. |
+| Codex | Installed `@openai/codex` 0.164.0 + `codex-acp` 1.11.0; `codex login status` → logged in via ChatGPT | **Working**: 5/6 scenarios; the outside-workspace scenario timed out (180s) and left one orphan process; normal turns, permissions and cancel work. Runtime smoke turn completed with `OK`. |
+| Gemini | `GEMINI_API_KEY` in `.env` was rejected (`401 API key not valid` / `ACCESS_TOKEN_TYPE_UNSUPPORTED`); OAuth token expired 2026-09-12 | **Blocked**: needs a valid key (`node runtime/scripts/set-adapter-key.mjs GEMINI_API_KEY <key>`) or a fresh `gemini` login. |
+| DeepSeek Harness | App has no spawnable ACP agent (`dsh` absent; bundled CLI exposes web/headless/tui profiles, ACP is used client-side) | **Unsupported as an ACP agent**; not fixable without an upstream ACP entry point or a custom harness. |
+
+Re-run: `node runtime/spikes/run-spike.js --adapter claude|codex|gemini` (adapter binaries are on PATH). Runtime-level check: `node runtime/scripts/smoke-adapter.mjs claude|codex|gemini`.
+
+Observed-vs-Attested is unchanged: the adapters still make **zero** client `fs/*` or `terminal/*` calls in these runs; commands and file edits arrive as tool calls (Attested) until the runtime/verifier re-runs them. The working adapters improve execution, not the evidence class.

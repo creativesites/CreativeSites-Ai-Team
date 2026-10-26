@@ -1,5 +1,6 @@
 import type * as T from '../api/types.ts';
 import { findExecutable, ADAPTER_PRESETS } from '../adapters.ts';
+import path from 'node:path';
 import type { Checker } from '../checks.ts';
 import { ConflictError, InputError, type Repo } from '../store/repo.ts';
 import { AcpClient, AcpError, type PermissionOutcome, type PermissionRequest } from './client.ts';
@@ -13,6 +14,8 @@ export interface SessionManagerOptions {
   checker: Checker;
   maxSessions?: number;
   permissionTimeoutMs?: number;
+  /** Adapter credentials from ~/.myaos/adapters.env (never stored in the DB). */
+  env?: NodeJS.ProcessEnv;
 }
 
 export interface StartSessionInput {
@@ -47,6 +50,7 @@ export class SessionManager {
   private readonly checker: Checker;
   private readonly maxSessions: number;
   private readonly permissionTimeoutMs: number;
+  private readonly env: NodeJS.ProcessEnv;
   private readonly live = new Map<string, LiveSession>();
   private readonly runs = new Map<string, Promise<void>>();
 
@@ -55,6 +59,7 @@ export class SessionManager {
     this.checker = opts.checker;
     this.maxSessions = opts.maxSessions ?? 4;
     this.permissionTimeoutMs = opts.permissionTimeoutMs ?? 15 * 60_000;
+    this.env = opts.env ?? {};
   }
 
   liveSessionIds(): string[] {
@@ -140,7 +145,7 @@ export class SessionManager {
     job: T.JobDetail,
     task: T.Task | null,
     identity: T.Identity,
-    adapter: { command: string; args: string[]; name: string },
+    adapter: { command: string; args: string[]; name: string; env?: Record<string, string> },
     promptOverride?: string
   ): Promise<void> {
     const client = new AcpClient({
@@ -148,10 +153,23 @@ export class SessionManager {
       args: adapter.args,
       cwd: live.worktree,
       worktree: live.worktree,
+      env: { ...this.env, ...(adapter.env ?? {}) },
       handlers: {
-        onUpdate: (sessionId, update) => this.onUpdate(live, sessionId, update),
-        onPermission: (request) => this.onPermission(live, request),
-        onStderr: (line) => this.repo.appendTranscript(live.sessionId, { kind: 'adapter_stderr', role: null, payload: { line: line.slice(0, 4000) } }),
+        onUpdate: (sessionId, update) => {
+          if (!live.closed) this.onUpdate(live, sessionId, update);
+        },
+        onPermission: (request) => {
+          if (live.closed) return Promise.resolve({ outcome: 'cancelled' as const });
+          return this.onPermission(live, request);
+        },
+        onStderr: (line) => {
+          if (live.closed) return;
+          try {
+            this.repo.appendTranscript(live.sessionId, { kind: 'adapter_stderr', role: null, payload: { line: line.slice(0, 4000) } });
+          } catch {
+            /* runtime is closing; stderr after the store closed is not a turn record */
+          }
+        },
         onExit: (info) => {
           if (live.closed || live.cancelled) return;
           this.repo.updateSession(live.sessionId, {
@@ -314,7 +332,7 @@ export class SessionManager {
 
   // ---------------------------------------------------------------- adapters
 
-  private resolveAdapter(id: string): { command: string; args: string[]; name: string } {
+  private resolveAdapter(id: string): { command: string; args: string[]; name: string; env?: Record<string, string> } {
     const override = this.repo.listAdapterOverrides().find((row) => String(row.id) === id);
     if (override) {
       const command = String(override.command ?? '');
@@ -326,13 +344,14 @@ export class SessionManager {
           return [];
         }
       })();
-      return { command, args, name: id };
+      return { command, args, name: id, env: pathEnv(command) };
     }
     const preset = ADAPTER_PRESETS.find((a) => a.id === id);
     if (!preset) throw new ConflictError(`Unknown adapter ${id}. Add it in Settings or use one of: ${DEFAULTS.join(', ')}`);
     const binary = findExecutable(preset.command, preset.aliases);
     if (!binary) throw new ConflictError(`${preset.name} is not installed (looked for ${preset.command}). Nothing was started.`);
-    return { command: binary, args: preset.args, name: preset.name };
+    const requires = preset.id === 'codex' ? findExecutable('codex') : null;
+    return { command: binary, args: preset.args, name: preset.name, env: pathEnv(binary, requires) };
   }
 
   private buildPrompt(job: T.JobDetail, task: T.Task | null, identity: T.Identity, worktree: string): string {
@@ -355,6 +374,15 @@ export class SessionManager {
     ];
     return lines.filter((line) => line !== '').join('\n');
   }
+}
+
+function pathEnv(...binaries: (string | null)[]): Record<string, string> {
+  const dirs = binaries
+    .filter((b): b is string => Boolean(b))
+    .map((b) => path.dirname(b))
+    .filter((d) => d && d !== '.');
+  const current = process.env.PATH ?? '';
+  return { PATH: [...new Set([...dirs, ...current.split(path.delimiter)])].join(path.delimiter) };
 }
 
 function required(value: unknown, field: string): string {

@@ -218,12 +218,12 @@ Read [ACP_SPIKE_FINDINGS.md](ACP_SPIKE_FINDINGS.md) before building adapter UI. 
 
 | Adapter | State to show |
 |---|---|
-| Claude (`claude-agent-acp`) | installed but **OAuth expired** (401 on every prompt) → "Re-authenticate Claude Code" |
-| Gemini (`gemini --acp`) | installed but needs `GEMINI_API_KEY` (local OAuth expired) → "Set GEMINI_API_KEY / sign in" |
-| Codex (`codex-acp`) | **not installed** (`codex` absent) → "Install Codex" |
-| DeepSeek Harness | **no ACP agent entry point** → "Unsupported as an ACP agent" |
+| Claude (`claude-agent-acp` 0.97.0) | **Ready** — signed in natively; runtime smoke turn passed |
+| Codex (`codex-acp` 1.11.0 + codex 0.164.0) | **Ready** — logged in via ChatGPT; runtime smoke turn passed (outside-workspace scenario has a known timeout in the spike) |
+| Gemini (`gemini --acp`) | **Needs login / key** — OAuth expired and the `.env` key is invalid (401); set a valid key with `node runtime/scripts/set-adapter-key.mjs GEMINI_API_KEY <key>` or run `gemini` |
+| DeepSeek Harness | **Unsupported as an ACP agent** (no spawnable entry point) |
 
-`GET /v1/adapters` reports installed/version; it cannot prove auth. The session manager reports a failed session with the adapter's error in the transcript; show that as Unknown/failed, never as a successful empty turn. Starting a session with a blocked adapter returns a `409` with the reason. A custom adapter can be added via `POST /v1/adapters/:id` (command/args) — the tests use that with a scripted fake agent.
+`GET /v1/adapters` now returns `installed`, `version` and `auth {state, detail}` (Claude/Codex read their CLI auth; Gemini checks credentials). The Coworkers screen shows this panel. A configured key is shown as "Configured" until a turn actually succeeds — auth is not proven by configuration alone. The session manager reports a failed session with the adapter's error in the transcript; show that as Unknown/failed, never as a successful empty turn. Starting a session with a blocked adapter returns a `409` with the reason. A custom adapter can be added via `POST /v1/adapters/:id` (command/args) — the tests use that with a scripted fake agent. Runtime-level check: `node runtime/scripts/smoke-adapter.mjs claude|codex|gemini`.
 
 ## Requests from the UI side
 

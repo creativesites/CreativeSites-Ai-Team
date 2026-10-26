@@ -32,7 +32,7 @@ export interface Health {
     store: boolean;
     git: boolean;
     node: string;
-    adapters: Record<string, { installed: boolean; version: string | null }>;
+    adapters: Record<string, { installed: boolean; version: string | null; auth?: string }>;
     workspaceRoots: number;
   };
 }
@@ -360,6 +360,11 @@ export interface Budget {
   updatedAt: string;
 }
 
+export interface AdapterAuth {
+  state: 'ready' | 'configured' | 'needs_login' | 'missing_binary' | 'unsupported' | 'unknown';
+  detail: string;
+}
+
 export interface AdapterInfo {
   id: string;
   name: string;
@@ -375,6 +380,7 @@ export interface AdapterInfo {
   /** What the runtime has probed this adapter to support, if anything. */
   abilities: Record<string, boolean>;
   lastProbeAt: string | null;
+  auth: AdapterAuth;
 }
 
 export type Ruin = 'none' | 'possible' | 'likely';

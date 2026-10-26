@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type {
+  AdapterInfo,
   CreateIdentityInput,
   CreateJobInput,
   CreateRoomInput,
@@ -88,6 +89,7 @@ export class RuntimeClient {
   job = (jobId: string) => this.request<JobDetail>('GET', `/v1/jobs/${encodeURIComponent(jobId)}`);
   createJob = (input: CreateJobInput) => this.request<JobDetail>('POST', '/v1/jobs', input);
   sessions = () => this.request<Session[]>('GET', '/v1/sessions');
+  adapters = () => this.request<AdapterInfo[]>('GET', '/v1/adapters');
 
   /**
    * Follows the event stream until `signal` aborts, resuming after the last

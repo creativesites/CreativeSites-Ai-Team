@@ -7,6 +7,7 @@ import { artifactsDir, cloneParentDir, loadConfig, newProjectParentDir, workspac
 import { Checker } from './checks.ts';
 import { SessionManager } from './acp/session-manager.ts';
 import { Bridge } from './bridge.ts';
+import { readAdapterEnv } from './adapter-env.ts';
 import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
 import { gitAvailable } from './workspaces.ts';
@@ -54,7 +55,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     bridge?.onEvent(e);
   });
   const checker = new Checker({ repo, workspaceRoots: wsRoots, worktreeRoot: wtRoot, artifactsDir: artDir });
-  const sessions = new SessionManager({ repo, checker });
+  const sessions = new SessionManager({ repo, checker, env: readAdapterEnv(cfg) });
   const teamRepo = opts.teamRepo === null ? null : (opts.teamRepo ?? cfg.teamRepo ?? null);
   bridge = new Bridge({ repo, teamRepo });
 
@@ -67,7 +68,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
       store = false;
     }
     const adapters = Object.fromEntries(
-      probeAdapters().map((a) => [a.id, { installed: a.installed, version: a.version }])
+      probeAdapters().map((a) => [a.id, { installed: a.installed, version: a.version, auth: a.auth.state }])
     );
     return {
       ok: store,

@@ -449,6 +449,7 @@ export function createServer(opts: ServerOptions): RuntimeServer {
           error: 'Custom adapter: not probed',
           abilities: {},
           lastProbeAt: null,
+          auth: { state: 'unknown', detail: 'Custom adapter; not probed' },
         });
       }
     }

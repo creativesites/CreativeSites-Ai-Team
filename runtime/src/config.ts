@@ -16,6 +16,7 @@ export interface MyaosConfig {
   newProjectParentDir?: string;
   worktreeRoot?: string;
   artifactsDir?: string;
+  adapterEnvPath?: string;
   ownerId?: string;
   defaultBudgetCents?: number;
   defaultMonthlyBudgetCents?: number;
@@ -83,6 +84,7 @@ export function loadConfig(): MyaosConfig {
     newProjectParentDir: stringField(raw.newProjectParentDir, 'newProjectParentDir'),
     worktreeRoot: stringField(raw.worktreeRoot, 'worktreeRoot'),
     artifactsDir: stringField(raw.artifactsDir, 'artifactsDir'),
+    adapterEnvPath: stringField(raw.adapterEnvPath, 'adapterEnvPath'),
     ownerId: stringField(raw.ownerId, 'ownerId'),
     defaultBudgetCents: numberField(raw.defaultBudgetCents, 'defaultBudgetCents'),
     defaultMonthlyBudgetCents: numberField(raw.defaultMonthlyBudgetCents, 'defaultMonthlyBudgetCents'),
@@ -111,6 +113,11 @@ export function workspaceRoots(cfg: MyaosConfig = loadConfig()): string[] {
 
 export function artifactsDir(cfg: MyaosConfig = loadConfig()): string {
   return cfg.artifactsDir ? expandHome(cfg.artifactsDir) : path.join(myaosHome(), 'artifacts');
+}
+
+/** Environment for adapter processes (API keys), kept outside the repo and the store. */
+export function adaptersEnvPath(cfg: MyaosConfig = loadConfig()): string {
+  return envPath('MYAOS_ADAPTER_ENV') ?? (cfg.adapterEnvPath ? expandHome(cfg.adapterEnvPath) : path.join(myaosHome(), 'adapters.env'));
 }
 
 export function worktreeRoot(cfg: MyaosConfig = loadConfig()): string {
