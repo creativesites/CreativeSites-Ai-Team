@@ -1493,7 +1493,7 @@ export class Repo {
     return this.getSession(id);
   }
 
-  updateSession(id: string, input: { state?: T.SessionState; pid?: number | null; lastSeenAt?: string; exitCode?: number | null; error?: string | null; turnCount?: number }): T.Session {
+  updateSession(id: string, input: { state?: T.SessionState; pid?: number | null; lastSeenAt?: string; exitCode?: number | null; error?: string | null; turnCount?: number; acpSessionId?: string | null; model?: string | null }): T.Session {
     const session = this.getSession(id);
     this.write((events) => {
       const fields: [string, SQLInputValue][] = [];
@@ -1503,6 +1503,8 @@ export class Repo {
       if (input.exitCode !== undefined) fields.push(['exit_code', input.exitCode]);
       if (input.error !== undefined) fields.push(['error', input.error]);
       if (input.turnCount !== undefined) fields.push(['turn_count', input.turnCount]);
+      if (input.acpSessionId !== undefined) fields.push(['acp_session_id', input.acpSessionId]);
+      if (input.model !== undefined) fields.push(['model', input.model]);
       if (input.state === 'stopped' || input.state === 'failed') fields.push(['ended_at', now()]);
       this.db.prepare(`UPDATE sessions SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
       this.recordEvent(events, {

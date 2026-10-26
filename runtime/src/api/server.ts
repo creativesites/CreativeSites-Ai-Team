@@ -12,6 +12,7 @@ import {
 } from '../store/repo.ts';
 import * as workspaces from '../workspaces.ts';
 import type { Checker } from '../checks.ts';
+import type { SessionManager } from '../acp/session-manager.ts';
 
 export interface ServerOptions {
   repo: Repo;
@@ -23,6 +24,7 @@ export interface ServerOptions {
   cloneParentDir: string;
   newProjectParentDir: string;
   checker: Checker;
+  sessions: SessionManager;
 }
 
 export interface RuntimeServer {
@@ -343,12 +345,27 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     // sessions / transcript
     route('GET', '/v1/sessions', () => ({ status: 200, body: repo.listSessions() })),
     route('POST', '/v1/sessions', (ctx) => ({ status: 201, body: repo.registerSession(ctx.body as unknown as T.RegisterSessionInput) })),
+    route('POST', '/v1/jobs/:id/sessions', async (ctx) => ({
+      status: 202,
+      body: await opts.sessions.start({
+        jobId: ctx.params.id!,
+        taskId: asOptionalString(ctx.body.taskId) ?? null,
+        agentId: asString(ctx.body.agentId, 'agentId'),
+        adapterId: asOptionalString(ctx.body.adapterId) ?? null,
+        prompt: asOptionalString(ctx.body.prompt),
+        mode: ctx.body.mode as T.Session['mode'] | undefined,
+      }),
+    })),
     route('GET', '/v1/sessions/:id', (ctx) => ({ status: 200, body: repo.getSession(ctx.params.id!) })),
     route('PATCH', '/v1/sessions/:id', (ctx) => ({ status: 200, body: repo.updateSession(ctx.params.id!, ctx.body as never) })),
     route('POST', '/v1/sessions/:id/cancel', (ctx) => ({
       status: 200,
-      body: repo.requestCancel(ctx.params.id!, asString(ctx.body.actorId, 'actorId')),
+      body: opts.sessions.cancel(ctx.params.id!, asString(ctx.body.actorId, 'actorId')),
     })),
+    route('POST', '/v1/sessions/:id/prompt', async (ctx) => {
+      await opts.sessions.prompt(ctx.params.id!, asString(ctx.body.text, 'text'));
+      return { status: 202, body: { ok: true } };
+    }),
     route('GET', '/v1/sessions/:id/transcript', (ctx) => ({
       status: 200,
       body: repo.listTranscript(ctx.params.id!, Number(ctx.query.get('since') ?? 0), Number(ctx.query.get('limit') ?? 2000)),

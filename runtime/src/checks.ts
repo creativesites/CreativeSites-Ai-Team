@@ -60,7 +60,7 @@ export class Checker {
     if (task.jobId !== job.id) throw new InputError('This task belongs to a different job');
     const command = task.checkCommand?.trim();
     if (!command) throw new ConflictError('This task has no check command to run');
-    const worktree = await this.ensureJobWorktree(job);
+    const worktree = await this.worktreeForJob(job);
     const result = await runShell(command, worktree.path, this.timeoutMs);
     const evidence = this.recordRun(job.id, task, command, result, worktree.path);
     return { taskId: task.id, command, worktree: worktree.path, result, evidence };
@@ -68,7 +68,7 @@ export class Checker {
 
   async snapshot(jobId: string, actorId?: string): Promise<T.Evidence> {
     const job = this.repo.getJob(jobId);
-    const worktree = await this.ensureJobWorktree(job);
+    const worktree = await this.worktreeForJob(job);
     const status = await runShell('git status --porcelain=v1', worktree.path, 30_000);
     const diff = await runShell('git diff HEAD --no-color --no-ext-diff', worktree.path, 60_000);
     const changed = status.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -122,7 +122,7 @@ export class Checker {
         })
       : job.tasks.filter((t) => Boolean(t.checkCommand));
     if (!selected.length) throw new ConflictError('No task with a check command to verify');
-    const worktree = await this.ensureJobWorktree(job);
+    const worktree = await this.worktreeForJob(job);
     const base = worktree.baseSha;
     const results: VerificationOutcome[] = [];
 
@@ -211,7 +211,7 @@ export class Checker {
     });
   }
 
-  private async ensureJobWorktree(job: T.JobDetail): Promise<Worktree> {
+  async worktreeForJob(job: T.JobDetail): Promise<Worktree> {
     const existing = this.repo.findWorktree(job.id);
     if (existing && fs.existsSync(path.join(existing.path, '.git'))) {
       const state = workspaces.workspaceState(existing.path);

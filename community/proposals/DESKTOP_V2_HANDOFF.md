@@ -9,9 +9,11 @@ The runtime is no longer read-only. A foundation commit implements:
 
 - schema **version 2** — projects, repos, teams, members, identity provenance, job plans/tasks/criteria/stage history, sessions/transcript, hash-chained evidence, approvals + policies + escalation, settings, budgets, usage, adapters, idempotency;
 - full write API for the job lifecycle, approvals, evidence verification, sessions/transcript, budgets and workspaces;
+- runtime-owned **checks, worktree snapshots and independent verification**;
+- **ACP session manager**: spawns an adapter over stdio, streams its transcript, converts permission requests into approvals (blocking with timeout), snapshots the worktree before/after each turn and kills the process group;
 - runtime hardening: OS lock (one runtime per machine), atomic `~/.myaos/runtime.json`, owner-only store (`0700`/`0600`), transactional events with hash chain, gap-aware SSE, validation, `Idempotency-Key`, real health checks, session reconciliation on restart.
 
-Verified: `runtime` 21/21 tests pass, `tsc --noEmit` clean; `apps/desktop` `tsc -b` clean. The ACP session manager (actual agent spawning) and the verifier engine are the next runtime workstream — the API for registering/recording sessions is live now, so the UI can be built against it.
+Verified: `runtime` 25/25 tests pass, `tsc --noEmit` clean; `apps/desktop` `tsc -b` clean. The session-manager path is tested end-to-end against a scripted ACP agent; **no real adapter is authenticated on this machine today** (see below), so a real Claude/Gemini/Codex run still needs a re-login / key / install before the UI can show a live turn.
 
 ## How to run
 
@@ -125,9 +127,11 @@ The app still discovers the runtime through the Rust side (or Vite's `/__myaos/r
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/v1/sessions`; GET `/v1/sessions/:id` | includes ACP fields |
-| POST | `/v1/sessions` | register a session record (`agentId`, `runtimeCommand`, `taskId?`, `adapterId?`, `mode?`, `worktree?`, `baseSha?`) — spawning is the ACP manager's job |
+| POST | `/v1/jobs/:id/sessions` | **starts a real ACP session**: `{agentId, adapterId?, taskId?, prompt?, mode?}` → `202` with the session row; progress streams as transcript/SSE. The manager creates the worktree, snapshots, prompts, records evidence, and handles permission→approval. |
+| POST | `/v1/sessions` | register a session record manually (used by CLI/debug; the manager uses its own path) |
 | PATCH | `/v1/sessions/:id` | runtime records state/exit/error/turnCount; UI should read, not write |
-| POST | `/v1/sessions/:id/cancel` | `{actorId}` — sets `cancelRequestedAt`; the ACP manager performs the cancel |
+| POST | `/v1/sessions/:id/cancel` | `{actorId}` — cancels the live ACP turn (or records a cancel request) and answers pending permissions as cancelled |
+| POST | `/v1/sessions/:id/prompt` | `{text}` — follow-up turn while the session is idle (`202`) |
 | GET/POST | `/v1/sessions/:id/transcript?since=&limit=` | append with `{seq?, kind, role?, turnId?, itemId?, title?, payload?}` |
 
 ### Adapters
@@ -171,13 +175,26 @@ Remove disabled placeholders as endpoints land. No fixture data in live routes. 
 - Update the task board (`task-7`, `task-8`) as you go; record what is done and what is blocked.
 - If an API is missing, say exactly what shape you need in the "Requests" section below; the Lead will add it.
 
+## Adapter reality (Phase 0.6, 2026-10-26)
+
+Read [ACP_SPIKE_FINDINGS.md](ACP_SPIKE_FINDINGS.md) before building adapter UI. Current machine state:
+
+| Adapter | State to show |
+|---|---|
+| Claude (`claude-agent-acp`) | installed but **OAuth expired** (401 on every prompt) → "Re-authenticate Claude Code" |
+| Gemini (`gemini --acp`) | installed but needs `GEMINI_API_KEY` (local OAuth expired) → "Set GEMINI_API_KEY / sign in" |
+| Codex (`codex-acp`) | **not installed** (`codex` absent) → "Install Codex" |
+| DeepSeek Harness | **no ACP agent entry point** → "Unsupported as an ACP agent" |
+
+`GET /v1/adapters` reports installed/version; it cannot prove auth. The session manager reports a failed session with the adapter's error in the transcript; show that as Unknown/failed, never as a successful empty turn. Starting a session with a blocked adapter returns a `409` with the reason. A custom adapter can be added via `POST /v1/adapters/:id` (command/args) — the tests use that with a scripted fake agent.
+
 ## Requests from the UI side
 
 _(Claude: append here when you need a runtime change.)_
 
 ## Known gaps owned by the Lead
 
-- ACP session manager: real adapter spawn/prompt/cancel/permission → approvals, transcript streaming (Phase 1 runtime). Phase 0.6 findings: [ACP_SPIKE_FINDINGS.md](ACP_SPIKE_FINDINGS.md). No adapter on this machine is authenticated today — Claude OAuth expired, Gemini requires `GEMINI_API_KEY`, Codex/DSH absent; the UI must show those as unavailable/unauthed, never live.
+- Real-adapter verification of the session manager: the code path is tested with a scripted ACP agent; unblock auth/install and run the spike again (Phase 0.6 §9) before claiming any adapter is live.
 - Worktree snapshots, runtime check runner and the independent verifier are implemented; the ACP manager still needs to call them after each turn.
 - Artifact GC/retention and diff review UI.
 - Council/verdict endpoints and scoring persistence (Phase 3).

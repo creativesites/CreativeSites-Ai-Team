@@ -5,6 +5,7 @@ import type { Health, RuntimeEvent } from './api/types.ts';
 import { probeAdapters } from './adapters.ts';
 import { artifactsDir, cloneParentDir, loadConfig, newProjectParentDir, workspaceRoots, worktreeRoot } from './config.ts';
 import { Checker } from './checks.ts';
+import { SessionManager } from './acp/session-manager.ts';
 import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
 import { gitAvailable } from './workspaces.ts';
@@ -47,6 +48,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   let broadcast: (e: RuntimeEvent) => void = () => {};
   const repo = new Repo(db, (e) => broadcast(e));
   const checker = new Checker({ repo, workspaceRoots: wsRoots, worktreeRoot: wtRoot, artifactsDir: artDir });
+  const sessions = new SessionManager({ repo, checker });
 
   const health = (): Health => {
     let store = false;
@@ -78,6 +80,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     cloneParentDir: cloneDir,
     newProjectParentDir: newProjectDir,
     checker,
+    sessions,
   });
   broadcast = api.broadcast;
 
@@ -107,10 +110,12 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     close: () =>
       new Promise<void>((resolve) => {
         clearInterval(sweep);
-        api.server.closeAllConnections();
-        api.server.close(() => {
-          db.close();
-          resolve();
+        void sessions.closeAll().finally(() => {
+          api.server.closeAllConnections();
+          api.server.close(() => {
+            db.close();
+            resolve();
+          });
         });
       }),
   };
