@@ -632,13 +632,15 @@ export class Repo {
       throw new NotFoundError(`project ${input.projectId} not found`);
     }
     const id = newId('room');
+    const project = input.projectId ? this.getProject(input.projectId) : null;
+    const repoPath = input.repoPath ?? project?.rootPath ?? project?.repos.find((r) => r.path)?.path ?? null;
     this.write((events) => {
       this.db
         .prepare('INSERT INTO rooms (id, name, repo_path, created_at, project_id, team_id, kind) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(
           id,
           name,
-          input.repoPath ?? null,
+          repoPath,
           now(),
           input.projectId ?? null,
           input.teamId ?? null,
