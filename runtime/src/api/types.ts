@@ -4,13 +4,37 @@
 export type EvidenceClass = 'OBSERVED' | 'DECLARED' | 'ATTESTED' | 'VERIFIED' | 'UNKNOWN';
 export type JobStage = 'brief' | 'plan' | 'build' | 'verify' | 'approve' | 'done' | 'cancelled';
 export type SessionState = 'starting' | 'running' | 'idle' | 'stopped' | 'failed';
+export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'blocked';
+export type ApprovalStatus = 'pending' | 'approved' | 'declined' | 'expired' | 'escalated';
+export type Risk = 'low' | 'medium' | 'high' | 'critical';
+export type ActorKind = 'human' | 'agent' | 'system';
+
+/** What the store can honestly say about a directory (git is only one kind of workspace). */
+export interface WorkspaceState {
+  exists: boolean;
+  isGit: boolean;
+  branch: string | null;
+  headSha: string | null;
+  dirty: boolean;
+  /** True when the state could not be read; render as Unknown, not as clean. */
+  unknown: boolean;
+  error: string | null;
+}
 
 export interface Health {
-  ok: true;
+  ok: boolean;
   version: string;
   schemaVersion: number;
   startedAt: string;
   pid: number;
+  /** Real checks, not a static claim. */
+  checks?: {
+    store: boolean;
+    git: boolean;
+    node: string;
+    adapters: Record<string, { installed: boolean; version: string | null }>;
+    workspaceRoots: number;
+  };
 }
 
 export interface Identity {
@@ -22,6 +46,61 @@ export interface Identity {
   avatarColor: string | null;
   seats: string[];
   createdAt: string;
+  teamId?: string | null;
+  lane?: string | null;
+  symbol?: string | null;
+  capabilities?: string[];
+  /** The team's provenance ladder, carried over from v1: DECLARED/ATTESTED/OBSERVED/VERIFIED. */
+  provenance?: string;
+  isOwner?: boolean;
+  approvalLevel?: 'owner' | 'lead' | 'member' | 'none';
+  adapterId?: string | null;
+  archived?: boolean;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  memberCount: number;
+}
+
+export interface TeamMember {
+  teamId: string;
+  identityId: string;
+  role: string;
+  joinedAt: string;
+}
+
+export interface Repo {
+  id: string;
+  projectId: string;
+  name: string;
+  path: string | null;
+  remoteUrl: string | null;
+  defaultBranch: string | null;
+  createdAt: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  slug: string | null;
+  description: string | null;
+  rootPath: string | null;
+  defaultBranch: string | null;
+  teamId: string | null;
+  archived: boolean;
+  createdAt: string;
+  repos: Repo[];
+  roomCount: number;
+  openJobCount: number;
+}
+
+export interface Workspace {
+  project: Project;
+  state: WorkspaceState;
 }
 
 export interface Room {
@@ -31,13 +110,26 @@ export interface Room {
   createdAt: string;
   memberCount: number;
   openJobCount: number;
+  projectId?: string | null;
+  teamId?: string | null;
+  kind?: 'project' | 'squad' | 'adhoc';
+  archived?: boolean;
+}
+
+export interface RoomMember {
+  roomId: string;
+  memberId: string;
+  kind: 'human' | 'agent';
+  role: string;
+  joinedAt: string | null;
+  identity?: Identity | null;
 }
 
 export interface Message {
   id: string;
   roomId: string;
   authorId: string;
-  authorKind: 'human' | 'agent' | 'system';
+  authorKind: ActorKind;
   body: string;
   jobId: string | null;
   createdAt: string;
@@ -53,6 +145,14 @@ export interface JobSummary {
   createdAt: string;
   updatedAt: string;
   pendingApprovals: number;
+  projectId?: string | null;
+  priority?: string;
+  risk?: Risk;
+  budgetCents?: number | null;
+  costCents?: number;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  blockedReason?: string | null;
 }
 
 export interface Criterion {
@@ -61,16 +161,25 @@ export interface Criterion {
   position: number;
   /** Strongest evidence recorded against this criterion, or UNKNOWN when there is none. */
   evidenceClass: EvidenceClass;
+  taskIds?: string[];
 }
 
 export interface Task {
   id: string;
+  jobId: string;
   title: string;
   assigneeId: string | null;
   checkCommand: string | null;
   gate: string | null;
-  status: 'pending' | 'running' | 'done' | 'failed' | 'blocked';
+  status: TaskStatus;
   createdAt: string;
+  position?: number;
+  planTaskId?: string | null;
+  mode?: 'build' | 'verify' | 'review' | 'ops' | 'design';
+  startedAt?: string | null;
+  endedAt?: string | null;
+  updatedAt?: string | null;
+  evidenceRequired?: boolean;
 }
 
 export interface Evidence {
@@ -79,13 +188,36 @@ export interface Evidence {
   taskId: string | null;
   sessionId: string | null;
   criterionId: string | null;
-  kind: 'command' | 'diff' | 'file' | 'test' | 'message' | 'review';
+  kind:
+    | 'command'
+    | 'diff'
+    | 'file'
+    | 'test'
+    | 'message'
+    | 'review'
+    | 'browser'
+    | 'deploy'
+    | 'db_read'
+    | 'db_write'
+    | 'api'
+    | 'approval'
+    | 'artifact';
   class: EvidenceClass;
   summary: string;
   payload: unknown;
   hash: string | null;
   recordedBy: string;
   createdAt: string;
+  prevHash?: string | null;
+  contentHash?: string | null;
+  artifactRefs?: string[];
+  command?: string | null;
+  exitCode?: number | null;
+  commitSha?: string | null;
+  worktree?: string | null;
+  verifiedBy?: string | null;
+  verifiedAt?: string | null;
+  supersedes?: string | null;
 }
 
 export interface Approval {
@@ -93,10 +225,47 @@ export interface Approval {
   jobId: string;
   title: string;
   consequence: string;
-  status: 'pending' | 'approved' | 'declined';
+  status: ApprovalStatus;
   requestedBy: string;
   decidedBy: string | null;
   decidedAt: string | null;
+  createdAt: string;
+  actionType?: string;
+  action?: Record<string, unknown>;
+  risk?: Risk;
+  assignedTo?: string | null;
+  assignedKind?: ActorKind | null;
+  escalateTo?: string | null;
+  escalatedAt?: string | null;
+  expiresAt?: string | null;
+  policyId?: string | null;
+  decidedByKind?: ActorKind | null;
+  note?: string | null;
+  executedAt?: string | null;
+  execution?: Record<string, unknown> | null;
+  sessionId?: string | null;
+  taskId?: string | null;
+  requestId?: string | null;
+  reversible?: boolean | null;
+}
+
+export interface JobPlan {
+  summary: string;
+  options?: { id: string; label: string; score?: number }[];
+  chosen?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  councilId?: string | null;
+}
+
+export interface JobStageHistory {
+  id: number;
+  jobId: string;
+  fromStage: JobStage | null;
+  toStage: JobStage;
+  actorId: string;
+  actorKind: ActorKind;
+  note: string | null;
   createdAt: string;
 }
 
@@ -106,6 +275,14 @@ export interface JobDetail extends JobSummary {
   tasks: Task[];
   evidence: Evidence[];
   approvals: Approval[];
+  plan?: JobPlan;
+  sessions?: Session[];
+  usage?: Usage[];
+  history?: JobStageHistory[];
+  stageNote?: string | null;
+  baseSha?: string | null;
+  shipSha?: string | null;
+  ownerId?: string | null;
 }
 
 export interface Session {
@@ -119,6 +296,92 @@ export interface Session {
   lastSeenAt: string | null;
   startedAt: string;
   endedAt: string | null;
+  acpSessionId?: string | null;
+  adapterId?: string | null;
+  mode?: 'build' | 'verify' | 'review' | 'ops' | 'design';
+  baseSha?: string | null;
+  baseBranch?: string | null;
+  exitCode?: number | null;
+  error?: string | null;
+  cancelRequestedAt?: string | null;
+  lastEventAt?: string | null;
+  model?: string | null;
+  turnCount?: number;
+}
+
+export interface TranscriptEntry {
+  id: number;
+  sessionId: string;
+  seq: number;
+  kind: string;
+  role: string | null;
+  turnId: string | null;
+  itemId: string | null;
+  title: string | null;
+  payload: unknown;
+  createdAt: string;
+}
+
+export interface Usage {
+  id: string;
+  jobId: string | null;
+  sessionId: string | null;
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  costCents: number;
+  source: string | null;
+  createdAt: string;
+}
+
+export interface ApprovalPolicy {
+  id: string;
+  scope: 'global' | 'project' | 'room';
+  projectId: string | null;
+  roomId: string | null;
+  actionType: string;
+  /** The highest risk a team lead may approve without the owner. */
+  maxRiskForLead: Risk;
+  leadId: string | null;
+  escalateTo: string | null;
+  timeoutMinutes: number;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface Budget {
+  id: string;
+  scope: 'global' | 'project';
+  projectId: string | null;
+  period: 'job' | 'day' | 'month';
+  amountCents: number;
+  currency: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdapterInfo {
+  id: string;
+  name: string;
+  kind: string;
+  command: string;
+  args: string[];
+  enabled: boolean;
+  source: 'preset' | 'override';
+  installed: boolean;
+  path: string | null;
+  version: string | null;
+  error: string | null;
+  /** What the runtime has probed this adapter to support, if anything. */
+  abilities: Record<string, boolean>;
+  lastProbeAt: string | null;
+}
+
+export interface Settings {
+  ownerId?: string;
+  defaultBudgetCents?: number;
+  defaultMonthlyBudgetCents?: number;
+  [key: string]: unknown;
 }
 
 export interface Summary {
@@ -135,16 +398,108 @@ export interface RuntimeEvent {
   subjectId: string | null;
   payload: unknown;
   createdAt: string;
+  actorId?: string | null;
+  actorKind?: ActorKind | null;
+  subjectType?: string | null;
+  hash?: string | null;
+  prevHash?: string | null;
+}
+
+/** Sent at the start of an SSE connection when the requested replay has a hole in it. */
+export interface StreamGap {
+  requestedSince: number;
+  oldestAvailable: number;
+  latestAvailable: number;
+  truncated: boolean;
+}
+
+// --- inputs ---
+
+export interface CreateIdentityInput {
+  id: string;
+  name: string;
+  role?: string;
+  runtime?: string;
+  avatarMark?: string;
+  avatarColor?: string;
+  seats?: string[];
+  teamId?: string;
+  lane?: string;
+  symbol?: string;
+  capabilities?: string[];
+  provenance?: string;
+  isOwner?: boolean;
+  approvalLevel?: 'owner' | 'lead' | 'member' | 'none';
+  adapterId?: string;
+}
+
+export interface UpdateIdentityInput {
+  name?: string;
+  role?: string | null;
+  runtime?: string | null;
+  avatarMark?: string | null;
+  avatarColor?: string | null;
+  seats?: string[];
+  teamId?: string | null;
+  lane?: string | null;
+  symbol?: string | null;
+  capabilities?: string[];
+  provenance?: string;
+  approvalLevel?: 'owner' | 'lead' | 'member' | 'none';
+  adapterId?: string | null;
+  archived?: boolean;
+}
+
+export interface CreateTeamInput {
+  id?: string;
+  name: string;
+  description?: string;
+}
+
+export interface CreateRepoInput {
+  name: string;
+  path?: string;
+  remoteUrl?: string;
+  defaultBranch?: string;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  slug?: string;
+  description?: string;
+  rootPath?: string;
+  defaultBranch?: string;
+  teamId?: string;
+  repos?: CreateRepoInput[];
+}
+
+export interface UpdateProjectInput {
+  name?: string;
+  slug?: string | null;
+  description?: string | null;
+  rootPath?: string | null;
+  defaultBranch?: string | null;
+  teamId?: string | null;
+  archived?: boolean;
 }
 
 export interface CreateRoomInput {
   name: string;
   repoPath?: string;
+  projectId?: string;
+  teamId?: string;
+  kind?: 'project' | 'squad' | 'adhoc';
+}
+
+export interface AddRoomMemberInput {
+  memberId: string;
+  kind?: 'human' | 'agent';
+  role?: string;
 }
 
 export interface PostMessageInput {
   authorId: string;
-  authorKind: 'human' | 'agent' | 'system';
+  authorKind: ActorKind;
   body: string;
   jobId?: string;
 }
@@ -155,23 +510,200 @@ export interface CreateJobInput {
   brief?: string;
   createdBy: string;
   criteria?: string[];
+  projectId?: string;
+  risk?: Risk;
+  priority?: string;
+  budgetCents?: number;
 }
 
-export interface UpdateIdentityInput {
-  name?: string;
+export interface UpdateJobInput {
+  title?: string;
+  brief?: string;
+  risk?: Risk;
+  priority?: string;
+  budgetCents?: number | null;
+  blockedReason?: string | null;
+}
+
+export interface TransitionJobInput {
+  to: JobStage;
+  actorId: string;
+  actorKind?: ActorKind;
+  note?: string;
+  /** Owner-only escape hatch; recorded in the stage history. */
+  force?: boolean;
+}
+
+export interface SetPlanInput {
+  plan: JobPlan;
+  actorId: string;
+}
+
+export interface CreateCriterionInput {
+  text: string;
+  position?: number;
+}
+
+export interface CreateTaskInput {
+  title: string;
+  assigneeId?: string | null;
+  checkCommand?: string | null;
+  gate?: string | null;
+  position?: number;
+  planTaskId?: string | null;
+  mode?: Task['mode'];
+  evidenceRequired?: boolean;
+  criterionIds?: string[];
+}
+
+export interface UpdateTaskInput {
+  title?: string;
+  assigneeId?: string | null;
+  checkCommand?: string | null;
+  gate?: string | null;
+  status?: TaskStatus;
+  position?: number;
+  mode?: Task['mode'];
+  evidenceRequired?: boolean;
+}
+
+export interface CreateEvidenceInput {
+  jobId?: string | null;
+  taskId?: string | null;
+  sessionId?: string | null;
+  criterionId?: string | null;
+  kind: Evidence['kind'];
+  class: EvidenceClass;
+  summary: string;
+  payload?: unknown;
+  artifactRefs?: string[];
+  command?: string | null;
+  exitCode?: number | null;
+  commitSha?: string | null;
+  worktree?: string | null;
+  recordedBy: string;
+  recordedByKind?: ActorKind;
+}
+
+export interface VerifyEvidenceInput {
+  verifiedBy: string;
+  note?: string;
+  command?: string | null;
+  exitCode?: number | null;
+  commitSha?: string | null;
+  worktree?: string | null;
+}
+
+export interface CreateApprovalInput {
+  jobId: string;
+  title: string;
+  consequence: string;
+  actionType?: string;
+  action?: Record<string, unknown>;
+  risk?: Risk;
+  requestedBy: string;
+  requestedKind?: ActorKind;
+  sessionId?: string | null;
+  taskId?: string | null;
+  requestId?: string | null;
+  reversible?: boolean;
+  /** Skip policy assignment and route straight to this actor. */
+  assignedTo?: string;
+}
+
+export interface DecideApprovalInput {
+  decision: 'approve' | 'decline';
+  decidedBy: string;
+  decidedByKind?: ActorKind;
+  note?: string;
+  execution?: Record<string, unknown>;
+}
+
+export interface CreatePolicyInput {
+  scope: 'global' | 'project' | 'room';
+  projectId?: string | null;
+  roomId?: string | null;
+  actionType: string;
+  maxRiskForLead: Risk;
+  leadId?: string | null;
+  escalateTo?: string | null;
+  timeoutMinutes?: number;
+  enabled?: boolean;
+}
+
+export interface UpdatePolicyInput {
+  maxRiskForLead?: Risk;
+  leadId?: string | null;
+  escalateTo?: string | null;
+  timeoutMinutes?: number;
+  enabled?: boolean;
+}
+
+export interface CreateBudgetInput {
+  scope: 'global' | 'project';
+  projectId?: string | null;
+  period: 'job' | 'day' | 'month';
+  amountCents: number;
+  currency?: string;
+}
+
+export interface RegisterSessionInput {
+  agentId: string;
+  taskId?: string | null;
+  runtimeCommand: string;
+  adapterId?: string | null;
+  pid?: number | null;
+  worktree?: string | null;
+  baseSha?: string | null;
+  baseBranch?: string | null;
+  mode?: Session['mode'];
+  acpSessionId?: string | null;
+  model?: string | null;
+}
+
+export interface AppendTranscriptInput {
+  seq?: number;
+  kind: string;
   role?: string | null;
-  runtime?: string | null;
-  avatarMark?: string | null;
-  avatarColor?: string | null;
-  seats?: string[];
+  turnId?: string | null;
+  itemId?: string | null;
+  title?: string | null;
+  payload?: unknown;
 }
 
-export interface CreateIdentityInput {
-  id: string;
-  name: string;
-  role?: string;
-  runtime?: string;
-  avatarMark?: string;
-  avatarColor?: string;
-  seats?: string[];
+export interface RecordUsageInput {
+  jobId?: string | null;
+  sessionId?: string | null;
+  model?: string | null;
+  inputTokens?: number;
+  outputTokens?: number;
+  costCents?: number;
+  source?: string | null;
+}
+
+export interface ImportIdentitiesInput {
+  owner?: Partial<Identity> & { id: string; name: string };
+  teams?: { id: string; name: string; description?: string }[];
+  identities?: (CreateIdentityInput & { teams?: string[] })[];
+}
+
+export interface AttachProjectInput {
+  path: string;
+  name?: string;
+  defaultBranch?: string;
+  teamId?: string;
+}
+
+export interface CloneProjectInput {
+  url: string;
+  parentDir?: string;
+  name?: string;
+  teamId?: string;
+}
+
+export interface CreateProjectFolderInput {
+  path: string;
+  name?: string;
+  initGit?: boolean;
+  teamId?: string;
 }

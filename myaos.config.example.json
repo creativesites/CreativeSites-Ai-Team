@@ -1,13 +1,14 @@
 {
-  "teamRepo": "~/path/to/CreativeSites-Ai-Team",
-  "dbPath": "~/path/to/CreativeSites-Ai-Team/data/myaos.db",
-  "workspaces": [
-    { "id": "CreativeSites-Ai-Team", "name": "CreativeSites AI Team", "path": "~/path/to/CreativeSites-Ai-Team" }
+  "teamRepo": "~/WebstormProjects/CreativeSites-Ai-Team",
+  "dbPath": "~/WebstormProjects/CreativeSites-Ai-Team/data/myaos.db",
+  "runtimeDbPath": "~/.myaos/runtime.db",
+  "workspaceRoots": [
+    "~/WebstormProjects",
+    "~/Documents/GitHub"
   ],
-  "agentWorkspaces": {
-    "atlas": "~/path/to/CreativeSites-Ai-Team",
-    "astra": "~/path/to/Myavana-Chatbot"
-  },
-  "cloneParentDir": "~/path/to/clones",
-  "newProjectParentDir": "~/path/to/projects"
+  "cloneParentDir": "~/WebstormProjects",
+  "newProjectParentDir": "~/WebstormProjects",
+  "worktreeRoot": "~/.myaos/worktrees",
+  "artifactsDir": "~/.myaos/artifacts",
+  "ownerId": "winston"
 }

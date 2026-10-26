@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { startRuntime, VERSION } from './app.ts';
-import { loadConfig, runtimeDbPath, runtimeInfoPath } from './config.ts';
+import { loadConfig, lockPath, myaosHome, runtimeDbPath, runtimeInfoPath } from './config.ts';
+import { acquireLock, type RuntimeLock } from './lock.ts';
 
 // Entry point. The desktop starts this as a sidecar; it can also be run by hand
-// (`npm start` in runtime/). One runtime per machine: a second start exits and
-// leaves the running one in place.
+// (`npm start` in runtime/). One runtime per machine, held by an OS lock file.
 
 export interface RuntimeInfo {
   pid: number;
@@ -43,45 +43,118 @@ async function healthy(url: string): Promise<boolean> {
   }
 }
 
+/** Only the owner can read the token: write a temp file, chmod, then rename. */
+function writeInfo(file: string, info: RuntimeInfo) {
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  try {
+    fs.chmodSync(path.dirname(file), 0o700);
+  } catch {
+    /* best effort */
+  }
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(info, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, file);
+  try {
+    fs.chmodSync(file, 0o600);
+  } catch {
+    /* best effort */
+  }
+}
+
+async function waitForRuntime(file: string, timeoutMs: number): Promise<RuntimeInfo | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const info = readInfo(file);
+    if (info && alive(info.pid) && (await healthy(info.url))) return info;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return null;
+}
+
 async function main() {
+  // Everything the runtime writes (store, logs, artifacts) is owner-only.
+  process.umask(0o077);
+  const home = myaosHome();
+  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+  try {
+    fs.chmodSync(home, 0o700);
+  } catch {
+    /* best effort */
+  }
+
   const infoFile = runtimeInfoPath();
+  const lockFile = lockPath();
+
   const existing = readInfo(infoFile);
   if (existing && existing.pid !== process.pid && alive(existing.pid) && (await healthy(existing.url))) {
     console.log(`[runtime] Already running (pid ${existing.pid}) at ${existing.url}`);
     return;
   }
 
-  const dbPath = runtimeDbPath(loadConfig());
-  const allowedOrigins = (process.env.MYAOS_RUNTIME_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-  const rt = await startRuntime({
-    dbPath,
-    port: Number(process.env.MYAOS_RUNTIME_PORT ?? 0) || 0,
-    allowedOrigins,
-  });
+  const lock: RuntimeLock | null = acquireLock(lockFile);
+  if (!lock) {
+    // Another process is starting (or running without a published info file).
+    const info = await waitForRuntime(infoFile, 10_000);
+    if (info) {
+      console.log(`[runtime] Already running (pid ${info.pid}) at ${info.url}`);
+      return;
+    }
+    console.error(`[runtime] Another runtime holds ${lockFile} but never became healthy. Remove the lock if no runtime is running.`);
+    process.exitCode = 1;
+    return;
+  }
 
-  const info: RuntimeInfo = {
-    pid: process.pid,
-    url: rt.url,
-    port: rt.port,
-    token: rt.token,
-    version: VERSION,
-    dbPath,
-    startedAt: new Date().toISOString(),
-  };
-  fs.mkdirSync(path.dirname(infoFile), { recursive: true });
-  // The token lets anything on this machine act as the owner, so only the owner can read it.
-  fs.writeFileSync(infoFile, JSON.stringify(info, null, 2), { mode: 0o600 });
-  console.log(`[runtime] v${VERSION} listening on ${rt.url} (store ${dbPath})`);
-
+  let rt: Awaited<ReturnType<typeof startRuntime>> | null = null;
   let stopping = false;
+
   const stop = async (reason: string) => {
     if (stopping) return;
     stopping = true;
     console.log(`[runtime] Stopping: ${reason}`);
     if (readInfo(infoFile)?.pid === process.pid) fs.rmSync(infoFile, { force: true });
-    await rt.close();
+    lock.release();
+    if (rt) await rt.close();
     process.exit(0);
   };
+
+  try {
+    // Re-check after taking the lock: a concurrent start may have won the race.
+    const raced = readInfo(infoFile);
+    if (raced && raced.pid !== process.pid && alive(raced.pid) && (await healthy(raced.url))) {
+      console.log(`[runtime] Already running (pid ${raced.pid}) at ${raced.url}`);
+      lock.release();
+      return;
+    }
+
+    const cfg = loadConfig();
+    const dbPath = runtimeDbPath(cfg);
+    const allowedOrigins = (process.env.MYAOS_RUNTIME_ORIGINS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    rt = await startRuntime({
+      dbPath,
+      port: Number(process.env.MYAOS_RUNTIME_PORT ?? 0) || 0,
+      allowedOrigins,
+    });
+
+    const info: RuntimeInfo = {
+      pid: process.pid,
+      url: rt.url,
+      port: rt.port,
+      token: rt.token,
+      version: VERSION,
+      dbPath,
+      startedAt: new Date().toISOString(),
+    };
+    writeInfo(infoFile, info);
+    console.log(`[runtime] v${VERSION} listening on ${rt.url} (store ${dbPath})`);
+  } catch (e) {
+    lock.release();
+    console.error('[runtime] Failed to start:', e);
+    process.exit(1);
+  }
+
   process.on('SIGINT', () => void stop('SIGINT'));
   process.on('SIGTERM', () => void stop('SIGTERM'));
 

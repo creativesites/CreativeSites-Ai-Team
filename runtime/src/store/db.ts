@@ -3,13 +3,67 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { MIGRATIONS, type Migration } from './migrations.ts';
 
+/** The store holds transcripts, prompts and evidence: only the owner may read it. */
+function privateDir(dir: string) {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try {
+    fs.chmodSync(dir, 0o700);
+  } catch {
+    /* best effort on filesystems without POSIX modes */
+  }
+}
+
+function privateFile(file: string) {
+  try {
+    fs.chmodSync(file, 0o600);
+  } catch {
+    /* the file may not exist yet */
+  }
+}
+
+/**
+ * Before a migration runs, keep a copy of the previous store. Cheap insurance
+ * for the one operation that can rewrite the schema under real evidence.
+ */
+function backupBeforeUpgrade(db: DatabaseSync, dbPath: string, from: number, to: number) {
+  if (dbPath === ':memory:' || from <= 0 || from >= to) return;
+  try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const target = `${dbPath}.bak-v${from}-${stamp}`;
+    fs.copyFileSync(dbPath, target);
+    privateFile(target);
+  } catch (e) {
+    console.warn(`[runtime] Could not back up the store before migration: ${(e as Error).message}`);
+  }
+}
+
 /** Opens (creating if needed) the v2 store and brings its schema up to date. */
 export function openStore(dbPath: string, migrations: Migration[] = MIGRATIONS): DatabaseSync {
-  if (dbPath !== ':memory:') fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  if (dbPath !== ':memory:') privateDir(path.dirname(dbPath));
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+
+  const latest = Math.max(...migrations.map((m) => m.version));
+  const current = rawSchemaVersion(db);
+  backupBeforeUpgrade(db, dbPath, current, latest);
   migrate(db, migrations);
+
+  if (dbPath !== ':memory:') {
+    privateFile(dbPath);
+    privateFile(`${dbPath}-wal`);
+    privateFile(`${dbPath}-shm`);
+  }
   return db;
+}
+
+function rawSchemaVersion(db: DatabaseSync): number {
+  try {
+    const row = db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number | null } | undefined;
+    return row?.v ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function migrate(db: DatabaseSync, migrations: Migration[] = MIGRATIONS): number {
@@ -39,6 +93,5 @@ export function migrate(db: DatabaseSync, migrations: Migration[] = MIGRATIONS):
 }
 
 export function schemaVersion(db: DatabaseSync): number {
-  const row = db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number | null };
-  return row.v ?? 0;
+  return rawSchemaVersion(db);
 }

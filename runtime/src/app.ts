@@ -2,10 +2,13 @@ import crypto from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { createServer } from './api/server.ts';
 import type { Health, RuntimeEvent } from './api/types.ts';
+import { probeAdapters } from './adapters.ts';
+import { cloneParentDir, loadConfig, newProjectParentDir, workspaceRoots } from './config.ts';
 import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
+import { gitAvailable } from './workspaces.ts';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
 export interface StartOptions {
   dbPath: string;
@@ -13,6 +16,9 @@ export interface StartOptions {
   port?: number;
   token?: string;
   allowedOrigins?: string[];
+  workspaceRoots?: string[];
+  cloneParentDir?: string;
+  newProjectParentDir?: string;
 }
 
 export interface RunningRuntime {
@@ -28,14 +34,58 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   const db = openStore(opts.dbPath);
   const token = opts.token ?? crypto.randomBytes(32).toString('hex');
   const startedAt = new Date().toISOString();
+  const cfg = loadConfig();
+  const wsRoots = opts.workspaceRoots ?? workspaceRoots(cfg);
+  const cloneDir = opts.cloneParentDir ?? cloneParentDir(cfg);
+  const newProjectDir = opts.newProjectParentDir ?? newProjectParentDir(cfg);
 
   // The server is created after the repo, so events go through this late-bound hook.
   let broadcast: (e: RuntimeEvent) => void = () => {};
   const repo = new Repo(db, (e) => broadcast(e));
-  const health = (): Health => ({ ok: true, version: VERSION, schemaVersion: schemaVersion(db), startedAt, pid: process.pid });
 
-  const api = createServer({ repo, token, health, allowedOrigins: opts.allowedOrigins });
+  const health = (): Health => {
+    let store = false;
+    try {
+      db.prepare('SELECT 1').get();
+      store = true;
+    } catch {
+      store = false;
+    }
+    const adapters = Object.fromEntries(
+      probeAdapters().map((a) => [a.id, { installed: a.installed, version: a.version }])
+    );
+    return {
+      ok: store,
+      version: VERSION,
+      schemaVersion: schemaVersion(db),
+      startedAt,
+      pid: process.pid,
+      checks: { store, git: gitAvailable(), node: process.version, adapters, workspaceRoots: wsRoots.length },
+    };
+  };
+
+  const api = createServer({
+    repo,
+    token,
+    health,
+    allowedOrigins: opts.allowedOrigins,
+    workspaceRoots: wsRoots,
+    cloneParentDir: cloneDir,
+    newProjectParentDir: newProjectDir,
+  });
   broadcast = api.broadcast;
+
+  // Anything the previous runtime claimed to be running is checked against real processes.
+  repo.reconcileSessions();
+  // Pending approvals that timed out at the team-lead level move to the owner.
+  const sweep = setInterval(() => {
+    try {
+      repo.sweepApprovals();
+    } catch (e) {
+      console.error('[runtime] approval sweep failed:', e);
+    }
+  }, 60_000);
+  sweep.unref();
 
   await new Promise<void>((resolve, reject) => {
     api.server.once('error', reject);
@@ -50,6 +100,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     repo,
     close: () =>
       new Promise<void>((resolve) => {
+        clearInterval(sweep);
         api.server.closeAllConnections();
         api.server.close(() => {
           db.close();
