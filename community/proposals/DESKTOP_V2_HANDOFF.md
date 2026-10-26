@@ -110,7 +110,11 @@ The app still discovers the runtime through the Rust side (or Vite's `/__myaos/r
 | GET | `/v1/jobs/:id/budget`; POST `/v1/jobs/:id/budget/check` | `{estimateCents}` → 409 when over |
 | GET/POST | `/v1/jobs/:id/criteria` | POST add criterion; PATCH/DELETE `/v1/criteria/:id` |
 | GET/POST | `/v1/jobs/:id/tasks` | POST create with `criterionIds?[]`; PATCH `/v1/tasks/:id` |
-| GET/POST | `/v1/jobs/:id/evidence` | append (see rules); POST `/v1/evidence/:id/verify` `{verifiedBy, note?, command?, exitCode?, commitSha?}` |
+| GET/POST | `/v1/jobs/:id/evidence` | append (see rules); GET `/v1/evidence/:id`; POST `/v1/evidence/:id/verify` `{verifiedBy, note?, command?, exitCode?, commitSha?}` |
+| POST | `/v1/jobs/:id/checks` | `{taskId}` — **the runtime runs the task's check itself** in the job worktree; records OBSERVED evidence with real exit code/output/commit |
+| POST | `/v1/jobs/:id/snapshot` | `{actorId?}` — git status + `git diff HEAD` in the job worktree; records OBSERVED diff evidence with content-addressed artifacts |
+| POST | `/v1/jobs/:id/verify` | `{actorId, taskIds?}` — re-runs each check in a **clean detached worktree** at the job base commit; passing runs become VERIFIED, failing runs stay Observed; rejects self-verification |
+| GET | `/v1/artifacts/:sha` | raw artifact bytes (diff/output), token required |
 | GET/POST | `/v1/jobs/:id/approvals`; GET `/v1/approvals?status=&assignedTo=`; GET `/v1/approvals/:id`; POST `/v1/approvals/:id/decision` | decision `{decision:'approve'\|'decline', decidedBy, decidedByKind?, note?, execution?}` |
 | GET/POST | `/v1/policies`; PATCH/DELETE `/v1/policies/:id` | approval defaults |
 | GET/POST | `/v1/budgets` | create/update global/project budgets |
@@ -174,7 +178,8 @@ _(Claude: append here when you need a runtime change.)_
 ## Known gaps owned by the Lead
 
 - ACP session manager: real adapter spawn/prompt/cancel/permission → approvals, transcript streaming (Phase 1 runtime).
-- Runtime-owned worktree snapshots + check runner + independent verifier (Phase 1/2).
+- Worktree snapshots, runtime check runner and the independent verifier are implemented; the ACP manager still needs to call them after each turn.
+- Artifact GC/retention and diff review UI.
 - Council/verdict endpoints and scoring persistence (Phase 3).
 - Team bridge (threads/inboxes ↔ runtime) and legacy-agent claims.
 - Non-code job execution (ops/data/browser/deploy) beyond the evidence kinds.

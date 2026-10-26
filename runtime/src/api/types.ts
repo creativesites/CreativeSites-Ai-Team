@@ -377,6 +377,14 @@ export interface AdapterInfo {
   lastProbeAt: string | null;
 }
 
+export interface Artifact {
+  sha256: string;
+  path: string;
+  mime: string | null;
+  bytes: number;
+  createdAt: string;
+}
+
 export interface Settings {
   ownerId?: string;
   defaultBudgetCents?: number;

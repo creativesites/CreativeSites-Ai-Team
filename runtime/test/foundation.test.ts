@@ -413,3 +413,65 @@ test('the runtime lock admits one owner and replaces a stale lock', async () => 
   assert.ok(again);
   again!.release();
 });
+
+test('the runtime runs a task check itself, snapshots the worktree, and verifies independently', async () => {
+  const rooms = await ok('GET', '/v1/rooms');
+  const room = rooms.find((r: any) => r.name === 'myavana-chatbot');
+  assert.ok(room.projectId);
+  const job = await ok('POST', '/v1/jobs', {
+    roomId: room.id,
+    title: 'Check runner',
+    brief: 'Prove the check runner records real exit codes.',
+    createdBy: 'winston',
+    criteria: ['A runtime check passes in a worktree'],
+  });
+  await ok('POST', `/v1/jobs/${job.id}/stage`, { to: 'plan', actorId: 'winston' });
+  await ok('POST', `/v1/jobs/${job.id}/plan`, { plan: { summary: 'Run a check' }, actorId: 'winston' });
+  const task = await ok('POST', `/v1/jobs/${job.id}/tasks`, {
+    title: 'Check the README exists',
+    assigneeId: 'atlas',
+    checkCommand: 'test -f README.md && echo ok',
+    criterionIds: [job.criteria[0].id],
+  });
+  await ok('POST', `/v1/jobs/${job.id}/stage`, { to: 'build', actorId: 'winston' });
+
+  const run = await ok('POST', `/v1/jobs/${job.id}/checks`, { taskId: task.id });
+  assert.equal(run.result.exitCode, 0);
+  assert.equal(run.result.stdout.trim(), 'ok');
+  assert.equal(run.evidence.class, 'OBSERVED');
+  assert.equal(run.evidence.taskId, task.id);
+  assert.ok(run.evidence.commitSha);
+  assert.ok(fs.existsSync(path.join(run.worktree, '.git')));
+
+  // A change made in the worktree is Observed by a snapshot.
+  fs.writeFileSync(path.join(run.worktree, 'NOTES.md'), 'work in progress\n');
+  const snapshot = await ok('POST', `/v1/jobs/${job.id}/snapshot`, { actorId: 'winston' });
+  assert.equal(snapshot.kind, 'diff');
+  assert.equal(snapshot.class, 'OBSERVED');
+  const changed = (snapshot.payload as any).changedFiles as string[];
+  assert.ok(changed.some((line) => line.includes('NOTES.md')));
+
+  // The artifact is readable through the API, with the hash from the evidence.
+  const artifactSha = snapshot.artifactRefs[0] as string;
+  const artifactRes = await fetch(`${rt.url}/v1/artifacts/${artifactSha}`, {
+    headers: { Authorization: `Bearer ${rt.token}` },
+  });
+  assert.equal(artifactRes.status, 200);
+  assert.ok((await artifactRes.text()).length > 0);
+
+  // A different actor verifies in a clean worktree; the original worktree change is not there.
+  const verification = await ok('POST', `/v1/jobs/${job.id}/verify`, { actorId: 'kael' });
+  assert.equal(verification.ok, true);
+  assert.equal(verification.results[0].ok, true);
+  const verified = await ok('GET', `/v1/evidence/${verification.results[0].evidenceId}`);
+  assert.equal(verified.class, 'VERIFIED');
+  assert.equal(verified.verifiedBy, 'kael');
+
+  // The assignee cannot verify their own task.
+  const self = await ok('POST', `/v1/jobs/${job.id}/verify`, { actorId: 'atlas' });
+  assert.equal(self.ok, false);
+  assert.match(self.results[0].error, /assignee/i);
+
+  const detail = await ok('GET', `/v1/jobs/${job.id}`);
+  assert.equal(detail.criteria[0].evidenceClass, 'VERIFIED');
+});

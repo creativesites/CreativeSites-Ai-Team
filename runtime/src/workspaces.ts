@@ -158,6 +158,39 @@ export function createWorktree(repoPath: string, worktreePath: string, branch: s
   }
 }
 
+export function ensureWorktree(repoPath: string, worktreePath: string, branch: string, base: string): void {
+  if (fs.existsSync(path.join(worktreePath, '.git'))) return;
+  fs.mkdirSync(path.dirname(worktreePath), { recursive: true, mode: 0o700 });
+  try {
+    execFileSync('git', ['-C', repoPath, 'worktree', 'add', '-b', branch, worktreePath, base], {
+      encoding: 'utf8',
+      timeout: 120_000,
+    });
+  } catch (e) {
+    // The branch may already exist from an earlier run: attach it instead.
+    try {
+      execFileSync('git', ['-C', repoPath, 'worktree', 'add', worktreePath, branch], {
+        encoding: 'utf8',
+        timeout: 120_000,
+      });
+    } catch {
+      throw new WorkspaceError(`Could not create a worktree: ${(e as Error).message}`);
+    }
+  }
+}
+
+export function createDetachedWorktree(repoPath: string, worktreePath: string, base: string): void {
+  fs.mkdirSync(path.dirname(worktreePath), { recursive: true, mode: 0o700 });
+  try {
+    execFileSync('git', ['-C', repoPath, 'worktree', 'add', '--detach', worktreePath, base], {
+      encoding: 'utf8',
+      timeout: 120_000,
+    });
+  } catch (e) {
+    throw new WorkspaceError(`Could not create a clean worktree: ${(e as Error).message}`);
+  }
+}
+
 export function removeWorktree(repoPath: string, worktreePath: string): void {
   try {
     execFileSync('git', ['-C', repoPath, 'worktree', 'remove', '--force', worktreePath], {

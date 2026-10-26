@@ -11,6 +11,7 @@ import {
   type Repo,
 } from '../store/repo.ts';
 import * as workspaces from '../workspaces.ts';
+import type { Checker } from '../checks.ts';
 
 export interface ServerOptions {
   repo: Repo;
@@ -21,6 +22,7 @@ export interface ServerOptions {
   workspaceRoots: string[];
   cloneParentDir: string;
   newProjectParentDir: string;
+  checker: Checker;
 }
 
 export interface RuntimeServer {
@@ -248,6 +250,33 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('POST', '/v1/jobs/:id/plan', (ctx) => ({ status: 200, body: repo.setPlan(ctx.params.id!, ctx.body as unknown as T.SetPlanInput) })),
     route('POST', '/v1/jobs/:id/plan/accept', (ctx) => ({ status: 200, body: repo.acceptPlan(ctx.params.id!, asString(ctx.body.actorId, 'actorId')) })),
     route('GET', '/v1/jobs/:id/history', (ctx) => ({ status: 200, body: repo.listHistory(ctx.params.id!) })),
+    route('POST', '/v1/jobs/:id/checks', async (ctx) => ({
+      status: 201,
+      body: await opts.checker.runTaskCheck(ctx.params.id!, asString(ctx.body.taskId, 'taskId')),
+    })),
+    route('POST', '/v1/jobs/:id/snapshot', async (ctx) => ({
+      status: 201,
+      body: await opts.checker.snapshot(ctx.params.id!, asOptionalString(ctx.body.actorId)),
+    })),
+    route('POST', '/v1/jobs/:id/verify', async (ctx) => ({
+      status: 200,
+      body: await opts.checker.verify(
+        ctx.params.id!,
+        asString(ctx.body.actorId, 'actorId'),
+        Array.isArray(ctx.body.taskIds) ? (ctx.body.taskIds as string[]) : undefined
+      ),
+    })),
+    route('GET', '/v1/artifacts/:sha', (ctx) => {
+      const artifact = opts.checker.readArtifact(ctx.params.sha!);
+      if (!artifact) throw new NotFoundError('artifact not found');
+      ctx.res.writeHead(200, {
+        'Content-Type': artifact.mime,
+        'Cache-Control': 'no-store',
+        'Content-Length': artifact.bytes.length,
+      });
+      ctx.res.end(artifact.bytes);
+      return 'stream';
+    }),
     route('GET', '/v1/jobs/:id/budget', (ctx) => ({ status: 200, body: repo.budget(ctx.params.id!) })),
     route('POST', '/v1/jobs/:id/budget/check', (ctx) => {
       repo.assertBudget(ctx.params.id!, Number(ctx.body.estimateCents ?? 0));
@@ -271,6 +300,7 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       status: 201,
       body: repo.appendEvidence({ ...(ctx.body as unknown as T.CreateEvidenceInput), jobId: ctx.params.id }),
     })),
+    route('GET', '/v1/evidence/:id', (ctx) => ({ status: 200, body: repo.getEvidence(ctx.params.id!) })),
     route('POST', '/v1/evidence/:id/verify', (ctx) => ({ status: 201, body: repo.verifyEvidence(ctx.params.id!, ctx.body as unknown as T.VerifyEvidenceInput) })),
     route('GET', '/v1/jobs/:id/approvals', (ctx) => ({ status: 200, body: repo.listApprovals({ jobId: ctx.params.id, limit: 200 }) })),
     route('POST', '/v1/jobs/:id/approvals', (ctx) => ({

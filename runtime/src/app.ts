@@ -3,7 +3,8 @@ import type { AddressInfo } from 'node:net';
 import { createServer } from './api/server.ts';
 import type { Health, RuntimeEvent } from './api/types.ts';
 import { probeAdapters } from './adapters.ts';
-import { cloneParentDir, loadConfig, newProjectParentDir, workspaceRoots } from './config.ts';
+import { artifactsDir, cloneParentDir, loadConfig, newProjectParentDir, workspaceRoots, worktreeRoot } from './config.ts';
+import { Checker } from './checks.ts';
 import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
 import { gitAvailable } from './workspaces.ts';
@@ -19,6 +20,8 @@ export interface StartOptions {
   workspaceRoots?: string[];
   cloneParentDir?: string;
   newProjectParentDir?: string;
+  worktreeRoot?: string;
+  artifactsDir?: string;
 }
 
 export interface RunningRuntime {
@@ -38,10 +41,12 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   const wsRoots = opts.workspaceRoots ?? workspaceRoots(cfg);
   const cloneDir = opts.cloneParentDir ?? cloneParentDir(cfg);
   const newProjectDir = opts.newProjectParentDir ?? newProjectParentDir(cfg);
-
+  const wtRoot = opts.worktreeRoot ?? worktreeRoot(cfg);
+  const artDir = opts.artifactsDir ?? artifactsDir(cfg);
   // The server is created after the repo, so events go through this late-bound hook.
   let broadcast: (e: RuntimeEvent) => void = () => {};
   const repo = new Repo(db, (e) => broadcast(e));
+  const checker = new Checker({ repo, workspaceRoots: wsRoots, worktreeRoot: wtRoot, artifactsDir: artDir });
 
   const health = (): Health => {
     let store = false;
@@ -72,6 +77,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     workspaceRoots: wsRoots,
     cloneParentDir: cloneDir,
     newProjectParentDir: newProjectDir,
+    checker,
   });
   broadcast = api.broadcast;
 

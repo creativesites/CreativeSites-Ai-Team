@@ -1712,6 +1712,68 @@ export class Repo {
     return toBudget(this.one('SELECT * FROM budgets WHERE id = ? OR (scope = ? AND COALESCE(project_id, \'\') = ? AND period = ?)', id, scope, input.projectId ?? '', period)!);
   }
 
+  // ---------------------------------------------------------------- tasks (single), artifacts, worktrees
+
+  getEvidence(id: string): T.Evidence {
+    const row = this.one('SELECT * FROM evidence WHERE id = ?', id);
+    if (!row) throw new NotFoundError(`evidence ${id} not found`);
+    return toEvidence(row);
+  }
+
+  getTask(taskId: string): T.Task {
+    const row = this.one('SELECT * FROM tasks WHERE id = ?', taskId);
+    if (!row) throw new NotFoundError(`task ${taskId} not found`);
+    return toTask(row);
+  }
+
+  addArtifact(input: { sha256: string; path: string; mime?: string | null; bytes?: number }): T.Artifact {
+    const sha256 = required(input.sha256, 'sha256');
+    if (!/^[a-f0-9]{64}$/.test(sha256)) throw new InputError('sha256 must be a hex digest');
+    this.db
+      .prepare(
+        `INSERT INTO artifacts (id, sha256, path, mime, bytes, created_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(sha256) DO NOTHING`
+      )
+      .run(newId('art'), sha256, required(input.path, 'path'), input.mime ?? null, input.bytes ?? 0, now());
+    return this.getArtifact(sha256);
+  }
+
+  getArtifact(sha256: string): T.Artifact {
+    const row = this.one('SELECT * FROM artifacts WHERE sha256 = ?', sha256);
+    if (!row) throw new NotFoundError(`artifact ${sha256} not found`);
+    return {
+      sha256: String(row.sha256),
+      path: String(row.path),
+      mime: str(row.mime),
+      bytes: num(row.bytes),
+      createdAt: String(row.created_at),
+    };
+  }
+
+  recordWorktree(input: { jobId: string; taskId?: string | null; sessionId?: string | null; path: string; branch?: string | null; baseSha?: string | null }): void {
+    if (!this.one('SELECT id FROM jobs WHERE id = ?', input.jobId)) throw new NotFoundError(`job ${input.jobId} not found`);
+    const existing = this.one('SELECT id FROM worktrees WHERE job_id = ? AND path = ?', input.jobId, input.path);
+    if (existing) return;
+    this.write((events) => {
+      this.db
+        .prepare(
+          `INSERT INTO worktrees (id, job_id, task_id, session_id, path, branch, base_sha, state, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)`
+        )
+        .run(newId('wt'), input.jobId, input.taskId ?? null, input.sessionId ?? null, input.path, input.branch ?? null, input.baseSha ?? null, now());
+      this.recordEvent(events, { type: 'worktree.created', subjectId: input.jobId, payload: { path: input.path, branch: input.branch ?? null }, subjectType: 'job' });
+    });
+  }
+
+  findWorktree(jobId: string): { path: string; branch: string | null; baseSha: string | null } | null {
+    const row = this.one('SELECT * FROM worktrees WHERE job_id = ? AND state = ? ORDER BY created_at DESC LIMIT 1', jobId, 'active');
+    return row ? { path: String(row.path), branch: str(row.branch), baseSha: str(row.base_sha) } : null;
+  }
+
+  setJobBaseSha(jobId: string, sha: string): void {
+    this.db.prepare('UPDATE jobs SET base_sha = COALESCE(base_sha, ?) WHERE id = ?').run(sha, jobId);
+  }
+
   // ---------------------------------------------------------------- idempotency
 
   findIdempotent(key: string): { status: number; body: unknown } | null {
