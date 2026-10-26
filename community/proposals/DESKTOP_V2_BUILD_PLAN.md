@@ -1,6 +1,6 @@
 # MyaOS Desktop v2: build plan
 
-> Owner: Winston · Drafted 2026-10-24 · Status: proposed, Phase 0 ready to start
+> Owner: Winston · Drafted 2026-10-24 · Status: **Phase 0 complete, Phase 1 foundation implemented** (update 2026-10-26 — see [DESKTOP_V2_HANDOFF.md](DESKTOP_V2_HANDOFF.md) and [DESKTOP_V2_DECISIONS.md](DESKTOP_V2_DECISIONS.md))
 > Approved design: [MyaOS Desktop v2 Design](https://claude.ai/artifact/A1bGwBoupBuz7MBwkGtA6j) (Home, Room, Job, Council, Verdict, Dev, Coworkers)
 
 ---

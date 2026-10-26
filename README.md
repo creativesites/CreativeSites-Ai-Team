@@ -123,6 +123,8 @@ npm run desktop:dmg
 
 ### Desktop v2 and the runtime (in progress)
 
+> Current workstream: read `community/proposals/DESKTOP_V2_HANDOFF.md` (API map + UI tasks), `DESKTOP_V2_DECISIONS.md` (accepted product decisions) and `ACP_SPIKE_FINDINGS.md` (adapter reality). The runtime foundation, ACP session manager, council engine and team bridge are implemented on `claude/desktop-app-ai-teams-2fa62f`; the app screens still need wiring.
+
 The new app (`apps/desktop/`) and its engine (`runtime/`) are being built per `community/proposals/DESKTOP_V2_BUILD_PLAN.md`. The desktop shows the runtime's records and makes no AI calls of its own.
 
 ```bash
