@@ -10,6 +10,7 @@ The runtime is no longer read-only. A foundation commit implements:
 - schema **version 2** — projects, repos, teams, members, identity provenance, job plans/tasks/criteria/stage history, sessions/transcript, hash-chained evidence, approvals + policies + escalation, settings, budgets, usage, adapters, idempotency;
 - full write API for the job lifecycle, approvals, evidence verification, sessions/transcript, budgets and workspaces;
 - runtime-owned **checks, worktree snapshots and independent verification**;
+- **planning council engine**: options/seats, weighted card scoring, the disaster cap, cannot-undo and too-fast-agreement rules, verdict → plan + tasks;
 - **ACP session manager**: spawns an adapter over stdio, streams its transcript, converts permission requests into approvals (blocking with timeout), snapshots the worktree before/after each turn and kills the process group;
 - runtime hardening: OS lock (one runtime per machine), atomic `~/.myaos/runtime.json`, owner-only store (`0700`/`0600`), transactional events with hash chain, gap-aware SSE, validation, `Idempotency-Key`, real health checks, session reconciliation on restart.
 
@@ -122,6 +123,19 @@ The app still discovers the runtime through the Rust side (or Vite's `/__myaos/r
 | GET/POST | `/v1/budgets` | create/update global/project budgets |
 | GET/POST | `/v1/jobs/:id/usage` | record usage `{model, inputTokens, outputTokens, costCents, sessionId?}` |
 
+### Council / verdict
+
+| Method | Path | Notes |
+|---|---|---|
+| GET/POST | `/v1/jobs/:id/councils` | create `{mode:'quick'\|'full', options:[{id,label}], seats:[{seat,question,weight,identityId?}]}` |
+| GET | `/v1/councils/:id` | config + cards + verdict |
+| POST | `/v1/councils/:id/cards` | `{seat, scores:{optionId:0–10}, pillar:0–10, confidence?, ruin:{optionId:'none'\|'possible'\|'likely'}, reversible?, argument?, round?}` — validated; scores only from cards |
+| POST | `/v1/councils/:id/verdict` | Chair computes weighted scores, spread, confidence, support, label, conditions; response is the verdict row **plus** the computed payload flattened (`label`, `call`, `scores`, `rules`, `conditions`, …) |
+| POST | `/v1/councils/:id/accept` | `{actorId, tasks?:[...]}` — writes `job.plan` (summary/chosen/options/councilId), creates the tasks, marks the council accepted; the plan then unlocks `brief→plan→build` |
+| GET | `/v1/councils/:id/verdict` | latest verdict |
+
+The Council/Verdict preview screens map almost field-for-field: `Council { options, seats, cards[], verdict }`, card payload = `CouncilCardResult`, verdict = `CouncilResult`. Wire those screens to the endpoints above; seats are recorded manually for now (an ACP seat-run loop is a later step).
+
 ### Sessions / transcript
 
 | Method | Path | Notes |
@@ -197,8 +211,7 @@ _(Claude: append here when you need a runtime change.)_
 - Real-adapter verification of the session manager: the code path is tested with a scripted ACP agent; unblock auth/install and run the spike again (Phase 0.6 §9) before claiming any adapter is live.
 - Worktree snapshots, runtime check runner and the independent verifier are implemented; the ACP manager still needs to call them after each turn.
 - Artifact GC/retention and diff review UI.
-- Council/verdict endpoints and scoring persistence (Phase 3).
-- Team bridge (threads/inboxes ↔ runtime) and legacy-agent claims.
+- Council seat *sessions* (running each seat as a read-only ACP session) — the storage/scoring/verdict/accept API is done; the seat loop is next.
 - Non-code job execution (ops/data/browser/deploy) beyond the evidence kinds.
 - Identity import: the reviewed export is in `community/desktop-v2/import/` and `runtime/scripts/apply-import.mjs` applies it (29 identities incl. owner, 3 teams, projects, rooms, lead policies). It has been applied to the local store.
 - PTY port and packaging (bundle Node/runtime, signing) for Phase 4.

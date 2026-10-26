@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import type * as T from '../api/types.ts';
+import { computeCouncil } from '../council.ts';
 
 type Row = Record<string, unknown>;
 
@@ -1792,6 +1793,200 @@ export class Repo {
     this.db.prepare('UPDATE jobs SET base_sha = COALESCE(base_sha, ?) WHERE id = ?').run(sha, jobId);
   }
 
+  // ---------------------------------------------------------------- councils / verdicts
+
+  createCouncil(jobId: string, input: T.CreateCouncilInput): T.Council {
+    this.getJob(jobId);
+    const mode = oneOf(input.mode, ['quick', 'full'] as const, 'mode', 'quick');
+    const options = Array.isArray(input.options) ? input.options : [];
+    const seats = Array.isArray(input.seats) ? input.seats : [];
+    if (!options.length) throw new InputError('options must not be empty');
+    if (!seats.length) throw new InputError('seats must not be empty');
+    const seen = new Set<string>();
+    for (const option of options) {
+      const id = required(option.id, 'option.id');
+      if (seen.has(id)) throw new InputError(`duplicate option id ${id}`);
+      seen.add(id);
+      required(option.label, 'option.label');
+    }
+    for (const seat of seats) {
+      required(seat.seat, 'seat.seat');
+      if (!Number.isFinite(seat.weight) || seat.weight <= 0) throw new InputError('seat.weight must be positive');
+      if (seat.identityId && !this.one('SELECT id FROM identities WHERE id = ?', seat.identityId)) {
+        throw new NotFoundError(`identity ${seat.identityId} not found`);
+      }
+    }
+    const id = newId('council');
+    this.write((events) => {
+      this.db
+        .prepare('INSERT INTO councils (id, job_id, mode, status, created_at, seat_config, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(id, jobId, mode, 'running', now(), jsonText({ options, seats }), now());
+      this.refreshJobUpdated(jobId);
+      this.recordEvent(events, { type: 'council.created', subjectId: jobId, payload: { councilId: id, mode }, subjectType: 'job' });
+    });
+    return this.getCouncil(id);
+  }
+
+  getCouncil(councilId: string): T.Council {
+    const row = this.one('SELECT * FROM councils WHERE id = ?', councilId);
+    if (!row) throw new NotFoundError(`council ${councilId} not found`);
+    const config = parseJson<{ options: T.CouncilOption[]; seats: T.CouncilSeat[] }>(row.seat_config, { options: [], seats: [] });
+    const cards = this.all('SELECT * FROM council_cards WHERE council_id = ? ORDER BY round, rowid', councilId).map(toCouncilCard);
+    const verdictRow = this.one('SELECT * FROM verdicts WHERE council_id = ?', councilId);
+    return {
+      id: String(row.id),
+      jobId: String(row.job_id),
+      mode: String(row.mode) as T.Council['mode'],
+      status: String(row.status) as T.Council['status'],
+      options: config.options,
+      seats: config.seats,
+      cards,
+      verdict: verdictRow ? toVerdict(verdictRow) : null,
+      createdAt: String(row.created_at),
+    };
+  }
+
+  listCouncils(jobId: string): T.Council[] {
+    this.getJob(jobId);
+    return this.all('SELECT id FROM councils WHERE job_id = ? ORDER BY created_at DESC', jobId).map((r) => this.getCouncil(String(r.id)));
+  }
+
+  addCouncilCard(councilId: string, input: T.CreateCouncilCardInput): T.CouncilCard {
+    const council = this.getCouncil(councilId);
+    if (council.status !== 'running') throw new ConflictError(`This council is ${council.status}; cards can only be added while running`);
+    const seat = council.seats.find((s) => s.seat === input.seat);
+    if (!seat) throw new InputError(`Unknown seat ${input.seat}`);
+    const round = positiveInt(input.round, 'round', 1) || 1;
+    const pillar = Number(input.pillar);
+    if (!Number.isFinite(pillar) || pillar < 0 || pillar > 10) throw new InputError('pillar must be between 0 and 10');
+    const scores: Record<string, number> = {};
+    for (const option of council.options) {
+      const value = Number(input.scores?.[option.id]);
+      if (!Number.isFinite(value) || value < 0 || value > 10) throw new InputError(`scores.${option.id} must be between 0 and 10`);
+      scores[option.id] = value;
+    }
+    const ruin: Record<string, T.Ruin> = {};
+    for (const option of council.options) {
+      ruin[option.id] = oneOf(input.ruin?.[option.id], ['none', 'possible', 'likely'] as const, `ruin.${option.id}`, 'none');
+    }
+    const confidence = input.confidence == null ? null : Number(input.confidence);
+    if (confidence !== null && (!Number.isFinite(confidence) || confidence < 0 || confidence > 10)) {
+      throw new InputError('confidence must be between 0 and 10');
+    }
+    if (input.identityId && !this.one('SELECT id FROM identities WHERE id = ?', input.identityId)) {
+      throw new NotFoundError(`identity ${input.identityId} not found`);
+    }
+    const result: T.CouncilCardResult = {
+      seat: seat.seat,
+      identityId: input.identityId ?? seat.identityId ?? null,
+      scores,
+      pillar,
+      confidence,
+      ruin,
+      reversible: input.reversible == null ? null : Boolean(input.reversible),
+      argument: input.argument ?? null,
+    };
+    const id = newId('card');
+    this.write((events) => {
+      this.db
+        .prepare('INSERT INTO council_cards (id, council_id, round, seat, identity_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(id, councilId, round, seat.seat, result.identityId, jsonText(result), now());
+      this.recordEvent(events, { type: 'council.card_added', subjectId: council.jobId, payload: { councilId, seat: seat.seat, round }, subjectType: 'job' });
+    });
+    return toCouncilCard(this.one('SELECT * FROM council_cards WHERE id = ?', id)!);
+  }
+
+  createVerdict(councilId: string): T.CouncilVerdict {
+    const council = this.getCouncil(councilId);
+    if (council.status !== 'running') throw new ConflictError(`This council is ${council.status}; it cannot produce another verdict`);
+    if (!council.cards.length) throw new ConflictError('No cards have been submitted');
+    let result: T.CouncilResult;
+    try {
+      result = computeCouncil(council.options, council.seats, council.cards.map((c) => c.result));
+    } catch (e) {
+      throw new ConflictError((e as Error).message);
+    }
+    const id = newId('verdict');
+    this.write((events) => {
+      this.db
+        .prepare(
+          `INSERT INTO verdicts (id, council_id, label, score, spread, confidence, support, payload, plan, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}', ?)`
+        )
+        .run(id, councilId, result.label, result.support, result.spread, result.confidence, result.support, jsonText(result), now());
+      this.db.prepare("UPDATE councils SET status = 'verdict', ended_at = ? WHERE id = ?").run(now(), councilId);
+      this.refreshJobUpdated(council.jobId);
+      this.recordEvent(events, {
+        type: 'council.verdict',
+        subjectId: council.jobId,
+        payload: { councilId, verdictId: id, label: result.label, score: result.support },
+        subjectType: 'job',
+      });
+    });
+    return toVerdict(this.one('SELECT * FROM verdicts WHERE id = ?', id)!);
+  }
+
+  getVerdict(councilId: string): T.CouncilVerdict {
+    const row = this.one('SELECT * FROM verdicts WHERE council_id = ?', councilId);
+    if (!row) throw new NotFoundError(`council ${councilId} has no verdict`);
+    return toVerdict(row);
+  }
+
+  acceptVerdict(councilId: string, input: T.AcceptVerdictInput): T.Council {
+    const council = this.getCouncil(councilId);
+    if (!council.verdict) throw new ConflictError('This council has no verdict to accept');
+    const actorId = required(input.actorId, 'actorId');
+    const councilResult = council.verdict.payload;
+    const taskInputs = Array.isArray(input.tasks) ? input.tasks : [];
+    this.write((events) => {
+      const job = this.getJob(council.jobId);
+      const plan: T.JobPlan = {
+        summary: councilResult.call,
+        options: councilResult.scores.map((s) => ({ id: s.id, label: s.label, score: s.score })),
+        chosen: councilResult.topId,
+        approvedAt: now(),
+        approvedBy: actorId,
+        councilId,
+      };
+      this.db.prepare('UPDATE jobs SET plan = ?, updated_at = ? WHERE id = ?').run(jsonText(plan), now(), job.id);
+      let position = Number(this.scalar('SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE job_id = ?', job.id) ?? 0);
+      for (const task of taskInputs) {
+        const taskId = newId('task');
+        this.db
+          .prepare(
+            `INSERT INTO tasks (id, job_id, title, assignee_id, check_command, gate, status, created_at,
+               position, plan_task_id, mode, evidence_required, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            taskId, job.id, required(task.title, 'task.title'), optionalString(task.assigneeId, 'assigneeId'),
+            optionalString(task.checkCommand, 'checkCommand'), optionalString(task.gate, 'gate'), now(), position,
+            optionalString(task.planTaskId, 'planTaskId'), oneOf(task.mode, TASK_MODES, 'mode', 'build'),
+            task.evidenceRequired === false ? 0 : 1, now()
+          );
+        for (const criterionId of task.criterionIds ?? []) {
+          if (!this.one('SELECT id FROM criteria WHERE id = ? AND job_id = ?', criterionId, job.id)) {
+            throw new NotFoundError(`criterion ${criterionId} not found on this job`);
+          }
+          this.db.prepare('INSERT OR IGNORE INTO task_criteria (task_id, criterion_id) VALUES (?, ?)').run(taskId, criterionId);
+        }
+        position += 1;
+      }
+      const verdictPlan = { ...councilResult, tasks: taskInputs };
+      this.db.prepare('UPDATE verdicts SET plan = ? WHERE council_id = ?').run(jsonText(verdictPlan), councilId);
+      this.db.prepare("UPDATE councils SET status = 'accepted', ended_at = ? WHERE id = ?").run(now(), councilId);
+      this.recordEvent(events, {
+        type: 'council.accepted',
+        subjectId: job.id,
+        payload: { councilId, plan: plan.summary, tasks: taskInputs.length },
+        actorId,
+        actorKind: 'human',
+        subjectType: 'job',
+      });
+    });
+    return this.getCouncil(councilId);
+  }
+
   // ---------------------------------------------------------------- idempotency
 
   findIdempotent(key: string): { status: number; body: unknown } | null {
@@ -2117,6 +2312,34 @@ const toHistory = (r: Row): T.JobStageHistory => ({
   actorId: String(r.actor_id),
   actorKind: String(r.actor_kind) as T.ActorKind,
   note: str(r.note),
+  createdAt: String(r.created_at),
+});
+
+const toCouncilCard = (r: Row): T.CouncilCard => ({
+  id: String(r.id),
+  councilId: String(r.council_id),
+  round: num(r.round),
+  seat: String(r.seat),
+  identityId: str(r.identity_id),
+  result: parseJson<T.CouncilCardResult>(r.payload, {
+    seat: String(r.seat), identityId: null, scores: {}, pillar: 0, confidence: null, ruin: {}, reversible: null, argument: null,
+  }),
+  createdAt: String(r.created_at),
+});
+
+const toVerdict = (r: Row): T.CouncilVerdict => ({
+  id: String(r.id),
+  councilId: String(r.council_id),
+  label: String(r.label),
+  score: r.score == null ? null : num(r.score),
+  spread: r.spread == null ? null : num(r.spread),
+  confidence: r.confidence == null ? null : num(r.confidence),
+  support: r.support == null ? null : num(r.support),
+  payload: parseJson<T.CouncilResult>(r.payload, {
+    label: String(r.label), call: '', scores: [], topId: '', spread: 0, confidence: 0, support: 0,
+    rules: { disasterCapApplied: false, cannotUndo: false, tooFastAgreement: false }, conditions: [], objection: null,
+  }),
+  plan: parseJson<Record<string, unknown>>(r.plan, {}),
   createdAt: String(r.created_at),
 });
 

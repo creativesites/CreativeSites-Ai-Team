@@ -377,6 +377,113 @@ export interface AdapterInfo {
   lastProbeAt: string | null;
 }
 
+export type Ruin = 'none' | 'possible' | 'likely';
+
+export interface CouncilOption {
+  id: string;
+  label: string;
+}
+
+export interface CouncilSeat {
+  seat: string;
+  question: string;
+  weight: number;
+  identityId?: string | null;
+}
+
+export interface CouncilCardResult {
+  seat: string;
+  identityId: string | null;
+  scores: Record<string, number>;
+  pillar: number;
+  confidence: number | null;
+  ruin: Record<string, Ruin>;
+  reversible: boolean | null;
+  argument: string | null;
+}
+
+export interface CouncilCard {
+  id: string;
+  councilId: string;
+  round: number;
+  seat: string;
+  identityId: string | null;
+  result: CouncilCardResult;
+  createdAt: string;
+}
+
+export interface CouncilScore {
+  id: string;
+  label: string;
+  score: number;
+  formula: string;
+}
+
+export interface CouncilResult {
+  label: string;
+  call: string;
+  scores: CouncilScore[];
+  topId: string;
+  spread: number;
+  confidence: number;
+  support: number;
+  rules: {
+    disasterCapApplied: boolean;
+    cannotUndo: boolean;
+    tooFastAgreement: boolean;
+  };
+  conditions: string[];
+  objection: { text: string; by: string } | null;
+}
+
+export interface Council {
+  id: string;
+  jobId: string;
+  mode: 'quick' | 'full';
+  status: 'running' | 'verdict' | 'accepted' | 'cancelled';
+  options: CouncilOption[];
+  seats: CouncilSeat[];
+  cards: CouncilCard[];
+  verdict: CouncilVerdict | null;
+  createdAt: string;
+}
+
+export interface CouncilVerdict {
+  id: string;
+  councilId: string;
+  label: string;
+  score: number | null;
+  spread: number | null;
+  confidence: number | null;
+  support: number | null;
+  payload: CouncilResult;
+  plan: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface CreateCouncilInput {
+  mode?: 'quick' | 'full';
+  options: CouncilOption[];
+  seats: CouncilSeat[];
+}
+
+export interface CreateCouncilCardInput {
+  round?: number;
+  seat: string;
+  identityId?: string | null;
+  scores: Record<string, number>;
+  pillar: number;
+  confidence?: number;
+  ruin?: Record<string, Ruin>;
+  reversible?: boolean;
+  argument?: string;
+}
+
+export interface AcceptVerdictInput {
+  actorId: string;
+  tasks?: CreateTaskInput[];
+}
+
 export interface Artifact {
   sha256: string;
   path: string;

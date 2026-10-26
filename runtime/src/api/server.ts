@@ -310,6 +310,28 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       body: repo.createApproval({ ...(ctx.body as unknown as T.CreateApprovalInput), jobId: ctx.params.id }),
     })),
     route('GET', '/v1/jobs/:id/usage', (ctx) => ({ status: 200, body: repo.listUsage({ jobId: ctx.params.id }) })),
+    route('GET', '/v1/jobs/:id/councils', (ctx) => ({ status: 200, body: repo.listCouncils(ctx.params.id!) })),
+    route('POST', '/v1/jobs/:id/councils', (ctx) => ({
+      status: 201,
+      body: repo.createCouncil(ctx.params.id!, ctx.body as unknown as T.CreateCouncilInput),
+    })),
+    route('GET', '/v1/councils/:id', (ctx) => ({ status: 200, body: repo.getCouncil(ctx.params.id!) })),
+    route('POST', '/v1/councils/:id/cards', (ctx) => ({
+      status: 201,
+      body: repo.addCouncilCard(ctx.params.id!, ctx.body as unknown as T.CreateCouncilCardInput),
+    })),
+    route('POST', '/v1/councils/:id/verdict', (ctx) => {
+      const verdict = repo.createVerdict(ctx.params.id!);
+      return { status: 201, body: { ...verdict, ...verdict.payload } };
+    }),
+    route('GET', '/v1/councils/:id/verdict', (ctx) => {
+      const verdict = repo.getVerdict(ctx.params.id!);
+      return { status: 200, body: { ...verdict, ...verdict.payload } };
+    }),
+    route('POST', '/v1/councils/:id/accept', (ctx) => ({
+      status: 200,
+      body: repo.acceptVerdict(ctx.params.id!, ctx.body as unknown as T.AcceptVerdictInput),
+    })),
     route('POST', '/v1/jobs/:id/usage', (ctx) => ({
       status: 201,
       body: repo.recordUsage({ ...(ctx.body as T.RecordUsageInput), jobId: ctx.params.id }),
