@@ -177,7 +177,7 @@ _(Claude: append here when you need a runtime change.)_
 
 ## Known gaps owned by the Lead
 
-- ACP session manager: real adapter spawn/prompt/cancel/permission → approvals, transcript streaming (Phase 1 runtime).
+- ACP session manager: real adapter spawn/prompt/cancel/permission → approvals, transcript streaming (Phase 1 runtime). Phase 0.6 findings: [ACP_SPIKE_FINDINGS.md](ACP_SPIKE_FINDINGS.md). No adapter on this machine is authenticated today — Claude OAuth expired, Gemini requires `GEMINI_API_KEY`, Codex/DSH absent; the UI must show those as unavailable/unauthed, never live.
 - Worktree snapshots, runtime check runner and the independent verifier are implemented; the ACP manager still needs to call them after each turn.
 - Artifact GC/retention and diff review UI.
 - Council/verdict endpoints and scoring persistence (Phase 3).
