@@ -358,6 +358,12 @@ export class Repo {
              ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = COALESCE(excluded.description, teams.description)`
           )
           .run(required(team.id, 'team.id'), required(team.name, 'team.name'), team.description ?? null, now());
+        for (const identityId of team.members ?? []) {
+          if (this.one('SELECT id FROM identities WHERE id = ?', identityId)) this.addTeamMemberRow(String(team.id), identityId, 'member');
+        }
+        if (team.leadIdentityId && this.one('SELECT id FROM identities WHERE id = ?', team.leadIdentityId)) {
+          this.db.prepare("UPDATE identities SET approval_level = 'lead' WHERE id = ?").run(team.leadIdentityId);
+        }
         teams += 1;
       }
       if (input.owner) {
@@ -380,6 +386,9 @@ export class Repo {
           adapterId: p.adapterId ?? undefined,
         };
         this.insertIdentity(owner);
+        for (const teamId of p.teams ?? []) {
+          if (this.one('SELECT id FROM teams WHERE id = ?', teamId)) this.addTeamMemberRow(teamId, owner.id, 'owner');
+        }
         this.db
           .prepare(
             `INSERT INTO settings (key, value, updated_at) VALUES ('ownerId', ?, ?)
@@ -390,7 +399,12 @@ export class Repo {
       }
       for (const identity of input.identities ?? []) {
         if (!identity?.id || !identity.name) continue;
-        this.insertIdentity({ ...identity, id: identity.id.toLowerCase() });
+        const id = identity.id.toLowerCase();
+        const teamId = identity.teamId ?? identity.team ?? null;
+        this.insertIdentity({ ...identity, id, teamId: teamId ?? undefined });
+        for (const team of identity.teams ?? []) {
+          if (this.one('SELECT id FROM teams WHERE id = ?', team)) this.addTeamMemberRow(team, id, 'member');
+        }
         identities += 1;
       }
       this.recordEvent(events, {

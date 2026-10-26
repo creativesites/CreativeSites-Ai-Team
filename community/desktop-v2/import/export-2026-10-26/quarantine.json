@@ -1,0 +1,314 @@
+{
+  "quarantine": {
+    "duplicateTitles": [
+      {
+        "ids": [
+          "TASK_LIVE_3414",
+          "TASK_LIVE_8759"
+        ],
+        "reason": "same title appears on multiple task rows (re-run / duplicate dispatch artifacts); keep as real rows but do not treat them as distinct work items without review",
+        "title": "Generate Production State Proof & Hash Ledger"
+      },
+      {
+        "ids": [
+          "task_design_fleet_intelligence_overview_11499903",
+          "task_design_fleet_intelligence_overview_55d319cc",
+          "task_design_fleet_intelligence_overview_beed085b",
+          "task_design_fleet_intelligence_overview_d47f9385"
+        ],
+        "reason": "same title appears on multiple task rows (re-run / duplicate dispatch artifacts); keep as real rows but do not treat them as distinct work items without review",
+        "title": "Implement Approved Design: Fleet Intelligence Overview (v1)"
+      },
+      {
+        "ids": [
+          "TASK_LIVE_3415",
+          "TASK_LIVE_8760"
+        ],
+        "reason": "same title appears on multiple task rows (re-run / duplicate dispatch artifacts); keep as real rows but do not treat them as distinct work items without review",
+        "title": "Ingest Verified State to Telemetry Bus"
+      }
+    ],
+    "fakeSeedEvidence": [
+      {
+        "details": "All machine-observed verification checks passed with exit code 0 and valid artifacts on disk.",
+        "evidenceClass": "VERIFIED",
+        "id": 1,
+        "reason": "seed/self-test evidence: the \"verified_files\" are fake 206-byte SUCCESS stubs under data/artifacts/, not machine-observed runs",
+        "taskId": "TASK_LIVE_3414",
+        "verifier": "kael"
+      },
+      {
+        "details": "All machine-observed verification checks passed with exit code 0 and valid artifacts on disk.",
+        "evidenceClass": "VERIFIED",
+        "id": 2,
+        "reason": "seed/self-test evidence: the \"verified_files\" are fake 206-byte SUCCESS stubs under data/artifacts/, not machine-observed runs",
+        "taskId": "TASK_LIVE_8759",
+        "verifier": "kael"
+      }
+    ],
+    "fakeVerificationEventIds": [
+      17,
+      20,
+      37,
+      40
+    ],
+    "legacyLiveState": [
+      {
+        "observed": true,
+        "path": "community/events.ndjson"
+      },
+      {
+        "observed": true,
+        "path": "community/tasks.json"
+      },
+      {
+        "observed": true,
+        "path": "data/events.ndjson"
+      },
+      {
+        "observed": true,
+        "path": "data/tasks.json"
+      },
+      {
+        "observed": true,
+        "path": "data/runtime_handshakes.json"
+      },
+      {
+        "observed": true,
+        "path": "data/runtime_sessions.json"
+      },
+      {
+        "observed": true,
+        "path": "data/provenance.log"
+      }
+    ],
+    "missionPipeline": {
+      "eventIds": [
+        88,
+        90,
+        91,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        103,
+        104,
+        106,
+        107,
+        108,
+        109,
+        111
+      ],
+      "messages": [
+        {
+          "id": 4,
+          "missionId": "mission_1789209227914",
+          "reason": "auto-generated \"verification complete\" claim; the matching verifier.completed event payload is unrelated chat text, and no evidence row exists",
+          "sender": "orchestrator",
+          "snippet": "**Independent Verification Complete** by **Kael [KL]**. Evidence recorded to SQLite substrate (`data/myaos.db`). Un-mocked regression tests executed. Stage 4 Ex"
+        },
+        {
+          "id": 5,
+          "missionId": "mission_1789209227914",
+          "reason": "auto-generated \"verification complete\" claim; the matching verifier.completed event payload is unrelated chat text, and no evidence row exists",
+          "sender": "orchestrator",
+          "snippet": "**Independent Verification Complete** by **Kael [KL]**. Evidence recorded to SQLite substrate (`data/myaos.db`). Un-mocked regression tests executed. Stage 4 Ex"
+        },
+        {
+          "id": 8,
+          "missionId": "mission_1789209227914",
+          "reason": "auto-generated \"verification complete\" claim; the matching verifier.completed event payload is unrelated chat text, and no evidence row exists",
+          "sender": "orchestrator",
+          "snippet": "**Independent Verification Complete** by **Kael [KL]**. Evidence recorded to SQLite substrate (`data/myaos.db`). Un-mocked regression tests executed. Stage 4 Ex"
+        },
+        {
+          "id": 11,
+          "missionId": "mission_1789285494860",
+          "reason": "auto-generated \"verification complete\" claim; the matching verifier.completed event payload is unrelated chat text, and no evidence row exists",
+          "sender": "orchestrator",
+          "snippet": "**Independent Verification Complete** by **Kael [KL]**. Evidence recorded to SQLite substrate (`data/myaos.db`). Un-mocked regression tests executed. Stage 4 Ex"
+        }
+      ],
+      "note": "mission.* and verifier.completed events are orchestration log lines, not evidence; do not import them into the v2 evidence ledger",
+      "plans": [
+        {
+          "assignee": "kael",
+          "evidenceRowsLinkingMission": 0,
+          "missionId": "mission_1789209227914",
+          "proofStage": {
+            "name": "Machine Proof",
+            "status": "completed"
+          },
+          "reason": "mission pipeline stage \"Machine Proof\" is marked completed, but no evidence row anywhere references this mission; the \"Independent Verification Complete\" message is auto-generated",
+          "title": "Mission 2: Astra"
+        },
+        {
+          "assignee": "kael",
+          "evidenceRowsLinkingMission": 0,
+          "missionId": "mission_1789285494860",
+          "proofStage": {
+            "name": "Machine Proof",
+            "status": "completed"
+          },
+          "reason": "mission pipeline stage \"Machine Proof\" is marked completed, but no evidence row anywhere references this mission; the \"Independent Verification Complete\" message is auto-generated",
+          "title": "Mission 2: Astra"
+        },
+        {
+          "assignee": "astra",
+          "evidenceRowsLinkingMission": 0,
+          "missionId": "mission_1792486194238",
+          "proofStage": {
+            "name": "Machine Proof",
+            "status": "pending"
+          },
+          "reason": "mission pipeline row; no evidence rows link to it. Not importable as evidence even where the proof stage is still pending",
+          "title": "Mission 2: Astra"
+        },
+        {
+          "assignee": "astra",
+          "evidenceRowsLinkingMission": 0,
+          "missionId": "mission_default_astra",
+          "proofStage": {
+            "name": "Machine Proof & Verification",
+            "status": "pending"
+          },
+          "reason": "mission pipeline row; no evidence rows link to it. Not importable as evidence even where the proof stage is still pending",
+          "title": "Autonomous Multi-Agent Mission Routing"
+        }
+      ],
+      "verifierCompletedEventIds": [
+        95,
+        97,
+        99,
+        109
+      ],
+      "verifierDispatchedEventIds": [
+        93,
+        106
+      ]
+    },
+    "proofArtifacts": [
+      {
+        "path": "data/artifacts/task_live_3414_proof.json",
+        "reason": "worker SUCCESS artifact / proof bundle generated by the v1 orchestrator self-test: asserts status=SUCCESS / verification_status=VERIFIED without any real check; the bundle's \"independent verification\" command only re-reads the same stub file",
+        "sha256": "387ace3abc176ea26b91578ebab0ee1a81e0469ed803c662b0c1bb59ce27b323"
+      },
+      {
+        "path": "data/artifacts/task_live_8759_proof.json",
+        "reason": "worker SUCCESS artifact / proof bundle generated by the v1 orchestrator self-test: asserts status=SUCCESS / verification_status=VERIFIED without any real check; the bundle's \"independent verification\" command only re-reads the same stub file",
+        "sha256": "cced9b877e08090601ea33f5fb944e0242b7aadc65c48138f4772fb23fc4af5a"
+      },
+      {
+        "path": "data/proof_bundles/proof_bundle_task_live_3414.json",
+        "reason": "worker SUCCESS artifact / proof bundle generated by the v1 orchestrator self-test: asserts status=SUCCESS / verification_status=VERIFIED without any real check; the bundle's \"independent verification\" command only re-reads the same stub file",
+        "sha256": "6c3984c6ff415a74ad4bc598703e8cf018968d99253ec72e240c9c0528726289"
+      },
+      {
+        "path": "data/proof_bundles/proof_bundle_task_live_8759.json",
+        "reason": "worker SUCCESS artifact / proof bundle generated by the v1 orchestrator self-test: asserts status=SUCCESS / verification_status=VERIFIED without any real check; the bundle's \"independent verification\" command only re-reads the same stub file",
+        "sha256": "4028589e5b7633b0ae1d822642d31ecf397b12c176f9a6ee388f13480a352ee6"
+      }
+    ],
+    "provenanceVerifiedIds": [
+      3,
+      16,
+      18,
+      31,
+      33
+    ],
+    "selfVerifiedEvidence": [
+      {
+        "assignee": "synapse",
+        "details": "Commit d1628f7. 3/3 unit tests passed (TEST-com.craftflowtechnologies.meetingmind.ai.voice.read.ReadToMeLicencePolicyTest.xml). Full compilation and testDebugUnitTest completed with exit code 0.",
+        "id": 25,
+        "reason": "verifier_identity equals the task assignee: self-verified, so VERIFIED is not independent; import as ATTESTED/Claimed at most",
+        "taskId": "TASK_MM_001",
+        "verifier": "synapse"
+      },
+      {
+        "assignee": "synapse",
+        "details": "AudioRecorderShortStopTest (3/3 pass), WorkPageLogicTest & WorkPageViewModelTest (pass), clean compileDebugKotlin",
+        "id": 26,
+        "reason": "verifier_identity equals the task assignee: self-verified, so VERIFIED is not independent; import as ATTESTED/Claimed at most",
+        "taskId": "TASK_MM_002",
+        "verifier": "synapse"
+      },
+      {
+        "assignee": "synapse",
+        "details": "Commit d54baec pushed to origin/ccr-08b1bb9f-iljmtb. Full compileDebugKotlin passed (exit code 0). Server unit tests passed 67/67 (npm test in server/circles-api). Android unit tests passed in com.craftflowtechnologies.meetingmind.core.circles2.*, CircleViewModelsTest, and AccountLinkingTest.",
+        "id": 27,
+        "reason": "verifier_identity equals the task assignee: self-verified, so VERIFIED is not independent; import as ATTESTED/Claimed at most",
+        "taskId": "TASK_MM_003",
+        "verifier": "synapse"
+      }
+    ],
+    "syntheticTasks": [
+      {
+        "id": "TASK_LIVE_3414",
+        "reason": "orchestrator self-test task; its proof artifact is a stub",
+        "status": "done",
+        "title": "Generate Production State Proof & Hash Ledger"
+      },
+      {
+        "id": "TASK_LIVE_3415",
+        "reason": "orchestrator self-test task; its proof artifact is a stub",
+        "status": "unresolved",
+        "title": "Ingest Verified State to Telemetry Bus"
+      },
+      {
+        "id": "TASK_LIVE_8759",
+        "reason": "orchestrator self-test task; its proof artifact is a stub",
+        "status": "done",
+        "title": "Generate Production State Proof & Hash Ledger"
+      },
+      {
+        "id": "TASK_LIVE_8760",
+        "reason": "orchestrator self-test task; its proof artifact is a stub",
+        "status": "open",
+        "title": "Ingest Verified State to Telemetry Bus"
+      }
+    ]
+  },
+  "schemaVersion": 1,
+  "source": {
+    "agentsRegistryMarkdown": {
+      "identityCount": 23,
+      "path": "community/AGENTS_REGISTRY.md",
+      "sha256": "94c284233601415b6896719abe59d816bd6ea5ee15641bb867d35457218a9213"
+    },
+    "communityAgentsJson": {
+      "entryCount": 25,
+      "path": "community/agents.json",
+      "sha256": "23a4b8e634b40cca03e713fd564011dad6854af9854126b4a91402184dd4a3d4"
+    },
+    "decisions": {
+      "decisionIds": [
+        "D3",
+        "D7",
+        "D10"
+      ],
+      "path": "community/proposals/DESKTOP_V2_DECISIONS.md"
+    },
+    "v1Db": {
+      "path": "data/myaos.db",
+      "rowCounts": {
+        "agentCapabilities": 65,
+        "events": 122,
+        "evidence": 24,
+        "facts": 19,
+        "identities": 26,
+        "missionMessages": 12,
+        "missionPlans": 4,
+        "projects": 6,
+        "provenanceLog": 35,
+        "tasks": 45,
+        "teams": 3,
+        "tokenLedger": 16
+      },
+      "sha256": "f031e9fd1e86af8cc26961445dab1ec65bc1c9348ecca66234b2b11dd67ad0ee"
+    }
+  }
+}

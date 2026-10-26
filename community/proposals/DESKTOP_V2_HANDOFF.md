@@ -183,5 +183,5 @@ _(Claude: append here when you need a runtime change.)_
 - Council/verdict endpoints and scoring persistence (Phase 3).
 - Team bridge (threads/inboxes ↔ runtime) and legacy-agent claims.
 - Non-code job execution (ops/data/browser/deploy) beyond the evidence kinds.
-- Identity import integration + v1 data export (in progress by import workstream).
+- Identity import: the reviewed export is in `community/desktop-v2/import/` and `runtime/scripts/apply-import.mjs` applies it (29 identities incl. owner, 3 teams, projects, rooms, lead policies). It has been applied to the local store.
 - PTY port and packaging (bundle Node/runtime, signing) for Phase 4.

@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node src/main.ts",
     "test": "node --test test/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "import:v1": "node scripts/apply-import.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

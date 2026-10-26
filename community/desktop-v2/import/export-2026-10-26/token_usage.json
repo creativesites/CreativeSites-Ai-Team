@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "agentsRegistryMarkdown": {
+      "identityCount": 23,
+      "path": "community/AGENTS_REGISTRY.md",
+      "sha256": "94c284233601415b6896719abe59d816bd6ea5ee15641bb867d35457218a9213"
+    },
+    "communityAgentsJson": {
+      "entryCount": 25,
+      "path": "community/agents.json",
+      "sha256": "23a4b8e634b40cca03e713fd564011dad6854af9854126b4a91402184dd4a3d4"
+    },
+    "decisions": {
+      "decisionIds": [
+        "D3",
+        "D7",
+        "D10"
+      ],
+      "path": "community/proposals/DESKTOP_V2_DECISIONS.md"
+    },
+    "v1Db": {
+      "path": "data/myaos.db",
+      "rowCounts": {
+        "agentCapabilities": 65,
+        "events": 122,
+        "evidence": 24,
+        "facts": 19,
+        "identities": 26,
+        "missionMessages": 12,
+        "missionPlans": 4,
+        "projects": 6,
+        "provenanceLog": 35,
+        "tasks": 45,
+        "teams": 3,
+        "tokenLedger": 16
+      },
+      "sha256": "f031e9fd1e86af8cc26961445dab1ec65bc1c9348ecca66234b2b11dd67ad0ee"
+    }
+  },
+  "tokenUsage": {
+    "rowCount": 16,
+    "rows": [
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.00444,
+        "id": 1,
+        "identityId": "astra",
+        "inputTokens": 14200,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 3850,
+        "totalTokens": 18050,
+        "ts": "2026-09-12 08:40:48"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.00531,
+        "id": 2,
+        "identityId": "iris",
+        "inputTokens": 18600,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 4200,
+        "totalTokens": 22800,
+        "ts": "2026-09-12 09:40:48"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.2025,
+        "id": 3,
+        "identityId": "kael",
+        "inputTokens": 32000,
+        "model": "claude-3-7-sonnet",
+        "outputTokens": 7100,
+        "totalTokens": 39100,
+        "ts": "2026-09-12 10:10:48"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.1545,
+        "id": 4,
+        "identityId": "atlas",
+        "inputTokens": 24500,
+        "model": "claude-sonnet-4-6",
+        "outputTokens": 5400,
+        "totalTokens": 29900,
+        "ts": "2026-09-12 10:30:48"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.00039765,
+        "id": 5,
+        "identityId": "orchestrator",
+        "inputTokens": 803,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 462,
+        "totalTokens": 1265,
+        "ts": "2026-09-12 14:45:53"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.00038805,
+        "id": 6,
+        "identityId": "orchestrator",
+        "inputTokens": 803,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 446,
+        "totalTokens": 1249,
+        "ts": "2026-09-12 14:45:54"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.00039345,
+        "id": 7,
+        "identityId": "orchestrator",
+        "inputTokens": 803,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 455,
+        "totalTokens": 1258,
+        "ts": "2026-09-12 14:47:35"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.00037545,
+        "id": 8,
+        "identityId": "orchestrator",
+        "inputTokens": 803,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 425,
+        "totalTokens": 1228,
+        "ts": "2026-09-12 14:47:37"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.00026925,
+        "id": 9,
+        "identityId": "orchestrator",
+        "inputTokens": 319,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 369,
+        "totalTokens": 688,
+        "ts": "2026-09-12 15:30:23"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.00024945,
+        "id": 10,
+        "identityId": "orchestrator",
+        "inputTokens": 319,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 336,
+        "totalTokens": 655,
+        "ts": "2026-09-12 15:30:24"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.0003615,
+        "id": 11,
+        "identityId": "orchestrator",
+        "inputTokens": 498,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 478,
+        "totalTokens": 976,
+        "ts": "2026-09-12 15:30:43"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.0003897,
+        "id": 12,
+        "identityId": "orchestrator",
+        "inputTokens": 498,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 525,
+        "totalTokens": 1023,
+        "ts": "2026-09-12 15:30:44"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.0003345,
+        "id": 13,
+        "identityId": "orchestrator",
+        "inputTokens": 498,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 433,
+        "totalTokens": 931,
+        "ts": "2026-09-13 07:39:25"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.0003255,
+        "id": 14,
+        "identityId": "orchestrator",
+        "inputTokens": 770,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 350,
+        "totalTokens": 1120,
+        "ts": "2026-09-13 07:45:00"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.0004035,
+        "id": 15,
+        "identityId": "orchestrator",
+        "inputTokens": 642,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 512,
+        "totalTokens": 1154,
+        "ts": "2026-09-14 11:43:16"
+      },
+      {
+        "cachedTokens": 0,
+        "costUsd": 0.0004167,
+        "id": 16,
+        "identityId": "orchestrator",
+        "inputTokens": 642,
+        "model": "gemini-3.8-flash",
+        "outputTokens": 534,
+        "totalTokens": 1176,
+        "ts": "2026-09-14 11:43:17"
+      }
+    ],
+    "totals": {
+      "cachedTokens": 0,
+      "costUsd": 0.3710547,
+      "inputTokens": 96698,
+      "outputTokens": 25875,
+      "totalTokens": 122573
+    }
+  }
+}

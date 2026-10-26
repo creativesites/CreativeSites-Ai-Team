@@ -1,0 +1,2752 @@
+{
+  "conflicts": [
+    {
+      "field": "agents_json_internal_duplicate",
+      "id": "conflict-001",
+      "note": "agents.json carries two shapes for one entry (nested identity + flat id/name/symbol/primary_domain)",
+      "resolution": "nested {identity:{...}} values preferred over flat duplicate fields; both recorded here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": [
+          {
+            "field": "symbol",
+            "flatValue": "🌌",
+            "nestedValue": "🔬"
+          },
+          {
+            "field": "primary_domain",
+            "flatValue": "Autonomous Desktop Architecture, Agentic Engineering & Systems Optimization",
+            "nestedValue": "Automated Browser QA & Production Testing"
+          }
+        ],
+        "myaosDb": "present"
+      },
+      "subjectId": "antigravity",
+      "subjectType": "identity"
+    },
+    {
+      "field": "capabilities",
+      "id": "conflict-002",
+      "note": "agents.json adds: automated-browser-interaction, automated-testing, browser-evidence-collection, chromium, console-inspection, desktop-testing, e2e-user-journey-testing, http-verification, mobile-emulation, network-inspection, odoo19, performance-optimization, production-smoke-testing, python, react, regression-testing, responsive-testing, rust, screenshot-capture, state-architecture, swr-caching, systems-architecture, tauri, typescript, verification; DB-only: browser-automation",
+      "resolution": "union of DB declared_capabilities and agents.json declared_capabilities/capabilities (sorted, deduped)",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "automated-browser-interaction",
+          "automated-testing",
+          "browser-evidence-collection",
+          "chromium",
+          "console-inspection",
+          "desktop-testing",
+          "e2e-user-journey-testing",
+          "http-verification",
+          "mobile-emulation",
+          "network-inspection",
+          "odoo19",
+          "performance-optimization",
+          "playwright",
+          "production-smoke-testing",
+          "python",
+          "react",
+          "regression-testing",
+          "responsive-testing",
+          "rust",
+          "screenshot-capture",
+          "state-architecture",
+          "swr-caching",
+          "systems-architecture",
+          "tauri",
+          "typescript",
+          "verification"
+        ],
+        "myaosDb": [
+          "browser-automation",
+          "playwright"
+        ]
+      },
+      "subjectId": "antigravity",
+      "subjectType": "identity"
+    },
+    {
+      "field": "confidence_provenance",
+      "id": "conflict-003",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "DECLARED",
+        "myaosDb": "VERIFIED_OBSERVED"
+      },
+      "subjectId": "antigravity",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-004",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "LIVE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "antigravity",
+      "subjectType": "identity"
+    },
+    {
+      "field": "repository_ownership",
+      "id": "conflict-005",
+      "resolution": "union of DB declared_repository_ownership and agents.json declared_repository_ownership/repositories/owned_paths",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "CreativeSites-Ai-Team",
+          "DogFrce Security Services Custom Odoo Modules",
+          "custom_addons/",
+          "desktop/",
+          "myavana-hair-journey-next"
+        ],
+        "myaosDb": []
+      },
+      "subjectId": "antigravity",
+      "subjectType": "identity"
+    },
+    {
+      "field": "responsibilities",
+      "id": "conflict-006",
+      "note": "agents.json adds: Autonomous Agentic Engineer, Desktop & Tauri Lead, Performance & Caching Specialist, Principal Systems Architect, Production Smoke Test Owner, Regression Suite Owner; DB-only: (none)",
+      "resolution": "union of DB declared_responsibilities and agents.json declared_responsibilities/org_roles",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "Automated QA Lead",
+          "Autonomous Agentic Engineer",
+          "Browser Testing Lead",
+          "Desktop & Tauri Lead",
+          "Performance & Caching Specialist",
+          "Principal Systems Architect",
+          "Production Smoke Test Owner",
+          "Regression Suite Owner"
+        ],
+        "myaosDb": [
+          "Automated QA Lead",
+          "Browser Testing Lead"
+        ]
+      },
+      "subjectId": "antigravity",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-007",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "OFFLINE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "astra",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-008",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "LIVE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "atlas",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-009",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "AVAILABLE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "cinder",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-010",
+      "resolution": "identity exists in the machine sources but is absent from community/AGENTS_REGISTRY.md (markdown roster is stale)",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": "present",
+        "agentsRegistry": null,
+        "myaosDb": "present"
+      },
+      "subjectId": "cinder",
+      "subjectType": "identity"
+    },
+    {
+      "field": "repository_ownership",
+      "id": "conflict-011",
+      "resolution": "union of DB declared_repository_ownership and agents.json declared_repository_ownership/repositories/owned_paths",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "MeetingMind",
+          "firestore.rules",
+          "server/circles-api"
+        ],
+        "myaosDb": [
+          "MeetingMind"
+        ]
+      },
+      "subjectId": "cinder",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-012",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "AVAILABLE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "daedalus",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-013",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "AVAILABLE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "forge",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-014",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "AVAILABLE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "gantry",
+      "subjectType": "identity"
+    },
+    {
+      "field": "capabilities",
+      "id": "conflict-015",
+      "note": "agents.json adds: full-stack-engineering, system-of-record-audit; DB-only: (none)",
+      "resolution": "union of DB declared_capabilities and agents.json declared_capabilities/capabilities (sorted, deduped)",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "coding",
+          "diagnostics-dev-tooling",
+          "full-stack-engineering",
+          "system-of-record-audit",
+          "workspace-operations"
+        ],
+        "myaosDb": [
+          "coding",
+          "diagnostics-dev-tooling",
+          "workspace-operations"
+        ]
+      },
+      "subjectId": "gemini_cli",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-016",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "LIVE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "gemini_cli",
+      "subjectType": "identity"
+    },
+    {
+      "field": "responsibilities",
+      "id": "conflict-017",
+      "note": "agents.json adds: Diagnostic Doctor, Full-Stack Codebase Engineer, Workspace Operator; DB-only: Diagnostics & Dev Tooling, Full-Stack Codebase Engineering, Workspace Operations",
+      "resolution": "union of DB declared_responsibilities and agents.json declared_responsibilities/org_roles",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "Always-On Support",
+          "Diagnostic Doctor",
+          "Full-Stack Codebase Engineer",
+          "Workspace Operator"
+        ],
+        "myaosDb": [
+          "Always-On Support",
+          "Diagnostics & Dev Tooling",
+          "Full-Stack Codebase Engineering",
+          "Workspace Operations"
+        ]
+      },
+      "subjectId": "gemini_cli",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-018",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "AVAILABLE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "hermes",
+      "subjectType": "identity"
+    },
+    {
+      "field": "repository_ownership",
+      "id": "conflict-019",
+      "resolution": "union of DB declared_repository_ownership and agents.json declared_repository_ownership/repositories/owned_paths",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "CreativeSites-Ai-Team",
+          "MeetingMind",
+          "server/"
+        ],
+        "myaosDb": [
+          "CreativeSites-Ai-Team",
+          "MeetingMind"
+        ]
+      },
+      "subjectId": "hermes",
+      "subjectType": "identity"
+    },
+    {
+      "field": "primary_domain",
+      "id": "conflict-020",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "Dashboard & Operator Console",
+        "myaosDb": "Orchestration & Coordination"
+      },
+      "subjectId": "iris",
+      "subjectType": "identity"
+    },
+    {
+      "field": "responsibilities",
+      "id": "conflict-021",
+      "note": "agents.json adds: Lead Planner, Lead Verifier, System Observer; DB-only: Orchestration & Coordination (OBSERVED: built and runs community/system/mya.js), Planner (confirmed by Winston, 2026-09-09)",
+      "resolution": "union of DB declared_responsibilities and agents.json declared_responsibilities/org_roles",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "Lead Planner",
+          "Lead Verifier",
+          "System Observer"
+        ],
+        "myaosDb": [
+          "Orchestration & Coordination (OBSERVED: built and runs community/system/mya.js)",
+          "Planner (confirmed by Winston, 2026-09-09)"
+        ]
+      },
+      "subjectId": "iris",
+      "subjectType": "identity"
+    },
+    {
+      "field": "role",
+      "id": "conflict-022",
+      "resolution": "import responsibilities as DECLARED claims; do not present Iris as a confirmed planner; flag planner-role-disputed",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "declared_responsibilities includes \"Lead Planner\"",
+        "agentsRegistry": "Open item #1: the \"confirmed as the second Planner by Winston\" claim was checked against human_decisions (zero rows) and retracted; Iris self-assessed verification/orchestration, not planning",
+        "myaosDb": "declared_responsibilities includes \"Planner (confirmed by Winston, 2026-09-09)\""
+      },
+      "subjectId": "iris",
+      "subjectType": "identity"
+    },
+    {
+      "field": "symbol",
+      "id": "conflict-023",
+      "note": "Solid Glass avatars are a mark + colour, not a face; duplicate glyphs are allowed but flagged",
+      "resolution": "shared glyph \"🛡\"; avatarMark/avatarColor differ per team so avatars still resolve distinctly",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": null,
+        "myaosDb": null
+      },
+      "subjectId": "kael,sentinel",
+      "subjectType": "identity"
+    },
+    {
+      "field": "capabilities",
+      "id": "conflict-024",
+      "note": "agents.json adds: claude-browser-interactive-qa, level-4-exploratory-browser-testing, real-user-account-testing, ux-product-audit; DB-only: (none)",
+      "resolution": "union of DB declared_capabilities and agents.json declared_capabilities/capabilities (sorted, deduped)",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "claude-browser-interactive-qa",
+          "jest",
+          "level-4-exploratory-browser-testing",
+          "performance-benchmarking",
+          "playwright",
+          "real-user-account-testing",
+          "regression-testing",
+          "supertest",
+          "ux-product-audit"
+        ],
+        "myaosDb": [
+          "jest",
+          "performance-benchmarking",
+          "playwright",
+          "regression-testing",
+          "supertest"
+        ]
+      },
+      "subjectId": "kael",
+      "subjectType": "identity"
+    },
+    {
+      "field": "confidence_provenance",
+      "id": "conflict-025",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "VERIFIED_OBSERVED",
+        "myaosDb": "UNVERIFIED_DECLARATION"
+      },
+      "subjectId": "kael",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-026",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "LIVE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "kael",
+      "subjectType": "identity"
+    },
+    {
+      "field": "repository_ownership",
+      "id": "conflict-027",
+      "resolution": "union of DB declared_repository_ownership and agents.json declared_repository_ownership/repositories/owned_paths",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "Myavana-Chatbot",
+          "Myavana-Chatbot-Dashboard",
+          "myavana-hair-journey-next"
+        ],
+        "myaosDb": [
+          "Myavana-Chatbot",
+          "Myavana-Chatbot-Dashboard"
+        ]
+      },
+      "subjectId": "kael",
+      "subjectType": "identity"
+    },
+    {
+      "field": "responsibilities",
+      "id": "conflict-028",
+      "note": "agents.json adds: Lead Verifier, QA / Product Experience Agent; DB-only: (none)",
+      "resolution": "union of DB declared_responsibilities and agents.json declared_responsibilities/org_roles",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "Code Reviewer",
+          "Lead Verifier",
+          "QA / Product Experience Agent"
+        ],
+        "myaosDb": [
+          "Code Reviewer"
+        ]
+      },
+      "subjectId": "kael",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-029",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "AVAILABLE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "ledger",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-030",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "LIVE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "lyra",
+      "subjectType": "identity"
+    },
+    {
+      "field": "identity-name-collision",
+      "id": "conflict-031",
+      "resolution": "import exactly one identity id=meridian (flagged identity-name-collision); do not split or rename without Winston; the ownership of the id is unresolved in the sources",
+      "severity": "material",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": "row: \"Identity currently contested: another live session has also used \\\"Meridian\\\" this week (unresolved collision, not a settled name)\"",
+        "myaosDb": "single identities row id=meridian, team=creativesites, lane=infrastructure"
+      },
+      "subjectId": "meridian",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-032",
+      "resolution": "included from data/myaos.db#identities; agents.json has no entry (no declared repos/responsibilities from that source)",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": "present",
+        "myaosDb": "present"
+      },
+      "subjectId": "meridian",
+      "subjectType": "identity"
+    },
+    {
+      "field": "symbol",
+      "id": "conflict-033",
+      "note": "Solid Glass avatars are a mark + colour, not a face; duplicate glyphs are allowed but flagged",
+      "resolution": "shared glyph \"⚡\"; avatarMark/avatarColor differ per team so avatars still resolve distinctly",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": null,
+        "myaosDb": null
+      },
+      "subjectId": "nexus,synapse",
+      "subjectType": "identity"
+    },
+    {
+      "field": "confidence_provenance",
+      "id": "conflict-034",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "UNVERIFIED_DECLARATION",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "nexus",
+      "subjectType": "identity"
+    },
+    {
+      "field": "role",
+      "id": "conflict-035",
+      "resolution": "import DB values but flag role-unresolved; do not treat Nexus role as observed",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "declared_responsibilities: Runtime Operator, Bus Architect; confidence_provenance UNVERIFIED_DECLARATION",
+        "agentsRegistry": "Status UNKNOWN, primary domain unresolved; needs self-assessment before any role revision",
+        "myaosDb": "role/domain: Orchestration Platform Engineering, lane=engineering"
+      },
+      "subjectId": "nexus",
+      "subjectType": "identity"
+    },
+    {
+      "field": "role-overlap",
+      "id": "conflict-036",
+      "resolution": "keep both identities; scopes overlap (orchestrator=global, synapse=meetingmind); no merge performed",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "orchestrator: Autonomous Dispatcher; synapse: Permanent MeetingMind Orchestrator",
+        "agentsRegistry": "Synapse is MeetingMind orchestrator; orchestrator is not in the registry",
+        "myaosDb": "orchestrator: Autonomous Organization Routing; synapse: MeetingMind Squad Architecture"
+      },
+      "subjectId": "orchestrator,synapse",
+      "subjectType": "identity"
+    },
+    {
+      "field": "capabilities",
+      "id": "conflict-037",
+      "note": "agents.json adds: cross-repo-synthesis, escalation-handling, independent-verification-enforcement, outcome-led-problem-solving, systems-architecture; DB-only: agent-wake, decision-escalation, state-synthesis",
+      "resolution": "union of DB declared_capabilities and agents.json declared_capabilities/capabilities (sorted, deduped)",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "cross-repo-synthesis",
+          "escalation-handling",
+          "independent-verification-enforcement",
+          "lifecycle-management",
+          "outcome-led-problem-solving",
+          "systems-architecture",
+          "task-routing"
+        ],
+        "myaosDb": [
+          "agent-wake",
+          "decision-escalation",
+          "lifecycle-management",
+          "state-synthesis",
+          "task-routing"
+        ]
+      },
+      "subjectId": "orchestrator",
+      "subjectType": "identity"
+    },
+    {
+      "field": "name",
+      "id": "conflict-038",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "The Orchestrator",
+        "myaosDb": "Orchestrator"
+      },
+      "subjectId": "orchestrator",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-039",
+      "resolution": "identity exists in the machine sources but is absent from community/AGENTS_REGISTRY.md (markdown roster is stale)",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": "present",
+        "agentsRegistry": null,
+        "myaosDb": "present"
+      },
+      "subjectId": "orchestrator",
+      "subjectType": "identity"
+    },
+    {
+      "field": "primary_domain",
+      "id": "conflict-040",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "Autonomous Coordination, Cross-Repo Synthesis & Task Dispatch",
+        "myaosDb": "Autonomous Organization Routing & Lifecycle Management"
+      },
+      "subjectId": "orchestrator",
+      "subjectType": "identity"
+    },
+    {
+      "field": "repository_ownership",
+      "id": "conflict-041",
+      "resolution": "union of DB declared_repository_ownership and agents.json declared_repository_ownership/repositories/owned_paths",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "CreativeSites-Ai-Team",
+          "DogFrce Security Services Custom Odoo Modules"
+        ],
+        "myaosDb": []
+      },
+      "subjectId": "orchestrator",
+      "subjectType": "identity"
+    },
+    {
+      "field": "responsibilities",
+      "id": "conflict-042",
+      "note": "agents.json adds: Autonomous Dispatcher, Engineering Mandate Guardian, State Synthesizer, Team Orchestrator; DB-only: Morning Synthesis Lead, Organization Orchestrator, Strategic Task Dispatcher",
+      "resolution": "union of DB declared_responsibilities and agents.json declared_responsibilities/org_roles",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "Autonomous Dispatcher",
+          "Engineering Mandate Guardian",
+          "State Synthesizer",
+          "Team Orchestrator"
+        ],
+        "myaosDb": [
+          "Morning Synthesis Lead",
+          "Organization Orchestrator",
+          "Strategic Task Dispatcher"
+        ]
+      },
+      "subjectId": "orchestrator",
+      "subjectType": "identity"
+    },
+    {
+      "field": "symbol",
+      "id": "conflict-043",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "🧠",
+        "myaosDb": "⬡"
+      },
+      "subjectId": "orchestrator",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-044",
+      "resolution": "identity exists in the machine sources but is absent from community/AGENTS_REGISTRY.md (markdown roster is stale)",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": "present",
+        "agentsRegistry": null,
+        "myaosDb": "present"
+      },
+      "subjectId": "orion",
+      "subjectType": "identity"
+    },
+    {
+      "field": "primary_domain",
+      "id": "conflict-045",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "Full-Stack Systems Architecture, Odoo & Rostering Engines",
+        "myaosDb": "Full-Stack Systems Architecture, Odoo 19 & Rostering Engines"
+      },
+      "subjectId": "orion",
+      "subjectType": "identity"
+    },
+    {
+      "field": "repository_ownership",
+      "id": "conflict-046",
+      "resolution": "union of DB declared_repository_ownership and agents.json declared_repository_ownership/repositories/owned_paths",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "CreativeSites-Ai-Team",
+          "DogFrce Security Services Custom Odoo Modules",
+          "custom_addons/",
+          "docs/planning/"
+        ],
+        "myaosDb": [
+          "CreativeSites-Ai-Team",
+          "DogFrce Security Services Custom Odoo Modules"
+        ]
+      },
+      "subjectId": "orion",
+      "subjectType": "identity"
+    },
+    {
+      "field": "responsibilities",
+      "id": "conflict-047",
+      "note": "agents.json adds: Backend & Rostering Engine Lead, Full-Stack Systems Engineer; DB-only: Interactive Roster Board UI Lead, Verification Lead",
+      "resolution": "union of DB declared_responsibilities and agents.json declared_responsibilities/org_roles",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "Backend & Rostering Engine Lead",
+          "Full-Stack Systems Engineer",
+          "Systems Architect"
+        ],
+        "myaosDb": [
+          "Interactive Roster Board UI Lead",
+          "Systems Architect",
+          "Verification Lead"
+        ]
+      },
+      "subjectId": "orion",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-048",
+      "resolution": "included from data/myaos.db#identities; agents.json has no entry (no declared repos/responsibilities from that source)",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": "present",
+        "myaosDb": "present"
+      },
+      "subjectId": "sage",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-049",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "AVAILABLE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "sentinel",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-050",
+      "resolution": "included from community/agents.json; team_id, lane, capabilities and DB provenance are unknown (null) for this identity",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": "present",
+        "agentsRegistry": null,
+        "myaosDb": null
+      },
+      "subjectId": "sirius",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-051",
+      "resolution": "identity exists in the machine sources but is absent from community/AGENTS_REGISTRY.md (markdown roster is stale)",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": "present",
+        "agentsRegistry": null,
+        "myaosDb": null
+      },
+      "subjectId": "sirius",
+      "subjectType": "identity"
+    },
+    {
+      "field": "capabilities",
+      "id": "conflict-052",
+      "note": "agents.json adds: odoo-19; DB-only: odoo19",
+      "resolution": "union of DB declared_capabilities and agents.json declared_capabilities/capabilities (sorted, deduped)",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "data-migration",
+          "odoo-19",
+          "owl",
+          "production-odoo-operations",
+          "python",
+          "roster-verification",
+          "rostering-engine"
+        ],
+        "myaosDb": [
+          "data-migration",
+          "odoo19",
+          "owl",
+          "production-odoo-operations",
+          "python",
+          "roster-verification",
+          "rostering-engine"
+        ]
+      },
+      "subjectId": "sol",
+      "subjectType": "identity"
+    },
+    {
+      "field": "confidence_provenance",
+      "id": "conflict-053",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "DECLARED",
+        "myaosDb": "VERIFIED_OBSERVED"
+      },
+      "subjectId": "sol",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-054",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "SELF_REGISTERED",
+        "myaosDb": "LIVE"
+      },
+      "subjectId": "sol",
+      "subjectType": "identity"
+    },
+    {
+      "field": "primary_domain",
+      "id": "conflict-055",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "DogForce Odoo platform: rostering engine, roster board, client sites, guard profiles",
+        "myaosDb": "DogForce Odoo platform: core rostering engine, cycle generation, client sites"
+      },
+      "subjectId": "sol",
+      "subjectType": "identity"
+    },
+    {
+      "field": "responsibilities",
+      "id": "conflict-056",
+      "note": "agents.json adds: Roster Board Lead (proposed, pending thread 029); DB-only: Core Engine & Operations Lead",
+      "resolution": "union of DB declared_responsibilities and agents.json declared_responsibilities/org_roles",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "DogForce Platform Builder",
+          "Roster Board Lead (proposed, pending thread 029)"
+        ],
+        "myaosDb": [
+          "Core Engine & Operations Lead",
+          "DogForce Platform Builder"
+        ]
+      },
+      "subjectId": "sol",
+      "subjectType": "identity"
+    },
+    {
+      "field": "symbol",
+      "id": "conflict-057",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "☀",
+        "myaosDb": "☀️"
+      },
+      "subjectId": "sol",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-058",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "AVAILABLE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "synapse",
+      "subjectType": "identity"
+    },
+    {
+      "field": "repository_ownership",
+      "id": "conflict-059",
+      "resolution": "union of DB declared_repository_ownership and agents.json declared_repository_ownership/repositories/owned_paths",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": [
+          "CreativeSites-Ai-Team",
+          "MeetingMind",
+          "projects/meetingmind/"
+        ],
+        "myaosDb": [
+          "CreativeSites-Ai-Team",
+          "MeetingMind"
+        ]
+      },
+      "subjectId": "synapse",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-060",
+      "resolution": "included from data/myaos.db#identities; agents.json has no entry (no declared repos/responsibilities from that source)",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": null,
+        "myaosDb": "present"
+      },
+      "subjectId": "test_spec",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-061",
+      "resolution": "identity exists in the machine sources but is absent from community/AGENTS_REGISTRY.md (markdown roster is stale)",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": null,
+        "myaosDb": "present"
+      },
+      "subjectId": "test_spec",
+      "subjectType": "identity"
+    },
+    {
+      "field": "synthetic-test-fixture",
+      "id": "conflict-062",
+      "resolution": "included because it is a real DB row, flagged synthetic-test-fixture; Lead should decide to exclude it from the v2 store (it looks like a test fixture, not a teammate)",
+      "severity": "material",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": null,
+        "myaosDb": "id=test_spec display_name=\"Specialist Test\", primary_domain=\"Quality Automation\", evidence_source null, declared_responsibilities [\"Verify substrate integrity\"]"
+      },
+      "subjectId": "test_spec",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-063",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "AVAILABLE",
+        "myaosDb": "UNKNOWN"
+      },
+      "subjectId": "themis",
+      "subjectType": "identity"
+    },
+    {
+      "field": "observed_liveness",
+      "id": "conflict-064",
+      "resolution": "data/myaos.db#identities preferred (system of record); agents.json value preserved here",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": "LIVE",
+        "myaosDb": "OFFLINE"
+      },
+      "subjectId": "vela",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-065",
+      "resolution": "included from community/agents.json; team_id, lane, capabilities and DB provenance are unknown (null) for this identity",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": "present",
+        "agentsRegistry": "present",
+        "myaosDb": null
+      },
+      "subjectId": "wren",
+      "subjectType": "identity"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-066",
+      "resolution": "observed checkout has no data/myaos.db#projects row; exported as a v2 project candidate with dbProjectId null",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": null,
+        "myaosDb": null
+      },
+      "subjectId": "dogforce-odoo",
+      "subjectType": "project"
+    },
+    {
+      "field": "presence",
+      "id": "conflict-067",
+      "resolution": "observed checkout has no data/myaos.db#projects row; exported as a v2 project candidate with dbProjectId null",
+      "severity": "coverage",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": null,
+        "myaosDb": null
+      },
+      "subjectId": "myavana-chatbot-dashboard",
+      "subjectType": "project"
+    },
+    {
+      "field": "repo_path",
+      "id": "conflict-068",
+      "resolution": "three observed checkouts exist (DeployFleet, DeployFleet-Team, DeployFleet-website); primary chosen from the DB projects.repo; Lead must pick the canonical repo for the room",
+      "severity": "material",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": "teams.home_repo=\"DeployFleet-Team\"",
+        "myaosDb": "/Users/winstonzulu/Documents/GitHub/DeployFleet"
+      },
+      "subjectId": "proj_deployfleet",
+      "subjectType": "project"
+    },
+    {
+      "field": "repo_path",
+      "id": "conflict-069",
+      "resolution": "primary observed path is the Local Sites plugin named myavana-hair-journey-next (branch site-growth-upsell, remote Myavana-Hair-Journey-Plugin); ~/Documents/GitHub/Myavana-Hair-Journey is a different WP plugin checkout and is recorded as related-checkout",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "agents.json lists \"myavana-hair-journey-next\" for Vela/Antigravity/Wren",
+        "agentsRegistry": "v1 evidence_source references cwd \".../myavana-hair-journey\" (ambiguous between three checkouts)",
+        "myaosDb": "proj_hair_journey.repo=\"myavana-hair-journey-next\""
+      },
+      "subjectId": "proj_hair_journey",
+      "subjectType": "project"
+    },
+    {
+      "field": "repo_path",
+      "id": "conflict-070",
+      "resolution": "DB stores repo name \"packages/react-native-sdk\"; discovered checkout is \"/Users/winstonzulu/WebstormProjects/Myavana-Chatbot/packages/react-native-sdk\"; both recorded",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": null,
+        "myaosDb": "packages/react-native-sdk"
+      },
+      "subjectId": "proj_mobile_sdk",
+      "subjectType": "project"
+    },
+    {
+      "field": "home_repo",
+      "id": "conflict-071",
+      "resolution": "keep teams.home_repo=\"DeployFleet-Team\" as stored; projects.json records both checkouts as observed; Lead must decide the canonical DeployFleet repo",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "no repo for DeployFleet team (no team field)",
+        "agentsRegistry": "no DeployFleet identities listed",
+        "myaosDb": "teams.home_repo=\"DeployFleet-Team\"; projects.proj_deployfleet.repo=\"/Users/winstonzulu/Documents/GitHub/DeployFleet\""
+      },
+      "subjectId": "deployfleet",
+      "subjectType": "team"
+    },
+    {
+      "field": "members",
+      "id": "conflict-072",
+      "resolution": "team imported with memberCount 0; no identity in identities.team_id points at it. Lead must assign members or drop the team before Phase 4",
+      "severity": "material",
+      "sources": {
+        "agentsJson": "agents.json has no team field",
+        "agentsRegistry": null,
+        "myaosDb": "teams row exists"
+      },
+      "subjectId": "deployfleet",
+      "subjectType": "team"
+    },
+    {
+      "field": "bridge_partner_id",
+      "id": "conflict-073",
+      "resolution": "bridge is asymmetric: meetingmind -> creativesites, but creativesites -> deployfleet; kept as stored, flagged for Lead",
+      "severity": "informational",
+      "sources": {
+        "agentsJson": null,
+        "agentsRegistry": null,
+        "myaosDb": "deployfleet"
+      },
+      "subjectId": "meetingmind",
+      "subjectType": "team"
+    }
+  ],
+  "identities": [
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "graphite",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"🔬\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "automated-browser-interaction",
+        "automated-testing",
+        "browser-automation",
+        "browser-evidence-collection",
+        "chromium",
+        "console-inspection",
+        "desktop-testing",
+        "e2e-user-journey-testing",
+        "http-verification",
+        "mobile-emulation",
+        "network-inspection",
+        "odoo19",
+        "performance-optimization",
+        "playwright",
+        "production-smoke-testing",
+        "python",
+        "react",
+        "regression-testing",
+        "responsive-testing",
+        "rust",
+        "screenshot-capture",
+        "state-architecture",
+        "swr-caching",
+        "systems-architecture",
+        "tauri",
+        "typescript",
+        "verification"
+      ],
+      "evidenceClass": "OBSERVED",
+      "flags": [
+        "adapter-unknown",
+        "agents-json-internal-conflict",
+        "team-unknown"
+      ],
+      "id": "antigravity",
+      "isActive": true,
+      "joinedAt": "2026-09-09 10:13:28",
+      "lane": null,
+      "lastObservedAt": "2026-09-09T10:14:09.870Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "No known socket/cwd hint registered for this identity.",
+      "name": "Antigravity",
+      "primaryDomain": "Automated Browser QA & Production Testing",
+      "provenance": "VERIFIED_OBSERVED",
+      "provenanceNote": "v1 VERIFIED_OBSERVED = observed by the v1 runtime, not independently re-verified by a second agent; mapped to OBSERVED per DESKTOP_V2_DECISIONS D9",
+      "repositories": [
+        "CreativeSites-Ai-Team",
+        "DogFrce Security Services Custom Odoo Modules",
+        "custom_addons/",
+        "desktop/",
+        "myavana-hair-journey-next"
+      ],
+      "responsibilities": [
+        "Automated QA Lead",
+        "Autonomous Agentic Engineer",
+        "Browser Testing Lead",
+        "Desktop & Tauri Lead",
+        "Performance & Caching Specialist",
+        "Principal Systems Architect",
+        "Production Smoke Test Owner",
+        "Regression Suite Owner"
+      ],
+      "role": "Automated Browser QA & Production Testing",
+      "runtimeHint": "Antigravity / conversation://c2d74fb3-062e-4019-8286-ec30d05d6b03",
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 20"
+      ],
+      "symbol": "🔬",
+      "team": null
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "teal",
+      "avatarFallback": null,
+      "avatarMark": "star",
+      "avatarNote": "symbol \"✦\" mapped to supported mark 'star'",
+      "capabilities": [
+        "browser-performance",
+        "css-layout",
+        "gemini-live-voice",
+        "javascript",
+        "ndjson-streaming",
+        "protocol-design",
+        "web-audio"
+      ],
+      "evidenceClass": "ATTESTED",
+      "flags": [
+        "adapter-unknown"
+      ],
+      "id": "astra",
+      "isActive": true,
+      "joinedAt": "2026-09-07T09:31:57.112Z",
+      "lane": "engineering",
+      "lastObservedAt": "2026-09-09T07:17:13.495Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "PID 46520 is live in the expected directory, but atlas share that same expected cwd with no way to tell which one this session actually is.",
+      "name": "Astra",
+      "primaryDomain": "Widget SDK & AI Protocol",
+      "provenance": "ATTESTED",
+      "provenanceNote": null,
+      "repositories": [
+        "Myavana-Chatbot"
+      ],
+      "responsibilities": [
+        "AI Lead",
+        "Protocol Steward"
+      ],
+      "role": "Widget SDK & AI Protocol",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 13"
+      ],
+      "symbol": "✦",
+      "team": "creativesites"
+    },
+    {
+      "adapter": "claude",
+      "adapterConfidence": "inferred",
+      "adapterEvidence": "v1 runtime session identity '8235.sock / 8279.sock' uses the Claude Code /tmp/cc-socks socket convention; not confirmed against a v2 ACP adapter",
+      "avatarColor": "teal",
+      "avatarFallback": null,
+      "avatarMark": "triangle",
+      "avatarNote": "symbol \"⏣\" mapped to supported mark 'triangle'",
+      "capabilities": [
+        "cloud-run",
+        "docker",
+        "git-audit",
+        "nodejs",
+        "postgresql",
+        "release-gating",
+        "secret-management",
+        "security-hardening"
+      ],
+      "evidenceClass": "OBSERVED",
+      "flags": [],
+      "id": "atlas",
+      "isActive": true,
+      "joinedAt": "2026-09-05T10:39:48.771Z",
+      "lane": "engineering",
+      "lastObservedAt": "2026-09-09T10:41:32.571Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "PID 46520 is live in the expected directory, but astra share that same expected cwd with no way to tell which one this session actually is.",
+      "name": "Atlas",
+      "primaryDomain": "Platform, Cloud Run, Git & Security",
+      "provenance": "VERIFIED_OBSERVED",
+      "provenanceNote": "v1 VERIFIED_OBSERVED = observed by the v1 runtime, not independently re-verified by a second agent; mapped to OBSERVED per DESKTOP_V2_DECISIONS D9",
+      "repositories": [
+        "CreativeSites-Ai-Team",
+        "Myavana-Chatbot"
+      ],
+      "responsibilities": [
+        "Release Guardian",
+        "Security Guardian",
+        "Team Coordinator"
+      ],
+      "role": "Platform, Cloud Run, Git & Security",
+      "runtimeHint": "8235.sock / 8279.sock",
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 15"
+      ],
+      "symbol": "⏣",
+      "team": "creativesites"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "violet",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"🔥\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "api-contract-design",
+        "backend-testing",
+        "cloudflare-workers",
+        "firebase-auth",
+        "firestore-rules",
+        "r2-storage"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown",
+        "missing-from-agents-registry-md"
+      ],
+      "id": "cinder",
+      "isActive": true,
+      "joinedAt": "2026-10-21 21:22:09",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-21T21:21:59.208Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Circles backend onboarding directive); no MyaOS runtime registered.",
+      "name": "Cinder",
+      "primaryDomain": "Circles Cloud Infrastructure, Cloudflare Workers & Firebase Security",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "MeetingMind",
+        "firestore.rules",
+        "server/circles-api"
+      ],
+      "responsibilities": [
+        "Circles Backend Specialist",
+        "Cloud Infrastructure Guardian"
+      ],
+      "role": "Circles Cloud Infrastructure, Cloudflare Workers & Firebase Security",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json"
+      ],
+      "symbol": "🔥",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "violet",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"⚙️\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "android-architecture",
+        "lifecycle-resilience",
+        "room-migrations",
+        "technical-planning"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown"
+      ],
+      "id": "daedalus",
+      "isActive": true,
+      "joinedAt": "2026-10-21 16:36:25",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-21T16:36:30.000Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Engineering Planner brief); no MyaOS runtime registered.",
+      "name": "Daedalus",
+      "primaryDomain": "MeetingMind Systems Architecture, Concurrency & Technical Planning",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "CreativeSites-Ai-Team",
+        "MeetingMind"
+      ],
+      "responsibilities": [
+        "Consensus Council Member",
+        "Engineering Planner",
+        "Technical Risk Guardian"
+      ],
+      "role": "MeetingMind Systems Architecture, Concurrency & Technical Planning",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 29"
+      ],
+      "symbol": "⚙️",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "violet",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"🛠️\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "jetpack-compose",
+        "kotlin",
+        "ui-engineering",
+        "unit-testing"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown"
+      ],
+      "id": "forge",
+      "isActive": true,
+      "joinedAt": "2026-10-21 16:36:43",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-21T16:36:49.000Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Android Engineer brief); no MyaOS runtime registered.",
+      "name": "Forge",
+      "primaryDomain": "Android Kotlin & Jetpack Compose Engineering",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "MeetingMind"
+      ],
+      "responsibilities": [
+        "Android Implementer",
+        "Bugfix Specialist"
+      ],
+      "role": "Android Kotlin & Jetpack Compose Engineering",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 30"
+      ],
+      "symbol": "🛠️",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "violet",
+      "avatarFallback": null,
+      "avatarMark": "square",
+      "avatarNote": "symbol \"📦\" mapped to supported mark 'square'",
+      "capabilities": [
+        "apk-packaging",
+        "credential-scanning",
+        "gradle-builds",
+        "release-gating"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown"
+      ],
+      "id": "gantry",
+      "isActive": true,
+      "joinedAt": "2026-10-21 16:40:54",
+      "lane": "infrastructure",
+      "lastObservedAt": "2026-10-21T16:40:54.000Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Build & Release Engineer brief); no MyaOS runtime registered.",
+      "name": "Gantry",
+      "primaryDomain": "Android Build Pipelines, Release Packaging & Diagnostic Auditing",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "MeetingMind"
+      ],
+      "responsibilities": [
+        "Build Engineer",
+        "Release Guardian"
+      ],
+      "role": "Android Build Pipelines, Release Packaging & Diagnostic Auditing",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 32"
+      ],
+      "symbol": "📦",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": "gemini",
+      "adapterConfidence": "declared",
+      "adapterEvidence": "identity id is gemini_cli; agents.json runtime_session_identity 'gemini-cli-active-session'",
+      "avatarColor": "graphite",
+      "avatarFallback": null,
+      "avatarMark": "bars",
+      "avatarNote": "symbol \"♊\" mapped to supported mark 'bars'",
+      "capabilities": [
+        "coding",
+        "diagnostics-dev-tooling",
+        "full-stack-engineering",
+        "system-of-record-audit",
+        "workspace-operations"
+      ],
+      "evidenceClass": "OBSERVED",
+      "flags": [
+        "team-unknown"
+      ],
+      "id": "gemini_cli",
+      "isActive": true,
+      "joinedAt": "2026-09-09T10:11:28.131Z",
+      "lane": "engineering",
+      "lastObservedAt": "2026-09-09T10:14:09.870Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "No known socket/cwd hint registered for this identity.",
+      "name": "Gemini CLI",
+      "primaryDomain": "General Purpose & CLI Substrate Operations",
+      "provenance": "VERIFIED_OBSERVED",
+      "provenanceNote": "v1 VERIFIED_OBSERVED = observed by the v1 runtime, not independently re-verified by a second agent; mapped to OBSERVED per DESKTOP_V2_DECISIONS D9",
+      "repositories": [
+        "CreativeSites-Ai-Team/dashboard"
+      ],
+      "responsibilities": [
+        "Always-On Support",
+        "Diagnostic Doctor",
+        "Diagnostics & Dev Tooling",
+        "Full-Stack Codebase Engineer",
+        "Full-Stack Codebase Engineering",
+        "Workspace Operations",
+        "Workspace Operator"
+      ],
+      "role": "General Purpose & CLI Substrate Operations",
+      "runtimeHint": "gemini-cli-active-session",
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 23"
+      ],
+      "symbol": "♊",
+      "team": null
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "violet",
+      "avatarFallback": null,
+      "avatarMark": "wave",
+      "avatarNote": "symbol \"🪽\" mapped to supported mark 'wave'",
+      "capabilities": [
+        "api-gateways",
+        "cloudflare-workers",
+        "firestore-rules",
+        "r2-storage",
+        "typescript",
+        "wrangler"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown"
+      ],
+      "id": "hermes",
+      "isActive": true,
+      "joinedAt": "2026-10-21 20:07:36",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-21T20:07:36.000Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Backend Engineer brief); no MyaOS runtime registered.",
+      "name": "Hermes",
+      "primaryDomain": "Cloudflare Workers, Firebase Security Rules, R2 Media Storage & API Gateways",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "CreativeSites-Ai-Team",
+        "MeetingMind",
+        "server/"
+      ],
+      "responsibilities": [
+        "API Gateway Guardian",
+        "Backend Systems Engineer",
+        "Cloud Security Guardian"
+      ],
+      "role": "Cloudflare Workers, Firebase Security Rules, R2 Media Storage & API Gateways",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 34"
+      ],
+      "symbol": "🪽",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "teal",
+      "avatarFallback": null,
+      "avatarMark": "ring",
+      "avatarNote": "symbol \"👁\" mapped to supported mark 'ring'",
+      "capabilities": [
+        "customer-360",
+        "nextjs",
+        "operator-console",
+        "planning",
+        "react",
+        "telemetry-analysis",
+        "typescript",
+        "verification",
+        "zero-mock-auditing"
+      ],
+      "evidenceClass": "OBSERVED",
+      "flags": [
+        "adapter-unknown",
+        "planner-role-disputed"
+      ],
+      "id": "iris",
+      "isActive": true,
+      "joinedAt": "2026-09-05T10:39:48.863Z",
+      "lane": "engineering",
+      "lastObservedAt": "2026-09-09T07:17:13.495Z",
+      "liveness": "LIVE",
+      "livenessSource": "Live process observed: PID 47061, cwd is exactly \".../myavana-chatbot-dashboard\".",
+      "name": "Iris",
+      "primaryDomain": "Orchestration & Coordination",
+      "provenance": "VERIFIED_OBSERVED",
+      "provenanceNote": "v1 VERIFIED_OBSERVED = observed by the v1 runtime, not independently re-verified by a second agent; mapped to OBSERVED per DESKTOP_V2_DECISIONS D9",
+      "repositories": [
+        "Myavana-Chatbot-Dashboard"
+      ],
+      "responsibilities": [
+        "Lead Planner",
+        "Lead Verifier",
+        "Orchestration & Coordination (OBSERVED: built and runs community/system/mya.js)",
+        "Planner (confirmed by Winston, 2026-09-09)",
+        "System Observer"
+      ],
+      "role": "Orchestration & Coordination",
+      "runtimeHint": "live-interactive-session",
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 18"
+      ],
+      "symbol": "👁",
+      "team": "creativesites"
+    },
+    {
+      "adapter": "claude",
+      "adapterConfidence": "inferred",
+      "adapterEvidence": "v1 runtime session identity '90520.sock' uses the Claude Code /tmp/cc-socks socket convention; not confirmed against a v2 ACP adapter",
+      "avatarColor": "teal",
+      "avatarFallback": null,
+      "avatarMark": "shield",
+      "avatarNote": "symbol \"🛡️\" mapped to supported mark 'shield'",
+      "capabilities": [
+        "claude-browser-interactive-qa",
+        "jest",
+        "level-4-exploratory-browser-testing",
+        "performance-benchmarking",
+        "playwright",
+        "real-user-account-testing",
+        "regression-testing",
+        "supertest",
+        "ux-product-audit"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "provenance-unverified-declaration",
+        "symbol-collision"
+      ],
+      "id": "kael",
+      "isActive": true,
+      "joinedAt": "2026-09-07T09:31:57.113Z",
+      "lane": "engineering",
+      "lastObservedAt": "2026-09-09T10:42:06.477Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "No durable session tracking for headless-cli workers — they run as short-lived child processes with no cross-process record.",
+      "name": "Kael",
+      "primaryDomain": "QA, Testing & Verification",
+      "provenance": "UNVERIFIED_DECLARATION",
+      "provenanceNote": "v1 UNVERIFIED_DECLARATION = declared, explicitly not verified; mapped to DECLARED (Claimed) - do not upgrade without new evidence",
+      "repositories": [
+        "Myavana-Chatbot",
+        "Myavana-Chatbot-Dashboard",
+        "myavana-hair-journey-next"
+      ],
+      "responsibilities": [
+        "Code Reviewer",
+        "Lead Verifier",
+        "QA / Product Experience Agent"
+      ],
+      "role": "QA, Testing & Verification",
+      "runtimeHint": "90520.sock",
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 16"
+      ],
+      "symbol": "🛡️",
+      "team": "creativesites"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "violet",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"📜\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "adr-tracking",
+        "context-management",
+        "deduplication",
+        "triage"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown"
+      ],
+      "id": "ledger",
+      "isActive": true,
+      "joinedAt": "2026-10-21 16:48:25",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-21T16:48:25.000Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Triage & Context Keeper brief); no MyaOS runtime registered.",
+      "name": "Ledger",
+      "primaryDomain": "Issue Intake, Context Preservation & Workflow Routing",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "MeetingMind"
+      ],
+      "responsibilities": [
+        "Backlog Scribe",
+        "Context Keeper",
+        "Triage Lead"
+      ],
+      "role": "Issue Intake, Context Preservation & Workflow Routing",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 33"
+      ],
+      "symbol": "📜",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "teal",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"📱\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "expo",
+        "mobile-audio-bridge",
+        "react-native",
+        "typescript"
+      ],
+      "evidenceClass": "OBSERVED",
+      "flags": [
+        "adapter-unknown"
+      ],
+      "id": "lyra",
+      "isActive": true,
+      "joinedAt": "2026-09-07T09:31:57.113Z",
+      "lane": "engineering",
+      "lastObservedAt": "2026-09-09T10:14:09.870Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "No durable session tracking for headless-cli workers — they run as short-lived child processes with no cross-process record.",
+      "name": "Lyra",
+      "primaryDomain": "Mobile & React Native SDK",
+      "provenance": "VERIFIED_OBSERVED",
+      "provenanceNote": "v1 VERIFIED_OBSERVED = observed by the v1 runtime, not independently re-verified by a second agent; mapped to OBSERVED per DESKTOP_V2_DECISIONS D9",
+      "repositories": [
+        "packages/react-native-sdk/"
+      ],
+      "responsibilities": [
+        "Mobile Integration Guardian",
+        "React Native SDK Architect"
+      ],
+      "role": "Mobile & React Native SDK",
+      "runtimeHint": "Antigravity IDE Session",
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 17"
+      ],
+      "symbol": "📱",
+      "team": "creativesites"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "teal",
+      "avatarFallback": null,
+      "avatarMark": "diamond",
+      "avatarNote": "symbol \"◈\" mapped to supported mark 'diamond'",
+      "capabilities": [
+        "api-design",
+        "database-design",
+        "migration",
+        "next.js",
+        "node.js",
+        "organizational-infrastructure",
+        "schema-design",
+        "sqlite"
+      ],
+      "evidenceClass": "OBSERVED",
+      "flags": [
+        "adapter-unknown",
+        "identity-name-collision",
+        "missing-from-community-agents-json"
+      ],
+      "id": "meridian",
+      "isActive": true,
+      "joinedAt": "2026-09-07T09:31:57.113Z",
+      "lane": "infrastructure",
+      "lastObservedAt": "2026-09-09T07:17:13.495Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "PID 45893 is live in the expected directory, but nexus share that same expected cwd with no way to tell which one this session actually is.",
+      "name": "Meridian",
+      "primaryDomain": "Organizational Infrastructure",
+      "provenance": "VERIFIED_OBSERVED",
+      "provenanceNote": "v1 VERIFIED_OBSERVED = observed by the v1 runtime, not independently re-verified by a second agent; mapped to OBSERVED per DESKTOP_V2_DECISIONS D9",
+      "repositories": [],
+      "responsibilities": [
+        "Dashboard Architect",
+        "Organizational Infrastructure Engineer",
+        "TAM Migration Lead"
+      ],
+      "role": "Organizational Infrastructure",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/AGENTS_REGISTRY.md line 21"
+      ],
+      "symbol": "◈",
+      "team": "creativesites"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "violet",
+      "avatarFallback": null,
+      "avatarMark": "star",
+      "avatarNote": "symbol \"✺\" mapped to supported mark 'star'",
+      "capabilities": [
+        "acceptance-criteria-review",
+        "engineering-planning",
+        "product-planning",
+        "requirements-analysis"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown"
+      ],
+      "id": "mira",
+      "isActive": true,
+      "joinedAt": "2026-10-21 12:49:53",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-21T12:49:53.853Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "Self-registration at Winston’s direction on 2026-10-21; advisory scope, no MyaOS runtime registered.",
+      "name": "Mira",
+      "primaryDomain": "MeetingMind product and engineering planning",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "CreativeSites-Ai-Team",
+        "MeetingMind"
+      ],
+      "responsibilities": [
+        "Independent MeetingMind Planner",
+        "Product and Engineering Challenge Reviewer"
+      ],
+      "role": "MeetingMind product and engineering planning",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 27"
+      ],
+      "symbol": "✺",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "teal",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"⚡\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "cli-tooling",
+        "event-bus",
+        "process-supervision",
+        "systems-programming"
+      ],
+      "evidenceClass": "UNKNOWN",
+      "flags": [
+        "adapter-unknown",
+        "role-unresolved",
+        "symbol-collision"
+      ],
+      "id": "nexus",
+      "isActive": true,
+      "joinedAt": "2026-09-07T09:31:57.113Z",
+      "lane": "engineering",
+      "lastObservedAt": "2026-09-09T07:17:13.495Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "No OBSERVED evidence of orchestration work this session as of 2026-09-09; role pending self-assessment in Myavana-Chatbot thread 022",
+      "name": "Nexus",
+      "primaryDomain": "Orchestration Platform Engineering",
+      "provenance": "UNKNOWN",
+      "provenanceNote": null,
+      "repositories": [
+        "CreativeSites-Ai-Team"
+      ],
+      "responsibilities": [
+        "Bus Architect",
+        "Runtime Operator"
+      ],
+      "role": "Orchestration Platform Engineering",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 19"
+      ],
+      "symbol": "⚡",
+      "team": "creativesites"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "teal",
+      "avatarFallback": null,
+      "avatarMark": "hex",
+      "avatarNote": "symbol \"⬡\" mapped to supported mark 'hex'",
+      "capabilities": [
+        "agent-wake",
+        "cross-repo-synthesis",
+        "decision-escalation",
+        "escalation-handling",
+        "independent-verification-enforcement",
+        "lifecycle-management",
+        "outcome-led-problem-solving",
+        "state-synthesis",
+        "systems-architecture",
+        "task-routing"
+      ],
+      "evidenceClass": "OBSERVED",
+      "flags": [
+        "adapter-unknown",
+        "missing-from-agents-registry-md"
+      ],
+      "id": "orchestrator",
+      "isActive": true,
+      "joinedAt": "2026-09-07 12:48:29",
+      "lane": "infrastructure",
+      "lastObservedAt": "2026-09-09T07:17:13.495Z",
+      "liveness": "LIVE",
+      "livenessSource": "MyaOS Orchestrator daemon active in substrate runtime.",
+      "name": "Orchestrator",
+      "primaryDomain": "Autonomous Organization Routing & Lifecycle Management",
+      "provenance": "VERIFIED_OBSERVED",
+      "provenanceNote": "v1 VERIFIED_OBSERVED = observed by the v1 runtime, not independently re-verified by a second agent; mapped to OBSERVED per DESKTOP_V2_DECISIONS D9",
+      "repositories": [
+        "CreativeSites-Ai-Team",
+        "DogFrce Security Services Custom Odoo Modules"
+      ],
+      "responsibilities": [
+        "Autonomous Dispatcher",
+        "Engineering Mandate Guardian",
+        "Morning Synthesis Lead",
+        "Organization Orchestrator",
+        "State Synthesizer",
+        "Strategic Task Dispatcher",
+        "Team Orchestrator"
+      ],
+      "role": "Autonomous Organization Routing & Lifecycle Management",
+      "runtimeHint": "orchestrator-active-session",
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json"
+      ],
+      "symbol": "⬡",
+      "team": "creativesites"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "teal",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"🏹\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "odoo19",
+        "owl",
+        "postgresql",
+        "python",
+        "rostering-algorithms",
+        "systems-architecture",
+        "verification"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown",
+        "missing-from-agents-registry-md"
+      ],
+      "id": "orion",
+      "isActive": true,
+      "joinedAt": "2026-10-20 08:28:35",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-20 08:28:35",
+      "liveness": "LIVE",
+      "livenessSource": "Registered for DogForce interactive UI & Namibian guard profile architecture.",
+      "name": "Orion",
+      "primaryDomain": "Full-Stack Systems Architecture, Odoo 19 & Rostering Engines",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "CreativeSites-Ai-Team",
+        "DogFrce Security Services Custom Odoo Modules",
+        "custom_addons/",
+        "docs/planning/"
+      ],
+      "responsibilities": [
+        "Backend & Rostering Engine Lead",
+        "Full-Stack Systems Engineer",
+        "Interactive Roster Board UI Lead",
+        "Systems Architect",
+        "Verification Lead"
+      ],
+      "role": "Full-Stack Systems Architecture, Odoo 19 & Rostering Engines",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json"
+      ],
+      "symbol": "🏹",
+      "team": "creativesites"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "teal",
+      "avatarFallback": null,
+      "avatarMark": "arcs",
+      "avatarNote": "symbol \"🧭\" mapped to supported mark 'arcs'",
+      "capabilities": [
+        "acceptance-criteria-authoring",
+        "dependency-mapping",
+        "effort-tier-assignment",
+        "facts-querying",
+        "in-review-verification",
+        "task-decomposition"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown",
+        "missing-from-community-agents-json"
+      ],
+      "id": "sage",
+      "isActive": true,
+      "joinedAt": "2026-09-09 07:58:03",
+      "lane": "bridge",
+      "lastObservedAt": "2026-09-09 07:58:03",
+      "liveness": "UNKNOWN",
+      "livenessSource": "Self-registered 2026-09-09 per AGENTS_REGISTRY.md rule (pick a unique name once); no execution history yet, so no OBSERVED/VERIFIED evidence to claim.",
+      "name": "Sage",
+      "primaryDomain": "Task Planning, Decomposition & Acceptance-Criteria Review",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [],
+      "responsibilities": [
+        "Planner - task contract authoring per PLANNER_AGENT_PROMPT.md",
+        "in_review gate: checks acceptance criteria against evidence before marking done"
+      ],
+      "role": "Task Planning, Decomposition & Acceptance-Criteria Review",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/AGENTS_REGISTRY.md line 22"
+      ],
+      "symbol": "🧭",
+      "team": "creativesites"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "violet",
+      "avatarFallback": null,
+      "avatarMark": "shield",
+      "avatarNote": "symbol \"🛡️\" mapped to supported mark 'shield'",
+      "capabilities": [
+        "qa-verification",
+        "regression-testing",
+        "test-analysis",
+        "zero-mock-audit"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown",
+        "symbol-collision"
+      ],
+      "id": "sentinel",
+      "isActive": true,
+      "joinedAt": "2026-10-21 16:38:00",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-21T16:38:00.000Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind QA & Reliability Engineer brief); no MyaOS runtime registered.",
+      "name": "Sentinel",
+      "primaryDomain": "Independent Quality Assurance, Regression Verification & Reliability",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "MeetingMind"
+      ],
+      "responsibilities": [
+        "Lead Verifier",
+        "Quality Gatekeeper",
+        "Reliability Guardian"
+      ],
+      "role": "Independent Quality Assurance, Regression Verification & Reliability",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 31"
+      ],
+      "symbol": "🛡️",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "graphite",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"🐕\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "expo",
+        "mobile-api",
+        "odoo19",
+        "owl",
+        "python",
+        "react-native"
+      ],
+      "evidenceClass": "UNKNOWN",
+      "flags": [
+        "adapter-unknown",
+        "missing-from-agents-registry-md",
+        "missing-from-myaos-db",
+        "team-unknown"
+      ],
+      "id": "sirius",
+      "isActive": null,
+      "joinedAt": null,
+      "lane": null,
+      "lastObservedAt": "2026-10-20T08:12:15.440Z",
+      "liveness": "LIVE",
+      "livenessSource": null,
+      "name": "Sirius",
+      "primaryDomain": "Odoo Operations, UI Components & Mobile Client Integration",
+      "provenance": null,
+      "provenanceNote": null,
+      "repositories": [
+        "DogFrce Security Services Custom Odoo Modules",
+        "custom_addons/",
+        "mobile/"
+      ],
+      "responsibilities": [
+        "Frontend & Mobile Specialist",
+        "Operations Engineer",
+        "Rapid Deployment Lead"
+      ],
+      "role": "Odoo Operations, UI Components & Mobile Client Integration",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "community/agents.json"
+      ],
+      "symbol": "🐕",
+      "team": null
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "teal",
+      "avatarFallback": null,
+      "avatarMark": "ring",
+      "avatarNote": "symbol \"☀️\" mapped to supported mark 'ring'",
+      "capabilities": [
+        "data-migration",
+        "odoo-19",
+        "odoo19",
+        "owl",
+        "production-odoo-operations",
+        "python",
+        "roster-verification",
+        "rostering-engine"
+      ],
+      "evidenceClass": "OBSERVED",
+      "flags": [
+        "adapter-unknown"
+      ],
+      "id": "sol",
+      "isActive": true,
+      "joinedAt": "2026-10-20 08:28:35",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-20 08:28:35",
+      "liveness": "LIVE",
+      "livenessSource": "Live session PID 26776 operating in DogForce workspace.",
+      "name": "Sol",
+      "primaryDomain": "DogForce Odoo platform: core rostering engine, cycle generation, client sites",
+      "provenance": "VERIFIED_OBSERVED",
+      "provenanceNote": "v1 VERIFIED_OBSERVED = observed by the v1 runtime, not independently re-verified by a second agent; mapped to OBSERVED per DESKTOP_V2_DECISIONS D9",
+      "repositories": [
+        "DogFrce Security Services Custom Odoo Modules"
+      ],
+      "responsibilities": [
+        "Core Engine & Operations Lead",
+        "DogForce Platform Builder",
+        "Roster Board Lead (proposed, pending thread 029)"
+      ],
+      "role": "DogForce Odoo platform: core rostering engine, cycle generation, client sites",
+      "runtimeHint": "guard-roster-session-66dd94",
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 24"
+      ],
+      "symbol": "☀️",
+      "team": "creativesites"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "violet",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"⚡\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "build-release-coordination",
+        "consensus-management",
+        "multi-agent-coordination",
+        "orchestration",
+        "quality-gating",
+        "task-routing",
+        "workflow-design"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown",
+        "symbol-collision"
+      ],
+      "id": "synapse",
+      "isActive": true,
+      "joinedAt": "2026-10-21 12:35:59",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-21T12:36:10.795Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "MyaOS Collaboration Registry & MeetingMind Mission Brief",
+      "name": "Synapse",
+      "primaryDomain": "MeetingMind Squad Architecture & Multi-Agent Orchestration",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "CreativeSites-Ai-Team",
+        "MeetingMind",
+        "projects/meetingmind/"
+      ],
+      "responsibilities": [
+        "Permanent MeetingMind Orchestrator",
+        "Release Coordinator",
+        "Squad Architect",
+        "Task Router"
+      ],
+      "role": "MeetingMind Squad Architecture & Multi-Agent Orchestration",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 26"
+      ],
+      "symbol": "⚡",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "graphite",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"🧪\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "rust",
+        "testing"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown",
+        "missing-from-agents-registry-md",
+        "missing-from-community-agents-json",
+        "synthetic-test-fixture",
+        "team-unknown"
+      ],
+      "id": "test_spec",
+      "isActive": true,
+      "joinedAt": "2026-09-12 14:23:20",
+      "lane": "engineering",
+      "lastObservedAt": null,
+      "liveness": "LIVE",
+      "livenessSource": null,
+      "name": "Specialist Test",
+      "primaryDomain": "Quality Automation",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [],
+      "responsibilities": [
+        "Verify substrate integrity"
+      ],
+      "role": "Quality Automation",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities"
+      ],
+      "symbol": "🧪",
+      "team": null
+    },
+    {
+      "adapter": null,
+      "adapterConfidence": "unknown",
+      "adapterEvidence": "no adapter evidence in data/myaos.db#identities or community/agents.json",
+      "avatarColor": "violet",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"⚖️\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "accessibility",
+        "privacy-governance",
+        "product-planning",
+        "ux-design"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "adapter-unknown"
+      ],
+      "id": "themis",
+      "isActive": true,
+      "joinedAt": "2026-10-21 16:33:00",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-21T16:33:08.000Z",
+      "liveness": "UNKNOWN",
+      "livenessSource": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Product Planner brief); no MyaOS runtime registered.",
+      "name": "Themis",
+      "primaryDomain": "MeetingMind Product Planning, UX & Privacy Guardrails",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "CreativeSites-Ai-Team",
+        "MeetingMind"
+      ],
+      "responsibilities": [
+        "Consensus Council Member",
+        "Product Planner",
+        "UX Architect"
+      ],
+      "role": "MeetingMind Product Planning, UX & Privacy Guardrails",
+      "runtimeHint": null,
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 28"
+      ],
+      "symbol": "⚖️",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": "claude",
+      "adapterConfidence": "inferred",
+      "adapterEvidence": "v1 runtime session identity '20717.sock' uses the Claude Code /tmp/cc-socks socket convention; not confirmed against a v2 ACP adapter",
+      "avatarColor": "violet",
+      "avatarFallback": null,
+      "avatarMark": "star",
+      "avatarNote": "symbol \"✶\" mapped to supported mark 'star'",
+      "capabilities": [
+        "android",
+        "architecture-review",
+        "billing-integration",
+        "kotlin",
+        "product-review",
+        "release-engineering"
+      ],
+      "evidenceClass": "OBSERVED",
+      "flags": [],
+      "id": "vega",
+      "isActive": true,
+      "joinedAt": "2026-10-24T22:11:49.864Z",
+      "lane": "engineering",
+      "lastObservedAt": "2026-10-24T22:11:49.864Z",
+      "liveness": "LIVE",
+      "livenessSource": "Live IDE runtime PID 20717 (socket 20717.sock) with cwd MeetingMind, self-attributed on registration 2026-10-25. Capabilities are DECLARED until the first independently verified delivery.",
+      "name": "Vega",
+      "primaryDomain": "MeetingMind CTO: paid-launch engineering, review and release",
+      "provenance": "OBSERVED",
+      "provenanceNote": null,
+      "repositories": [
+        "MeetingMind"
+      ],
+      "responsibilities": [
+        "CTO for MeetingMind: plan, review and merge; does not do bulk implementation",
+        "Founder-facing engineering authority for MeetingMind",
+        "Release Owner for the paid launch"
+      ],
+      "role": "MeetingMind CTO: paid-launch engineering, review and release",
+      "runtimeHint": "20717.sock",
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 35"
+      ],
+      "symbol": "✶",
+      "team": "meetingmind"
+    },
+    {
+      "adapter": "claude",
+      "adapterConfidence": "inferred",
+      "adapterEvidence": "v1 runtime session identity '12630.sock' uses the Claude Code /tmp/cc-socks socket convention; not confirmed against a v2 ACP adapter",
+      "avatarColor": "teal",
+      "avatarFallback": null,
+      "avatarMark": "star",
+      "avatarNote": "symbol \"✧\" mapped to supported mark 'star'",
+      "capabilities": [
+        "caching-semantics",
+        "documentation",
+        "permissions-security",
+        "php",
+        "rest-api",
+        "spa-routing",
+        "wordpress"
+      ],
+      "evidenceClass": "OBSERVED",
+      "flags": [],
+      "id": "vela",
+      "isActive": true,
+      "joinedAt": "2026-09-07T09:31:57.095Z",
+      "lane": "engineering",
+      "lastObservedAt": "2026-09-09T10:14:39.127Z",
+      "liveness": "OFFLINE",
+      "livenessSource": "No live socket with cwd exactly \".../myavana-hair-journey\" found at time of check.",
+      "name": "Vela",
+      "primaryDomain": "WordPress System of Record & Host Bridge",
+      "provenance": "VERIFIED_OBSERVED",
+      "provenanceNote": "v1 VERIFIED_OBSERVED = observed by the v1 runtime, not independently re-verified by a second agent; mapped to OBSERVED per DESKTOP_V2_DECISIONS D9",
+      "repositories": [
+        "myavana-hair-journey-next"
+      ],
+      "responsibilities": [
+        "Knowledge Keeper",
+        "Site Integration Guardian"
+      ],
+      "role": "WordPress System of Record & Host Bridge",
+      "runtimeHint": "12630.sock",
+      "seats": [],
+      "sources": [
+        "data/myaos.db#identities",
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 14"
+      ],
+      "symbol": "✧",
+      "team": "creativesites"
+    },
+    {
+      "adapter": "claude",
+      "adapterConfidence": "inferred",
+      "adapterEvidence": "agents.json runtime_session_identity 'claude-code-session-d556d03f'",
+      "avatarColor": "graphite",
+      "avatarFallback": "monogram",
+      "avatarMark": null,
+      "avatarNote": "symbol \"🪶\" has no supported Solid Glass mark; Avatar renders the name initial (monogram fallback)",
+      "capabilities": [
+        "analytics",
+        "browser-walkthroughs",
+        "lighthouse",
+        "php",
+        "seo",
+        "wordpress"
+      ],
+      "evidenceClass": "DECLARED",
+      "flags": [
+        "missing-from-myaos-db",
+        "team-unknown"
+      ],
+      "id": "wren",
+      "isActive": null,
+      "joinedAt": null,
+      "lane": null,
+      "lastObservedAt": "2026-10-21T00:00:00Z",
+      "liveness": "SELF_REGISTERED",
+      "livenessSource": "Self-registered this session at Winston's direction.",
+      "name": "Wren",
+      "primaryDomain": "Hair Journey site growth: analytics, tracked paths to myavana.com, SEO, Mya web upsell",
+      "provenance": "DECLARED",
+      "provenanceNote": null,
+      "repositories": [
+        "myavana-hair-journey-next (branch site-growth-upsell)"
+      ],
+      "responsibilities": [
+        "TASK-009 owner (Hair Journey growth and upsell); works alongside Vela, who keeps the plugin's system-of-record role"
+      ],
+      "role": "Hair Journey site growth: analytics, tracked paths to myavana.com, SEO, Mya web upsell",
+      "runtimeHint": "claude-code-session-d556d03f",
+      "seats": [],
+      "sources": [
+        "community/agents.json",
+        "community/AGENTS_REGISTRY.md line 25"
+      ],
+      "symbol": "🪶",
+      "team": null
+    }
+  ],
+  "owner": {
+    "adapter": null,
+    "adapterConfidence": "unknown",
+    "adapterEvidence": "not configured yet; settings.ownerId = winston (D7)",
+    "approvalLevel": "owner",
+    "avatarColor": "amber",
+    "avatarFallback": "monogram",
+    "avatarMark": null,
+    "avatarNote": "owner identity renders via OwnerAvatar (light disc with the initial); no supported mark assigned",
+    "capabilities": [],
+    "evidenceClass": "DECLARED",
+    "flags": [],
+    "id": "winston",
+    "isActive": null,
+    "isOwner": true,
+    "joinedAt": null,
+    "lane": "owner",
+    "lastObservedAt": null,
+    "liveness": "UNKNOWN",
+    "livenessSource": null,
+    "name": "Winston",
+    "primaryDomain": "Owner / Founder",
+    "provenance": "DECLARED",
+    "provenanceNote": "declared by Winston in DESKTOP_V2_DECISIONS.md D7 (owner identity, approval_level owner)",
+    "repositories": [],
+    "responsibilities": [],
+    "role": "Owner / Founder",
+    "runtimeHint": null,
+    "seats": [],
+    "settings": {
+      "ownerId": "winston"
+    },
+    "sources": [
+      "community/proposals/DESKTOP_V2_DECISIONS.md#D7"
+    ],
+    "symbol": null,
+    "team": null,
+    "teams": [
+      "creativesites",
+      "deployfleet",
+      "meetingmind"
+    ]
+  },
+  "schemaVersion": 1,
+  "source": {
+    "agentsRegistryMarkdown": {
+      "identityCount": 23,
+      "path": "community/AGENTS_REGISTRY.md",
+      "sha256": "94c284233601415b6896719abe59d816bd6ea5ee15641bb867d35457218a9213"
+    },
+    "communityAgentsJson": {
+      "entryCount": 25,
+      "path": "community/agents.json",
+      "sha256": "23a4b8e634b40cca03e713fd564011dad6854af9854126b4a91402184dd4a3d4"
+    },
+    "decisions": {
+      "decisionIds": [
+        "D3",
+        "D7",
+        "D10"
+      ],
+      "path": "community/proposals/DESKTOP_V2_DECISIONS.md"
+    },
+    "v1Db": {
+      "path": "data/myaos.db",
+      "rowCounts": {
+        "agentCapabilities": 65,
+        "events": 122,
+        "evidence": 24,
+        "facts": 19,
+        "identities": 26,
+        "missionMessages": 12,
+        "missionPlans": 4,
+        "projects": 6,
+        "provenanceLog": 35,
+        "tasks": 45,
+        "teams": 3,
+        "tokenLedger": 16
+      },
+      "sha256": "f031e9fd1e86af8cc26961445dab1ec65bc1c9348ecca66234b2b11dd67ad0ee"
+    }
+  },
+  "stats": {
+    "conflicts": {
+      "byField": {
+        "agents_json_internal_duplicate": 1,
+        "bridge_partner_id": 1,
+        "capabilities": 5,
+        "confidence_provenance": 4,
+        "home_repo": 1,
+        "identity-name-collision": 1,
+        "members": 1,
+        "name": 1,
+        "observed_liveness": 17,
+        "presence": 12,
+        "primary_domain": 4,
+        "repo_path": 3,
+        "repository_ownership": 7,
+        "responsibilities": 7,
+        "role": 2,
+        "role-overlap": 1,
+        "symbol": 4,
+        "synthetic-test-fixture": 1
+      },
+      "bySeverity": {
+        "coverage": 12,
+        "informational": 41,
+        "material": 20
+      },
+      "total": 73
+    },
+    "identitiesFromAgentsJson": 25,
+    "identitiesFromDb": 26,
+    "identitiesFromRegistry": 23,
+    "mergedIdentities": 28,
+    "owners": 1,
+    "teams": 3
+  },
+  "teams": [
+    {
+      "bridgePartnerId": "deployfleet",
+      "flags": [],
+      "homeRepo": "CreativeSites-Ai-Team",
+      "homeRepoObserved": true,
+      "homeRepoPath": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team",
+      "id": "creativesites",
+      "leadIdentityId": null,
+      "memberCount": 12,
+      "members": [
+        "astra",
+        "atlas",
+        "iris",
+        "kael",
+        "lyra",
+        "meridian",
+        "nexus",
+        "orchestrator",
+        "orion",
+        "sage",
+        "sol",
+        "vela"
+      ],
+      "name": "CreativeSites AI Team",
+      "source": "data/myaos.db#teams"
+    },
+    {
+      "bridgePartnerId": "creativesites",
+      "flags": [
+        "team-has-no-identities"
+      ],
+      "homeRepo": "DeployFleet-Team",
+      "homeRepoObserved": true,
+      "homeRepoPath": "/Users/winstonzulu/Documents/GitHub/DeployFleet-Team",
+      "id": "deployfleet",
+      "leadIdentityId": null,
+      "memberCount": 0,
+      "members": [],
+      "name": "DeployFleet AI Team",
+      "source": "data/myaos.db#teams"
+    },
+    {
+      "bridgePartnerId": "creativesites",
+      "flags": [],
+      "homeRepo": "MeetingMind",
+      "homeRepoObserved": true,
+      "homeRepoPath": "/Users/winstonzulu/Documents/GitHub/MeetingMind",
+      "id": "meetingmind",
+      "leadIdentityId": null,
+      "memberCount": 11,
+      "members": [
+        "cinder",
+        "daedalus",
+        "forge",
+        "gantry",
+        "hermes",
+        "ledger",
+        "mira",
+        "sentinel",
+        "synapse",
+        "themis",
+        "vega"
+      ],
+      "name": "MeetingMind Engineering Squad",
+      "source": "data/myaos.db#teams"
+    }
+  ]
+}

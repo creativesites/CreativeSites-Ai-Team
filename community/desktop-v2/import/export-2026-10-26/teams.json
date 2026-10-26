@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "agentsRegistryMarkdown": {
+      "identityCount": 23,
+      "path": "community/AGENTS_REGISTRY.md",
+      "sha256": "94c284233601415b6896719abe59d816bd6ea5ee15641bb867d35457218a9213"
+    },
+    "communityAgentsJson": {
+      "entryCount": 25,
+      "path": "community/agents.json",
+      "sha256": "23a4b8e634b40cca03e713fd564011dad6854af9854126b4a91402184dd4a3d4"
+    },
+    "decisions": {
+      "decisionIds": [
+        "D3",
+        "D7",
+        "D10"
+      ],
+      "path": "community/proposals/DESKTOP_V2_DECISIONS.md"
+    },
+    "v1Db": {
+      "path": "data/myaos.db",
+      "rowCounts": {
+        "agentCapabilities": 65,
+        "events": 122,
+        "evidence": 24,
+        "facts": 19,
+        "identities": 26,
+        "missionMessages": 12,
+        "missionPlans": 4,
+        "projects": 6,
+        "provenanceLog": 35,
+        "tasks": 45,
+        "teams": 3,
+        "tokenLedger": 16
+      },
+      "sha256": "f031e9fd1e86af8cc26961445dab1ec65bc1c9348ecca66234b2b11dd67ad0ee"
+    }
+  },
+  "teams": [
+    {
+      "bridgePartnerId": "deployfleet",
+      "flags": [],
+      "homeRepo": "CreativeSites-Ai-Team",
+      "homeRepoObserved": true,
+      "homeRepoPath": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team",
+      "id": "creativesites",
+      "leadIdentityId": null,
+      "memberCount": 12,
+      "members": [
+        "astra",
+        "atlas",
+        "iris",
+        "kael",
+        "lyra",
+        "meridian",
+        "nexus",
+        "orchestrator",
+        "orion",
+        "sage",
+        "sol",
+        "vela"
+      ],
+      "name": "CreativeSites AI Team",
+      "source": "data/myaos.db#teams"
+    },
+    {
+      "bridgePartnerId": "creativesites",
+      "flags": [
+        "team-has-no-identities"
+      ],
+      "homeRepo": "DeployFleet-Team",
+      "homeRepoObserved": true,
+      "homeRepoPath": "/Users/winstonzulu/Documents/GitHub/DeployFleet-Team",
+      "id": "deployfleet",
+      "leadIdentityId": null,
+      "memberCount": 0,
+      "members": [],
+      "name": "DeployFleet AI Team",
+      "source": "data/myaos.db#teams"
+    },
+    {
+      "bridgePartnerId": "creativesites",
+      "flags": [],
+      "homeRepo": "MeetingMind",
+      "homeRepoObserved": true,
+      "homeRepoPath": "/Users/winstonzulu/Documents/GitHub/MeetingMind",
+      "id": "meetingmind",
+      "leadIdentityId": null,
+      "memberCount": 11,
+      "members": [
+        "cinder",
+        "daedalus",
+        "forge",
+        "gantry",
+        "hermes",
+        "ledger",
+        "mira",
+        "sentinel",
+        "synapse",
+        "themis",
+        "vega"
+      ],
+      "name": "MeetingMind Engineering Squad",
+      "source": "data/myaos.db#teams"
+    }
+  ]
+}

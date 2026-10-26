@@ -690,9 +690,9 @@ export interface RecordUsageInput {
 }
 
 export interface ImportIdentitiesInput {
-  owner?: Partial<Identity> & { id: string; name: string };
-  teams?: { id: string; name: string; description?: string }[];
-  identities?: (CreateIdentityInput & { teams?: string[] })[];
+  owner?: Partial<Identity> & { id: string; name: string; teams?: string[] };
+  teams?: { id: string; name: string; description?: string; members?: string[]; leadIdentityId?: string | null }[];
+  identities?: (CreateIdentityInput & { team?: string; teams?: string[] })[];
 }
 
 export interface AttachProjectInput {
