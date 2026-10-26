@@ -484,6 +484,16 @@ export interface AcceptVerdictInput {
   tasks?: CreateTaskInput[];
 }
 
+export interface BridgeStatus {
+  configured: boolean;
+  enabled: boolean;
+  teamRepo: string | null;
+  threadsDir: string | null;
+  inboxDir: string | null;
+  lastMirrorAt: string | null;
+  lastError: string | null;
+}
+
 export interface Artifact {
   sha256: string;
   path: string;

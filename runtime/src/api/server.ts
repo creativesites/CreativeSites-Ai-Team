@@ -13,6 +13,7 @@ import {
 import * as workspaces from '../workspaces.ts';
 import type { Checker } from '../checks.ts';
 import type { SessionManager } from '../acp/session-manager.ts';
+import type { Bridge } from '../bridge.ts';
 
 export interface ServerOptions {
   repo: Repo;
@@ -25,6 +26,7 @@ export interface ServerOptions {
   newProjectParentDir: string;
   checker: Checker;
   sessions: SessionManager;
+  bridge: Bridge;
 }
 
 export interface RuntimeServer {
@@ -173,6 +175,8 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       }),
     })),
     route('GET', '/v1/adapters', (ctx) => ({ status: 200, body: adapterList(ctx.query.get('probe') === '1') })),
+    route('GET', '/v1/bridge/status', () => ({ status: 200, body: opts.bridge.status() })),
+    route('POST', '/v1/bridge/mirror/:jobId', (ctx) => ({ status: 200, body: opts.bridge.mirrorJob(ctx.params.jobId!) })),
     route('POST', '/v1/adapters/:id', (ctx) => {
       repo.upsertAdapterOverride(ctx.params.id!, ctx.body as never);
       return { status: 200, body: adapterList(true) };

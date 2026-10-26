@@ -11,6 +11,7 @@ The runtime is no longer read-only. A foundation commit implements:
 - full write API for the job lifecycle, approvals, evidence verification, sessions/transcript, budgets and workspaces;
 - runtime-owned **checks, worktree snapshots and independent verification**;
 - **planning council engine**: options/seats, weighted card scoring, the disaster cap, cannot-undo and too-fast-agreement rules, verdict → plan + tasks;
+- **team bridge (outbound)**: opt-in mirror of each job dossier into `community/threads/desktop/JOB-<n>-<slug>.md` and inbox notes to assigned agents; never writes canonical state back;
 - **ACP session manager**: spawns an adapter over stdio, streams its transcript, converts permission requests into approvals (blocking with timeout), snapshots the worktree before/after each turn and kills the process group;
 - runtime hardening: OS lock (one runtime per machine), atomic `~/.myaos/runtime.json`, owner-only store (`0700`/`0600`), transactional events with hash chain, gap-aware SSE, validation, `Idempotency-Key`, real health checks, session reconciliation on restart.
 
@@ -135,6 +136,15 @@ The app still discovers the runtime through the Rust side (or Vite's `/__myaos/r
 | GET | `/v1/councils/:id/verdict` | latest verdict |
 
 The Council/Verdict preview screens map almost field-for-field: `Council { options, seats, cards[], verdict }`, card payload = `CouncilCardResult`, verdict = `CouncilResult`. Wire those screens to the endpoints above; seats are recorded manually for now (an ACP seat-run loop is a later step).
+
+### Bridge / team
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/bridge/status` | configured/enabled/teamRepo/threadsDir/inboxDir/lastMirrorAt/lastError |
+| POST | `/v1/bridge/mirror/:jobId` | force-write the job dossier (works even when auto-mirror is off) |
+
+Enable auto-mirror with `POST /v1/settings {"bridge":{"enabled":true,"inbox":true}}`; disable with `{"bridge":{"enabled":false}}`. Outbound only for now: replies in threads/inboxes are not imported yet (the import step is the next bridge task). The runtime owns job/approval/evidence state; the thread says so in its frontmatter.
 
 ### Sessions / transcript
 

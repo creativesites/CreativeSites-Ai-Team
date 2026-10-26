@@ -6,6 +6,7 @@ import { probeAdapters } from './adapters.ts';
 import { artifactsDir, cloneParentDir, loadConfig, newProjectParentDir, workspaceRoots, worktreeRoot } from './config.ts';
 import { Checker } from './checks.ts';
 import { SessionManager } from './acp/session-manager.ts';
+import { Bridge } from './bridge.ts';
 import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
 import { gitAvailable } from './workspaces.ts';
@@ -23,6 +24,7 @@ export interface StartOptions {
   newProjectParentDir?: string;
   worktreeRoot?: string;
   artifactsDir?: string;
+  teamRepo?: string | null;
 }
 
 export interface RunningRuntime {
@@ -46,9 +48,15 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   const artDir = opts.artifactsDir ?? artifactsDir(cfg);
   // The server is created after the repo, so events go through this late-bound hook.
   let broadcast: (e: RuntimeEvent) => void = () => {};
-  const repo = new Repo(db, (e) => broadcast(e));
+  let bridge: Bridge | null = null;
+  const repo = new Repo(db, (e) => {
+    broadcast(e);
+    bridge?.onEvent(e);
+  });
   const checker = new Checker({ repo, workspaceRoots: wsRoots, worktreeRoot: wtRoot, artifactsDir: artDir });
   const sessions = new SessionManager({ repo, checker });
+  const teamRepo = opts.teamRepo === null ? null : (opts.teamRepo ?? cfg.teamRepo ?? null);
+  bridge = new Bridge({ repo, teamRepo });
 
   const health = (): Health => {
     let store = false;
@@ -81,6 +89,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     newProjectParentDir: newProjectDir,
     checker,
     sessions,
+    bridge,
   });
   broadcast = api.broadcast;
 
@@ -110,6 +119,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     close: () =>
       new Promise<void>((resolve) => {
         clearInterval(sweep);
+        bridge?.dispose();
         void sessions.closeAll().finally(() => {
           api.server.closeAllConnections();
           api.server.close(() => {
