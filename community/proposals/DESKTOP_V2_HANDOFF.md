@@ -5,7 +5,20 @@
 
 ## Status
 
-The runtime is no longer read-only. A foundation commit implements:
+**Implemented on this branch since the review (all committed, 32/32 runtime tests green):**
+
+| Commit | What |
+|---|---|
+| `5319740` | Phase 1 foundation: schema v2, full write API, hardened store/events/SSE |
+| `c9f9acc` | runtime-owned checks, worktree snapshots, independent verification |
+| `03824a9` | reviewed v1 identity/team/project import + export (applied locally: 29 identities, 3 teams, 7 projects, 7 rooms) |
+| `047d39d` | Phase 0.6 ACP spike harness + findings + evidence model |
+| `4d34df2` | ACP session manager: spawn, transcript, permission→approval, snapshots, cancel |
+| `7fbe4ba` | rooms bind their repo path from the project |
+| `c3e89e8` | planning council engine: cards, scoring rules, verdict → plan + tasks |
+| `958d5c3` | team bridge: job dossiers to threads + inbox notes (opt-in) |
+
+A foundation commit implements:
 
 - schema **version 2** — projects, repos, teams, members, identity provenance, job plans/tasks/criteria/stage history, sessions/transcript, hash-chained evidence, approvals + policies + escalation, settings, budgets, usage, adapters, idempotency;
 - full write API for the job lifecycle, approvals, evidence verification, sessions/transcript, budgets and workspaces;
