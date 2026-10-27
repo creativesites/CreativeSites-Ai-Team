@@ -58,6 +58,10 @@ export function JobScreen({
   const [taskId, setTaskId] = React.useState(job.tasks[0]?.id ?? '');
   const readyAdapters = (adapters.status === 'ready' ? adapters.data : []).filter((a) => a.installed && (a.auth.state === 'ready' || a.auth.state === 'configured'));
   const [adapterId, setAdapterId] = React.useState(readyAdapters[0]?.id ?? 'claude');
+  const verifiers = identities.filter((i) => !i.isOwner && i.id !== ownerId);
+  const [verifierId, setVerifierId] = React.useState(
+    job.tasks.find((t) => t.assigneeId)?.assigneeId === 'kael' ? (verifiers[0]?.id ?? 'kael') : (verifiers.find((i) => i.id === 'kael')?.id ?? verifiers[0]?.id ?? 'kael')
+  );
   const [approvalTitle, setApprovalTitle] = React.useState(`Merge ${jobLabel(job.number)} into main`);
   const [approvalConsequence, setApprovalConsequence] = React.useState(
     'The verified change is merged into main. Nothing is deployed; a revert undoes it.'
@@ -246,6 +250,35 @@ export function JobScreen({
                     onStart={() => act(`run:${task.id}`, () => client!.updateTask(task.id, { status: 'running' }))}
                   />
                 ))}
+              </div>
+            )}
+            {job.tasks.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-3">
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Independent verifier
+                  <select value={verifierId} onChange={(e) => setVerifierId(e.target.value)} className="glass-panel h-9 rounded-md px-2 text-xs">
+                    {verifiers.map((i) => (
+                      <option key={i.id} value={i.id}>{i.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={busy !== null || !verifierId}
+                  onClick={() =>
+                    act('verify', async () => {
+                      const result = await client!.verifyJob(job.id, verifierId);
+                      setNotice(
+                        result.ok
+                          ? `Verified in a clean worktree at ${result.base.slice(0, 10)}. Every check passed.`
+                          : `Verification failed: ${result.results.filter((r) => !r.ok).map((r) => r.error ?? r.taskId).join('; ')}`
+                      );
+                    })
+                  }
+                  className={buttonVariants({ variant: 'glass' })}
+                >
+                  <ShieldCheck /> Verify independently
+                </button>
               </div>
             )}
             <div className="flex flex-wrap gap-2">

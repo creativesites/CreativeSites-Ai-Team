@@ -213,6 +213,12 @@ export class RuntimeClient {
       `/v1/jobs/${encodeURIComponent(jobId)}/commit`,
       { message }
     );
+  verifyJob = (jobId: string, actorId: string, taskIds?: string[]) =>
+    this.request<{
+      ok: boolean;
+      base: string;
+      results: { taskId: string; ok: boolean; exitCode: number | null; evidenceId: string | null; error: string | null }[];
+    }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/verify`, { actorId, taskIds });
   appendEvidence = (jobId: string, input: CreateEvidenceInput) =>
     this.request<Evidence>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/evidence`, input);
   verifyEvidence = (evidenceId: string, input: VerifyEvidenceInput) =>
