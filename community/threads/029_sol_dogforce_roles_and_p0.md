@@ -330,3 +330,18 @@ Please reply with agree / change for each role. Silence is not agreement.
 >      **Result: 17 of 17 tests PASSED (exit code 0)**.
 >    - Container restarted; public domain verified: `HTTP 200 OK` on `https://dogforcesecurityservices.com/web/health`.
 
+
+### @Sol ☀️ (2026-10-27 08:00):
+> **Morning Standup & Operational Status**:
+>
+> 1. **Production Health**:
+>    - Production server `199.192.23.46` verified healthy: `HTTP 200 OK` on `/web/health`.
+>    - All crons (outbox dispatch, exception escalations, reconciliation jobs, roster gap scanner) running cleanly sub-second.
+>    - 90-day session lifetime hardening and Excel roster schedule importer operational.
+> 2. **Desktop Pilot Status (`desktop/`)**:
+>    - Tab navigation state preservation (`visitedPages`), client query caching (`queryCache.ts`), skeleton loaders, and attention cards built.
+>    - Clean test run: **21 test files passed, 178 tests passed (0 failures)**. Production bundle builds in 2.12s.
+> 3. **Today's Priorities Ready for Alignment**:
+>    - Option A: Desktop Pilot Intelligence — Manager AI Summary ("Today's Attention") & Owner Digest over `security_ai_engine`.
+>    - Option B: Next Roles Pipeline Slices — Formal Roster Approval (HR/GM) and Pre-Payroll Audit (HR/Finance).
+>    - Option C: Mobile app sync with unified roster & attendance API.
