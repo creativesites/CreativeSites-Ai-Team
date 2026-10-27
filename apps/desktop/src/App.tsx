@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { AdapterInfo, Identity, JobSummary, Room, Session } from '@runtime/types';
+import type { AdapterInfo, Identity, JobSummary, Project, Room, Session } from '@runtime/types';
 import { RuntimeBanner, Sidebar, useMode } from '@/components/app/shell';
 import { EmptyState } from '@/components/app/status';
 import { href, useRoute, type Route } from '@/lib/route';
@@ -48,6 +48,7 @@ function Workspace({ route }: { route: Route }) {
   const identities = useRuntimeData((c) => c.identities());
   const sessions = useRuntimeData((c) => c.sessions());
   const adapters = useRuntimeData((c) => c.adapters());
+  const projects = useRuntimeData((c) => c.projects());
 
   return (
     <div className="flex min-h-full flex-col gap-3 p-3 md:flex-row">
@@ -63,18 +64,18 @@ function Workspace({ route }: { route: Route }) {
       />
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <RuntimeBanner />
-        <Screen route={route} rooms={list(rooms)} jobs={list(jobs)} identities={list(identities)} sessions={list(sessions)} adapters={list(adapters)} />
+        <Screen route={route} rooms={list(rooms)} jobs={list(jobs)} identities={list(identities)} sessions={list(sessions)} adapters={list(adapters)} projects={list(projects)} />
       </div>
     </div>
   );
 }
 
-function Screen({ route, rooms, jobs, identities, sessions, adapters }: { route: Route; rooms: Room[]; jobs: JobSummary[]; identities: Identity[]; sessions: Session[]; adapters: AdapterInfo[] }) {
+function Screen({ route, rooms, jobs, identities, sessions, adapters, projects }: { route: Route; rooms: Room[]; jobs: JobSummary[]; identities: Identity[]; sessions: Session[]; adapters: AdapterInfo[]; projects: Project[] }) {
   const { client } = useRuntime();
 
   const startJob = async (req: StartJobRequest) => {
     if (!client) throw new Error('The runtime is not reachable.');
-    const roomId = req.roomId ?? (await client.createRoom({ name: req.newRoomName! })).id;
+    const roomId = req.roomId ?? (await client.createRoom({ name: req.newRoomName!, projectId: req.projectId ?? undefined })).id;
     // The title is the brief's first sentence; the whole text stays as the brief.
     const first = req.text.split('\n')[0].split(/(?<=[.!?])\s/)[0].replace(/[.]$/, '');
     const title = first.length > 90 ? `${first.slice(0, 87)}…` : first;
@@ -85,7 +86,7 @@ function Screen({ route, rooms, jobs, identities, sessions, adapters }: { route:
 
   switch (route.name) {
     case 'home':
-      return <HomeScreen rooms={rooms} jobs={jobs} identities={identities} sessions={sessions} onStartJob={client ? startJob : undefined} />;
+      return <HomeScreen rooms={rooms} jobs={jobs} identities={identities} sessions={sessions} projects={projects} onStartJob={client ? startJob : undefined} />;
     case 'approvals':
       return <ApprovalsScreen />;
     case 'jobs':

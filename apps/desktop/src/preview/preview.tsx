@@ -13,7 +13,7 @@ import * as f from '@/preview/fixtures';
 // against the design canvas. Reached at #/preview/<screen>.
 
 const SCREENS: Record<string, { label: string; route: Route; mode: Mode; render: () => React.ReactNode }> = {
-  home: { label: 'Home', route: { name: 'home' }, mode: 'work', render: () => <HomeScreen rooms={f.rooms} jobs={f.jobs} identities={f.identities} sessions={f.sessions} /> },
+  home: { label: 'Home', route: { name: 'home' }, mode: 'work', render: () => <HomeScreen rooms={f.rooms} jobs={f.jobs} identities={f.identities} sessions={f.sessions} projects={[]} /> },
   room: {
     label: 'Room',
     route: { name: 'room', roomId: 'room_chat' },

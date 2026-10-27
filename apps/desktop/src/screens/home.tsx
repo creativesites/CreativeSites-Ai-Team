@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { Identity, JobSummary, Room, Session } from '@runtime/types';
+import type { Identity, JobSummary, Project, Room, Session } from '@runtime/types';
 import { Avatar } from '@/components/app/avatar';
 import { isLive } from '@/components/app/shell';
 import { EmptyState, jobLabel, SectionTitle, StageBar, Tag } from '@/components/app/status';
@@ -10,6 +10,8 @@ import { cn } from '@/lib/utils';
 export interface StartJobRequest {
   roomId: string | null;
   newRoomName: string | null;
+  /** When a new room is created, it is bound to this project (and therefore a repo). */
+  projectId: string | null;
   text: string;
 }
 
@@ -18,12 +20,14 @@ export function HomeScreen({
   jobs,
   identities,
   sessions,
+  projects,
   onStartJob,
 }: {
   rooms: Room[];
   jobs: JobSummary[];
   identities: Identity[];
   sessions: Session[];
+  projects: Project[];
   /** Absent while the runtime is unreachable: the form then can't be sent. */
   onStartJob?: (req: StartJobRequest) => Promise<void>;
 }) {
@@ -36,7 +40,7 @@ export function HomeScreen({
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
       <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-1 flex-col gap-7 px-1 py-6">
         <h1 className="text-[28px] font-medium tracking-tight">What do you want done?</h1>
-        <BriefBox rooms={rooms} onStartJob={onStartJob} />
+        <BriefBox rooms={rooms} projects={projects} onStartJob={onStartJob} />
 
         <section aria-label="Needs you" className="flex flex-col gap-2.5">
           <SectionTitle aside={needsYou.length ? undefined : 'nothing waiting'}>
@@ -104,15 +108,17 @@ export function HomeScreen({
   );
 }
 
-function BriefBox({ rooms, onStartJob }: { rooms: Room[]; onStartJob?: (req: StartJobRequest) => Promise<void> }) {
+function BriefBox({ rooms, projects, onStartJob }: { rooms: Room[]; projects: Project[]; onStartJob?: (req: StartJobRequest) => Promise<void> }) {
   const [text, setText] = React.useState('');
   const [roomId, setRoomId] = React.useState<string>('');
   const [newRoom, setNewRoom] = React.useState('');
+  const [projectId, setProjectId] = React.useState<string>('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const selected = roomId || rooms[0]?.id || '__new';
   const needsNewRoom = selected === '__new';
-  const canSend = !!onStartJob && text.trim().length > 0 && (!needsNewRoom || newRoom.trim().length > 0) && !busy;
+  const chosenProject = projectId || projects[0]?.id || '';
+  const canSend = !!onStartJob && text.trim().length > 0 && (!needsNewRoom || (newRoom.trim().length > 0 && !!chosenProject)) && !busy;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,7 +126,7 @@ function BriefBox({ rooms, onStartJob }: { rooms: Room[]; onStartJob?: (req: Sta
     setBusy(true);
     setError(null);
     try {
-      await onStartJob!({ roomId: needsNewRoom ? null : selected, newRoomName: needsNewRoom ? newRoom.trim() : null, text: text.trim() });
+      await onStartJob!({ roomId: needsNewRoom ? null : selected, newRoomName: needsNewRoom ? newRoom.trim() : null, projectId: needsNewRoom ? chosenProject : null, text: text.trim() });
       setText('');
       setNewRoom('');
     } catch (err) {
@@ -173,6 +179,23 @@ function BriefBox({ rooms, onStartJob }: { rooms: Room[]; onStartJob?: (req: Sta
                 placeholder="room name, e.g. myavana-chatbot"
                 className="glass-panel h-8 rounded-md px-2.5 text-sm outline-none placeholder:text-muted-foreground"
               />
+              <label className="sr-only" htmlFor="new-room-project">
+                Project for the new room
+              </label>
+              <select
+                id="new-room-project"
+                value={chosenProject}
+                onChange={(e) => setProjectId(e.target.value)}
+                className={cn(buttonVariants({ variant: 'glass' }), 'pr-2')}
+                title="A new room must be bound to a project so its jobs have a repository"
+              >
+                {projects.length === 0 && <option value="">No projects yet</option>}
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
             </>
           )}
           <span className="text-xs text-muted-foreground" title="The planning council arrives in Phase 3">
@@ -184,6 +207,11 @@ function BriefBox({ rooms, onStartJob }: { rooms: Room[]; onStartJob?: (req: Sta
         </button>
       </div>
       {!onStartJob && <p className="text-xs text-muted-foreground">Jobs can be started once the runtime is reachable.</p>}
+      {needsNewRoom && projects.length === 0 && (
+        <p className="text-xs text-needs-you">
+          Create a project in <a className="underline" href={href({ name: 'workspaces' })}>Workspaces</a> first; a job needs a repository.
+        </p>
+      )}
       {error && <p className="text-xs text-risk">Could not start the job: {error}</p>}
     </form>
   );
