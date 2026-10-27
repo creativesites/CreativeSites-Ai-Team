@@ -4,6 +4,7 @@
 //! in later phases, user terminals and OS integration. It reads no app data
 //! itself: the UI gets everything from the runtime's local API.
 
+mod pty;
 mod sidecar;
 
 use sidecar::{RuntimeConnection, Sidecar};
@@ -20,7 +21,20 @@ async fn runtime_connection(app: tauri::AppHandle) -> Result<RuntimeConnection, 
 fn main() {
     tauri::Builder::default()
         .manage(Sidecar::default())
-        .invoke_handler(tauri::generate_handler![runtime_connection])
+        .manage(pty::TerminalManager::default())
+        .invoke_handler(tauri::generate_handler![
+            runtime_connection,
+            pty::terminal_spawn,
+            pty::terminal_write,
+            pty::terminal_resize,
+            pty::terminal_kill,
+            pty::terminal_list,
+            pty::pty_spawn_shell,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_kill,
+            pty::pty_list,
+        ])
         .build(tauri::generate_context!())
         .expect("error while building MyaOS")
         .run(|app, event| {
