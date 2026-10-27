@@ -4,7 +4,9 @@ import { RuntimeBanner, Sidebar, useMode } from '@/components/app/shell';
 import { EmptyState } from '@/components/app/status';
 import { href, useRoute, type Route } from '@/lib/route';
 import { RuntimeProvider, useRuntime, useRuntimeData, type Loadable } from '@/lib/runtime-context';
+import { ApprovalsScreen } from '@/screens/approvals';
 import { CoworkersScreen } from '@/screens/coworkers';
+import { JobsScreen } from '@/screens/jobs';
 import { DevScreen } from '@/screens/dev';
 import { HomeScreen, type StartJobRequest } from '@/screens/home';
 import { JobScreen } from '@/screens/job';
@@ -84,6 +86,10 @@ function Screen({ route, rooms, jobs, identities, sessions, adapters }: { route:
   switch (route.name) {
     case 'home':
       return <HomeScreen rooms={rooms} jobs={jobs} identities={identities} sessions={sessions} onStartJob={client ? startJob : undefined} />;
+    case 'approvals':
+      return <ApprovalsScreen />;
+    case 'jobs':
+      return <JobsScreen />;
     case 'room':
       return <RoomContainer roomId={route.roomId} rooms={rooms} jobs={jobs} identities={identities} />;
     case 'job':

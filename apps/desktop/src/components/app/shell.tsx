@@ -112,10 +112,10 @@ export function Sidebar({
         </NavLink>
         {mode === 'work' ? (
           <>
-            <NavLink to={{ name: 'home' }} icon={<Inbox />} trailing={needsYou > 0 ? <Tag tone="needs-you">{needsYou}</Tag> : undefined}>
+            <NavLink to={{ name: 'approvals' }} active={route.name === 'approvals'} icon={<Inbox />} trailing={needsYou > 0 ? <Tag tone="needs-you">{needsYou}</Tag> : undefined}>
               Needs you
             </NavLink>
-            <NavLink to={jobs[0] ? { name: 'job', jobId: jobs[0].id } : { name: 'home' }} active={route.name === 'job'} icon={<Briefcase />}>
+            <NavLink to={{ name: 'jobs' }} active={route.name === 'jobs' || route.name === 'job'} icon={<Briefcase />}>
               Jobs
             </NavLink>
           </>

@@ -10,6 +10,8 @@ export type Route =
   | { name: 'verdict'; jobId: string }
   | { name: 'dev'; jobId?: string }
   | { name: 'coworkers' }
+  | { name: 'approvals' }
+  | { name: 'jobs' }
   | { name: 'workspaces' }
   | { name: 'settings' }
   | { name: 'preview'; screen: string };
@@ -29,6 +31,10 @@ export function parseRoute(hash: string): Route {
       return { name: 'dev', jobId: parts[1] };
     case 'coworkers':
       return { name: 'coworkers' };
+    case 'approvals':
+      return { name: 'approvals' };
+    case 'jobs':
+      return { name: 'jobs' };
     case 'workspaces':
       return { name: 'workspaces' };
     case 'settings':
@@ -56,6 +62,10 @@ export function href(route: Route): string {
       return route.jobId ? `#/dev/${e(route.jobId)}` : '#/dev';
     case 'coworkers':
       return '#/coworkers';
+    case 'approvals':
+      return '#/approvals';
+    case 'jobs':
+      return '#/jobs';
     case 'workspaces':
       return '#/workspaces';
     case 'settings':
