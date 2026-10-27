@@ -70,7 +70,7 @@ test('health and store are real, and the store is owner-only', async () => {
   // Health needs no token; the helper always sends one, which is fine.
   assert.equal(health.status, 200);
   assert.equal(health.json.ok, true);
-  assert.equal(health.json.schemaVersion, 2);
+  assert.equal(health.json.schemaVersion, 3);
   assert.equal(health.json.checks.store, true);
   assert.equal(fs.statSync(path.join(dir, 'store')).mode & 0o777, 0o700);
   assert.equal(fs.statSync(dbPath).mode & 0o777, 0o600);

@@ -82,6 +82,39 @@ test('job events mirror a dossier into community/threads/desktop', async () => {
   assert.ok(status.json.lastMirrorAt);
 });
 
+test('inbox notes and thread replies are imported once as Claimed', async () => {
+  const jobs = await call('GET', '/v1/jobs');
+  const job = jobs.json.find((j: any) => j.title === 'Bridge the job');
+  assert.ok(job);
+
+  const threadDir = path.join(teamRepo, 'community', 'threads', 'desktop');
+  const threadFile = path.join(threadDir, fs.readdirSync(threadDir)[0]!);
+  fs.appendFileSync(threadFile, '\n### Reply from @atlas\nThe thread reply from Atlas.\n');
+
+  const inboxDir = path.join(teamRepo, 'community', 'inboxes', 'atlas');
+  fs.mkdirSync(inboxDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(inboxDir, '2026-10-27T08-00-00Z_progress.md'),
+    ['---', 'from: atlas', 'to: winston', 'type: progress', 'related_job: JOB-1', '---', '', 'The inbox progress note from Atlas.', ''].join('\n')
+  );
+
+  const first = await call('POST', '/v1/bridge/ingest');
+  assert.equal(first.status, 200, JSON.stringify(first.json));
+  assert.ok(first.json.imported >= 2, JSON.stringify(first.json));
+
+  const second = await call('POST', '/v1/bridge/ingest');
+  assert.equal(second.json.imported, 0, 're-scan must not duplicate');
+
+  const detail = await call('GET', `/v1/jobs/${job.id}`);
+  const claimed = (detail.json.evidence as any[]).filter((e) => e.kind === 'message' && e.class === 'DECLARED');
+  assert.ok(claimed.some((e) => e.recordedBy === 'atlas' && JSON.stringify(e.payload).includes('thread reply')));
+  assert.ok(claimed.some((e) => e.recordedBy === 'atlas' && JSON.stringify(e.payload).includes('inbox progress')));
+  const messages = await call('GET', `/v1/rooms/${job.roomId}/messages`);
+  assert.ok(messages.json.some((m: any) => m.authorId === 'atlas' && m.body.includes('inbox progress')));
+  const status = await call('GET', '/v1/bridge/status');
+  assert.ok(status.json.ingested >= 2);
+});
+
 test('the mirror is manual-callable and stays out of the way when disabled', async () => {
   const job = await call('POST', '/v1/jobs', { roomId, title: 'Second job', createdBy: 'winston' });
   await call('POST', '/v1/settings', { bridge: { enabled: false } });

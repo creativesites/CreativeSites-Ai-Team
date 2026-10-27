@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type * as T from './api/types.ts';
 import type { Repo } from './store/repo.ts';
+import { BridgeIngest, REPLIES_MARKER, type IngestResult } from './bridge-ingest.ts';
 
 // The team still works in community/threads and inboxes. The bridge mirrors a
 // job's dossier into a thread file and drops inbox notes for assigned agents.
@@ -21,6 +22,8 @@ export interface BridgeStatus {
   threadsDir: string | null;
   inboxDir: string | null;
   lastMirrorAt: string | null;
+  lastIngestAt: string | null;
+  ingested: number;
   lastError: string | null;
 }
 
@@ -30,12 +33,43 @@ export class Bridge {
   private readonly root: string | null;
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private lastMirrorAt: string | null = null;
+  private lastIngestAt: string | null = null;
   private lastError: string | null = null;
+  private readonly ingest: BridgeIngest | null;
+  private ingestTimer: NodeJS.Timeout | null = null;
 
   constructor(opts: BridgeOptions) {
     this.repo = opts.repo;
     this.teamRepo = opts.teamRepo ? path.resolve(expand(opts.teamRepo)) : null;
     this.root = opts.communityRoot ?? (this.teamRepo ? path.join(this.teamRepo, 'community') : null);
+    this.ingest = this.root ? new BridgeIngest({ repo: this.repo, communityRoot: this.root }) : null;
+  }
+
+  /** Starts the periodic ingest of legacy thread replies and inbox notes. */
+  start(): void {
+    if (!this.root || this.ingestTimer) return;
+    const first = setTimeout(() => this.runIngest(), 2000);
+    first.unref?.();
+    this.ingestTimer = setInterval(() => this.runIngest(), 20_000);
+    this.ingestTimer.unref?.();
+  }
+
+  private runIngest(): void {
+    if (!this.settings().enabled) return;
+    try {
+      this.ingestNow();
+    } catch (e) {
+      this.lastError = (e as Error).message;
+    }
+  }
+
+  /** Imports any new inbox notes / thread replies now; returns the counts. */
+  ingestNow(): IngestResult {
+    if (!this.ingest) throw new Error('No team repo configured (settings.teamRepo / config teamRepo)');
+    const result = this.ingest.scan();
+    this.lastIngestAt = new Date().toISOString();
+    if (result.errors.length) this.lastError = result.errors[0]!;
+    return result;
   }
 
   private settings(): { enabled: boolean; inbox: boolean } {
@@ -52,6 +86,8 @@ export class Bridge {
       threadsDir: this.root ? path.join(this.root, 'threads', 'desktop') : null,
       inboxDir: this.root ? path.join(this.root, 'inboxes') : null,
       lastMirrorAt: this.lastMirrorAt,
+      lastIngestAt: this.lastIngestAt,
+      ingested: this.repo.bridgeIngestCount(),
       lastError: this.lastError,
     };
   }
@@ -140,7 +176,17 @@ export class Bridge {
     const threadDir = path.join(this.root, 'threads', 'desktop');
     fs.mkdirSync(threadDir, { recursive: true });
     const file = path.join(threadDir, `JOB-${job.number}-${slugify(job.title)}.md`);
-    fs.writeFileSync(file, renderJob(job, room, project), { mode: 0o644 });
+    const rendered = renderJob(job, room, project);
+    let replies = `${REPLIES_MARKER}\n\n_Replies below this line are imported as Claimed._\n`;
+    try {
+      const existing = fs.readFileSync(file, 'utf8');
+      const marker = existing.indexOf(REPLIES_MARKER);
+      if (marker >= 0) replies = existing.slice(marker);
+    } catch {
+      /* first write */
+    }
+    const head = rendered.slice(0, rendered.indexOf(REPLIES_MARKER));
+    fs.writeFileSync(file, `${head}${replies}`, { mode: 0o644 });
     this.lastMirrorAt = new Date().toISOString();
     return { path: file };
   }
@@ -170,6 +216,8 @@ export class Bridge {
   dispose(): void {
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
+    if (this.ingestTimer) clearInterval(this.ingestTimer);
+    this.ingestTimer = null;
   }
 }
 
@@ -252,6 +300,10 @@ function renderJob(job: T.JobDetail, room: T.Room, project: T.Project | null): s
     `- Job: myaos://jobs/${job.id}`,
     project ? `- Project: ${project.name}` : '',
     `- Room: #${room.name}`,
+    '',
+    REPLIES_MARKER,
+    '',
+    '_Replies below this line are imported as Claimed._',
     '',
   ];
   return `${lines.filter((line) => line !== '').join('\n')}\n`;

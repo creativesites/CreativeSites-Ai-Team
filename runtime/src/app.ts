@@ -58,6 +58,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   const sessions = new SessionManager({ repo, checker, env: readAdapterEnv(cfg) });
   const teamRepo = opts.teamRepo === null ? null : (opts.teamRepo ?? cfg.teamRepo ?? null);
   bridge = new Bridge({ repo, teamRepo });
+  bridge.start();
 
   const health = (): Health => {
     let store = false;

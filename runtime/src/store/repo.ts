@@ -1733,6 +1733,32 @@ export class Repo {
 
   // ---------------------------------------------------------------- tasks (single), artifacts, worktrees
 
+  findJobByNumber(number: number): T.JobDetail | null {
+    const row = this.one('SELECT id FROM jobs WHERE number = ?', number);
+    return row ? this.getJob(String(row.id)) : null;
+  }
+
+  bridgeIngested(sourcePath: string, contentHash: string): boolean {
+    const row = this.one('SELECT content_hash FROM bridge_ingest WHERE source_path = ?', sourcePath);
+    return Boolean(row && String(row.content_hash) === contentHash);
+  }
+
+  recordBridgeIngest(input: { sourcePath: string; contentHash: string; jobId: string; messageId?: string | null; evidenceId?: string | null }): void {
+    this.db
+      .prepare(
+        `INSERT INTO bridge_ingest (source_path, content_hash, job_id, message_id, evidence_id, imported_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(source_path) DO UPDATE SET content_hash = excluded.content_hash,
+           job_id = excluded.job_id, message_id = excluded.message_id, evidence_id = excluded.evidence_id,
+           imported_at = excluded.imported_at`
+      )
+      .run(input.sourcePath, input.contentHash, input.jobId, input.messageId ?? null, input.evidenceId ?? null, now());
+  }
+
+  bridgeIngestCount(): number {
+    return Number(this.scalar('SELECT COUNT(*) FROM bridge_ingest') ?? 0);
+  }
+
   getEvidence(id: string): T.Evidence {
     const row = this.one('SELECT * FROM evidence WHERE id = ?', id);
     if (!row) throw new NotFoundError(`evidence ${id} not found`);

@@ -177,6 +177,7 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('GET', '/v1/adapters', (ctx) => ({ status: 200, body: adapterList(ctx.query.get('probe') === '1') })),
     route('GET', '/v1/bridge/status', () => ({ status: 200, body: opts.bridge.status() })),
     route('POST', '/v1/bridge/mirror/:jobId', (ctx) => ({ status: 200, body: opts.bridge.mirrorJob(ctx.params.jobId!) })),
+    route('POST', '/v1/bridge/ingest', () => ({ status: 200, body: opts.bridge.ingestNow() })),
     route('POST', '/v1/adapters/:id', (ctx) => {
       repo.upsertAdapterOverride(ctx.params.id!, ctx.body as never);
       return { status: 200, body: adapterList(true) };

@@ -496,4 +496,19 @@ export const MIGRATIONS: Migration[] = [
         BEGIN SELECT RAISE(ABORT, 'evidence is append-only'); END;
     `,
   },
+  {
+    version: 3,
+    name: 'bridge ingest ledger',
+    sql: `
+      CREATE TABLE bridge_ingest (
+        source_path TEXT PRIMARY KEY,
+        content_hash TEXT NOT NULL,
+        job_id TEXT,
+        message_id TEXT,
+        evidence_id TEXT,
+        imported_at TEXT NOT NULL
+      );
+      CREATE INDEX bridge_ingest_job ON bridge_ingest(job_id, imported_at);
+    `,
+  },
 ];

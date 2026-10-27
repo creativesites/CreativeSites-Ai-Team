@@ -497,6 +497,8 @@ export interface BridgeStatus {
   threadsDir: string | null;
   inboxDir: string | null;
   lastMirrorAt: string | null;
+  lastIngestAt: string | null;
+  ingested: number;
   lastError: string | null;
 }
 

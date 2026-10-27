@@ -158,8 +158,9 @@ The Council/Verdict preview screens map almost field-for-field: `Council { optio
 |---|---|---|
 | GET | `/v1/bridge/status` | configured/enabled/teamRepo/threadsDir/inboxDir/lastMirrorAt/lastError |
 | POST | `/v1/bridge/mirror/:jobId` | force-write the job dossier (works even when auto-mirror is off) |
+| POST | `/v1/bridge/ingest` | import new inbox notes + thread replies below the job thread's `<!-- replies -->` marker; idempotent per source path/hash. **Claimed** messages + evidence. Auto-runs every 20s when the bridge is enabled. |
 
-Enable auto-mirror with `POST /v1/settings {"bridge":{"enabled":true,"inbox":true}}`; disable with `{"bridge":{"enabled":false}}`. Outbound only for now: replies in threads/inboxes are not imported yet (the import step is the next bridge task). The runtime owns job/approval/evidence state; the thread says so in its frontmatter.
+Enable auto-mirror/ingest with `POST /v1/settings {"bridge":{"enabled":true,"inbox":true}}`; disable with `{"bridge":{"enabled":false}}`. Threads are mirrors: the runtime owns job/approval/evidence state. Replies below `<!-- replies -->` and inbox notes are imported as Claimed (see [AGENT_BRIDGE.md](../desktop-v2/AGENT_BRIDGE.md)); the CLI path is `node runtime/scripts/agent-write.mjs`.
 
 ### Sessions / transcript
 
