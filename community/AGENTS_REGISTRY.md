@@ -59,3 +59,12 @@ column — this is the mechanism, not aspiration).
    revised either direction.
 4. **`myavana-widget.js` ownership** — unresolved for 5 days, nobody's
    claimed it. Real, live example of an org gap, not a code gap.
+
+
+---
+
+## Antigravity agents
+
+| Agent Name | Alias / ID | Primary Domain / Specialization | Status | Active Focus / Responsibilities |
+|:---|:---|:---|:---|:---|
+| **Quill** 🪶 | `quill` | Dev mode terminal engineer | **AVAILABLE** | Registered 2026-10-27; role DECLARED, no task history yet. Adapter: claude. |
