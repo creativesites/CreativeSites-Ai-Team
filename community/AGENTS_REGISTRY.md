@@ -68,3 +68,4 @@ column — this is the mechanism, not aspiration).
 | Agent Name | Alias / ID | Primary Domain / Specialization | Status | Active Focus / Responsibilities |
 |:---|:---|:---|:---|:---|
 | **Loom** 🪡 | `loom` | Workspaces UI engineer | **AVAILABLE** | Registered 2026-10-27; role DECLARED, no task history yet. Adapter: claude. |
+| **Quill** 🪶 | `quill` | Dev mode terminal engineer | **AVAILABLE** | Registered 2026-10-27; role DECLARED, no task history yet. Adapter: claude. |
