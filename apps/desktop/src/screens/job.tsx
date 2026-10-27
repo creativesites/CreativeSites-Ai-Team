@@ -53,7 +53,8 @@ export function JobScreen({
   const [criterionText, setCriterionText] = React.useState('');
   const [taskTitle, setTaskTitle] = React.useState('');
   const [taskCheck, setTaskCheck] = React.useState('');
-  const [agentId, setAgentId] = React.useState(job.tasks.find((t) => t.assigneeId)?.assigneeId ?? identities[0]?.id ?? '');
+  const builders = identities.filter((i) => !i.isOwner && i.id !== ownerId);
+  const [agentId, setAgentId] = React.useState(job.tasks.find((t) => t.assigneeId)?.assigneeId ?? builders[0]?.id ?? '');
   const [taskId, setTaskId] = React.useState(job.tasks[0]?.id ?? '');
   const readyAdapters = (adapters.status === 'ready' ? adapters.data : []).filter((a) => a.installed && (a.auth.state === 'ready' || a.auth.state === 'configured'));
   const [adapterId, setAdapterId] = React.useState(readyAdapters[0]?.id ?? 'claude');
@@ -271,7 +272,7 @@ export function JobScreen({
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                   Agent
                   <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="glass-panel h-9 rounded-md px-2 text-xs">
-                    {identities.map((i) => (
+                    {builders.map((i) => (
                       <option key={i.id} value={i.id}>{i.name}</option>
                     ))}
                   </select>
