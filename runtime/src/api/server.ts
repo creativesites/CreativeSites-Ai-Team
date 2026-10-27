@@ -260,6 +260,10 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       status: 201,
       body: await opts.checker.runTaskCheck(ctx.params.id!, asString(ctx.body.taskId, 'taskId')),
     })),
+    route('POST', '/v1/jobs/:id/commit', async (ctx) => ({
+      status: 201,
+      body: await opts.checker.commitWorktree(ctx.params.id!, asOptionalString(ctx.body.message) ?? 'manual commit'),
+    })),
     route('POST', '/v1/jobs/:id/snapshot', async (ctx) => ({
       status: 201,
       body: await opts.checker.snapshot(ctx.params.id!, asOptionalString(ctx.body.actorId)),

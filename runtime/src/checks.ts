@@ -66,6 +66,59 @@ export class Checker {
     return { taskId: task.id, command, worktree: worktree.path, result, evidence };
   }
 
+  /**
+   * Commits the job worktree so the verifier can re-run checks on a clean
+   * checkout of exactly what the builder produced. Evidence is Observed: the
+   * runtime ran git and kept the commit SHA and patch artifact.
+   */
+  async commitWorktree(jobId: string, message = 'session changes'): Promise<{ committed: boolean; commitSha: string; evidence: T.Evidence | null }> {
+    const job = this.repo.getJob(jobId);
+    const worktree = await this.worktreeForJob(job);
+    const status = await runShell('git status --porcelain=v1', worktree.path, 30_000);
+    const changed = status.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+    const before = workspaces.workspaceState(worktree.path);
+    if (!changed.length) return { committed: false, commitSha: before.headSha ?? worktree.baseSha, evidence: null };
+
+    const diffArtifact = saveArtifact(this.artifactsDir, (await runShell('git diff HEAD --no-color', worktree.path, 60_000)).stdout, 'text/x-diff; charset=utf-8');
+    this.repo.addArtifact(diffArtifact);
+    const safeMessage = `myaos job ${job.number}: ${message}`.replace(/'/g, "'\\''").slice(0, 240);
+    const commit = await runShell(
+      `git add -A && git -c user.name=MyaOS -c user.email=myaos@localhost commit --quiet -m '${safeMessage}'`,
+      worktree.path,
+      120_000
+    );
+    if (commit.exitCode !== 0) {
+      throw new ConflictError(`Could not commit the worktree: ${commit.stderr.slice(-800) || `exit ${commit.exitCode}`}`);
+    }
+    const after = workspaces.workspaceState(worktree.path);
+    const commitSha = after.headSha ?? worktree.baseSha;
+    const stat = await runShell('git show --stat --oneline --no-color HEAD', worktree.path, 30_000);
+    const statArtifact = saveArtifact(this.artifactsDir, stat.stdout, 'text/plain; charset=utf-8');
+    this.repo.addArtifact(statArtifact);
+    const evidence = this.repo.appendEvidence({
+      jobId: job.id,
+      kind: 'diff',
+      class: 'OBSERVED',
+      summary: `Committed ${changed.length} file${changed.length === 1 ? '' : 's'} at ${commitSha.slice(0, 12)}`,
+      payload: {
+        commitSha,
+        message: safeMessage,
+        changedFiles: changed,
+        patchArtifact: diffArtifact.sha256,
+        statArtifact: statArtifact.sha256,
+        stat: stat.stdout.slice(0, 4000),
+      },
+      artifactRefs: [diffArtifact.sha256, statArtifact.sha256],
+      command: `git add -A && git commit -m '${safeMessage}'`,
+      exitCode: 0,
+      commitSha,
+      worktree: worktree.path,
+      recordedBy: 'runtime',
+      recordedByKind: 'system',
+    });
+    return { committed: true, commitSha, evidence };
+  }
+
   async snapshot(jobId: string, actorId?: string): Promise<T.Evidence> {
     const job = this.repo.getJob(jobId);
     const worktree = await this.worktreeForJob(job);
@@ -123,7 +176,7 @@ export class Checker {
       : job.tasks.filter((t) => Boolean(t.checkCommand));
     if (!selected.length) throw new ConflictError('No task with a check command to verify');
     const worktree = await this.worktreeForJob(job);
-    const base = worktree.baseSha;
+    const base = workspaces.workspaceState(worktree.path).headSha ?? worktree.baseSha;
     const results: VerificationOutcome[] = [];
 
     for (const task of selected) {

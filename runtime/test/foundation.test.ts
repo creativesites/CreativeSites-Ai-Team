@@ -459,7 +459,14 @@ test('the runtime runs a task check itself, snapshots the worktree, and verifies
   assert.equal(artifactRes.status, 200);
   assert.ok((await artifactRes.text()).length > 0);
 
-  // A different actor verifies in a clean worktree; the original worktree change is not there.
+  // The runtime commits the builder's worktree so verification can run on a clean checkout.
+  const committed = await ok('POST', `/v1/jobs/${job.id}/commit`, { message: 'test change' });
+  assert.equal(committed.committed, true);
+  assert.ok(committed.commitSha);
+  assert.equal(committed.evidence.class, 'OBSERVED');
+  assert.equal(committed.evidence.commitSha, committed.commitSha);
+
+  // A different actor verifies in a clean worktree at the committed build.
   const verification = await ok('POST', `/v1/jobs/${job.id}/verify`, { actorId: 'kael' });
   assert.equal(verification.ok, true);
   assert.equal(verification.results[0].ok, true);

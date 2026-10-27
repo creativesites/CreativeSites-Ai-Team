@@ -126,6 +126,12 @@ export class SessionManager {
     this.repo.appendTranscript(sessionId, { kind: 'turn_end', role: null, payload: { stopReason: result.stopReason } });
     this.repo.updateSession(sessionId, { state: 'idle', turnCount: (session.turnCount ?? 0) + 1 });
     await this.snapshot(live, 'after');
+    try {
+      const commit = await this.checker.commitWorktree(live.jobId, `follow-up ${sessionId.slice(-6)}`);
+      if (commit.committed) this.repo.appendTranscript(sessionId, { kind: 'commit', role: null, payload: { commitSha: commit.commitSha } });
+    } catch (e) {
+      this.repo.appendTranscript(sessionId, { kind: 'commit_error', role: null, payload: { message: (e as Error).message } });
+    }
   }
 
   async closeAll(): Promise<void> {
@@ -204,6 +210,14 @@ export class SessionManager {
         this.repo.updateSession(live.sessionId, { state: 'idle', error: null });
       }
       await this.snapshot(live, 'after');
+      try {
+        const commit = await this.checker.commitWorktree(job.id, `session ${live.sessionId.slice(-6)}`);
+        if (commit.committed) {
+          this.repo.appendTranscript(live.sessionId, { kind: 'commit', role: null, payload: { commitSha: commit.commitSha, evidenceId: commit.evidence?.id ?? null } });
+        }
+      } catch (e) {
+        this.repo.appendTranscript(live.sessionId, { kind: 'commit_error', role: null, payload: { message: (e as Error).message } });
+      }
     } catch (e) {
       this.fail(live, e);
     } finally {
