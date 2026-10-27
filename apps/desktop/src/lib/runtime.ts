@@ -7,6 +7,7 @@ import type {
   Council,
   CouncilCard,
   CouncilVerdict,
+  CreateApprovalInput,
   CreateBudgetInput,
   CreateCouncilInput,
   CreateCouncilCardInput,
@@ -199,10 +200,23 @@ export class RuntimeClient {
   updateTask = (taskId: string, input: UpdateTaskInput) =>
     this.request<Task>('PATCH', `/v1/tasks/${encodeURIComponent(taskId)}`, input);
   evidence = (jobId: string) => this.request<Evidence[]>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/evidence`);
+  runCheck = (jobId: string, taskId: string) =>
+    this.request<{ result: { exitCode: number | null; stdout: string; stderr: string }; evidence: Evidence }>(
+      'POST',
+      `/v1/jobs/${encodeURIComponent(jobId)}/checks`,
+      { taskId }
+    );
+  commitJob = (jobId: string, message?: string) =>
+    this.request<{ committed: boolean; commitSha: string; evidence: Evidence | null }>(
+      'POST',
+      `/v1/jobs/${encodeURIComponent(jobId)}/commit`,
+      { message }
+    );
   appendEvidence = (jobId: string, input: CreateEvidenceInput) =>
     this.request<Evidence>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/evidence`, input);
   verifyEvidence = (evidenceId: string, input: VerifyEvidenceInput) =>
     this.request<Evidence>('POST', `/v1/evidence/${encodeURIComponent(evidenceId)}/verify`, input);
+  createApproval = (input: CreateApprovalInput) => this.request<Approval>('POST', `/v1/jobs/${encodeURIComponent(input.jobId)}/approvals`, input);
   approvals = (filter: { status?: string; jobId?: string; assignedTo?: string } = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(filter)) if (v) q.set(k, String(v));
