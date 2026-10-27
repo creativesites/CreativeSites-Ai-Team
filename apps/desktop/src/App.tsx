@@ -7,6 +7,8 @@ import { RuntimeProvider, useRuntime, useRuntimeData, type Loadable } from '@/li
 import { ApprovalsScreen } from '@/screens/approvals';
 import { CoworkersScreen } from '@/screens/coworkers';
 import { JobsScreen } from '@/screens/jobs';
+import { SettingsScreen } from '@/screens/settings';
+import { WorkspacesScreen } from '@/screens/workspaces';
 import { DevScreen } from '@/screens/dev';
 import { HomeScreen, type StartJobRequest } from '@/screens/home';
 import { JobScreen } from '@/screens/job';
@@ -101,14 +103,9 @@ function Screen({ route, rooms, jobs, identities, sessions, adapters, projects }
     case 'dev':
       return <DevContainer jobId={route.jobId ?? jobs[0]?.id} jobs={jobs} identities={identities} sessions={sessions} />;
     case 'workspaces':
+      return <WorkspacesScreen projects={projects} rooms={rooms} identities={identities} />;
     case 'settings':
-      return (
-        <div className="mx-auto flex max-w-2xl flex-col gap-4 py-10">
-          <EmptyState title={route.name === 'workspaces' ? 'Workspaces is being wired' : 'Settings is being wired'}>
-            The screen lands with the UI workstream. The runtime already exposes projects, workspaces, budgets, policies and adapter state.
-          </EmptyState>
-        </div>
-      );
+      return <SettingsScreen identities={identities} adapters={adapters} projects={projects} />;
     case 'coworkers':
       return (
         <CoworkersScreen

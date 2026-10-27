@@ -3,6 +3,7 @@ import type {
   AdapterInfo,
   Approval,
   ApprovalPolicy,
+  BridgeStatus,
   Budget,
   Council,
   CouncilCard,
@@ -257,7 +258,7 @@ export class RuntimeClient {
     this.request<Council>('POST', `/v1/councils/${encodeURIComponent(id)}/accept`, input);
 
   // ---- bridge
-  bridgeStatus = () => this.request<{ configured: boolean; enabled: boolean; teamRepo: string | null; threadsDir: string | null; inboxDir: string | null; lastMirrorAt: string | null; lastError: string | null }>('GET', '/v1/bridge/status');
+  bridgeStatus = () => this.request<BridgeStatus>('GET', '/v1/bridge/status');
   mirrorJob = (jobId: string) => this.request<{ path: string }>('POST', `/v1/bridge/mirror/${encodeURIComponent(jobId)}`);
 
   /**
