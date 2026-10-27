@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "updated_at": "2026-09-09T10:42:06.529Z",
+  "updated_at": "2026-10-27T06:22:43.331Z",
   "principle": "Declared state != observed state != attested state != verified state",
   "agents": [
     {
@@ -309,6 +309,29 @@
       "status": "WORKING",
       "current_task": "TASK_003",
       "last_seen": "2026-09-09T09:00:00Z"
+    },
+    {
+      "identity": {
+        "id": "loom",
+        "name": "Loom",
+        "symbol": "🪡",
+        "primary_domain": "Workspaces UI engineer"
+      },
+      "declared_capabilities": [
+        "ui",
+        "react",
+        "typescript"
+      ],
+      "declared_responsibilities": [
+        "Workspaces UI engineer"
+      ],
+      "declared_repository_ownership": [],
+      "runtime_session_identity": "claude",
+      "observed_liveness": "UNKNOWN",
+      "confidence_provenance": "DECLARED",
+      "status": "AVAILABLE",
+      "last_seen": null,
+      "current_task": null
     }
   ]
 }
