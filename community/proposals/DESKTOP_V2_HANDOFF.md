@@ -17,7 +17,8 @@
 | `7fbe4ba` | rooms bind their repo path from the project |
 | `c3e89e8` | planning council engine: cards, scoring rules, verdict → plan + tasks |
 | `958d5c3` | team bridge: job dossiers to threads + inbox notes (opt-in) |
-| (current) | Phase 1 engine walkthrough passes with real Claude: builder turn → auto-commit → runtime check → independent verify → owner approval → done. Shared UI client/routes/nav plumbing landed for the UI workstream. |
+| (current) | Phase 1 engine walkthrough passes with real Claude: builder turn → auto-commit → runtime check → independent verify → owner approval → done. |
+| UI | Job screen is a working control plane (plan, criteria, tasks, checks, sessions, approvals, verification, budget); Dev shows live session transcript; new Needs-you approval inbox and Jobs index; Workspaces + Settings screens merged and routed; Room can start a job from its draft. Terminal/PTY branch in review. |
 
 A foundation commit implements:
 
