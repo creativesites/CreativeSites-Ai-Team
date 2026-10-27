@@ -148,6 +148,17 @@ function RoomContainer({ roomId, rooms, jobs, identities }: { roomId: string; ro
       focusJob={focus.status === 'ready' ? focus.data : null}
       ownerName={OWNER_NAME}
       onSend={client ? async (body) => void (await client.postMessage(roomId, { authorId: OWNER_ID, authorKind: 'human', body })) : undefined}
+      onStartJob={
+        client
+          ? async (text) => {
+              const first = text.split('\n')[0]!.split(/(?<=[.!?])\s/)[0]!.replace(/[.]$/, '');
+              const title = first.length > 90 ? `${first.slice(0, 87)}…` : first;
+              const job = await client.createJob({ roomId, title, brief: text, createdBy: OWNER_ID });
+              await client.postMessage(roomId, { authorId: OWNER_ID, authorKind: 'human', body: text, jobId: job.id });
+              window.location.hash = href({ name: 'job', jobId: job.id });
+            }
+          : undefined
+      }
     />
   );
 }

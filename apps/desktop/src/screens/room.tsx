@@ -18,6 +18,7 @@ export function RoomScreen({
   focusJob,
   ownerName,
   onSend,
+  onStartJob,
 }: {
   room: Room;
   messages: Message[];
@@ -27,9 +28,12 @@ export function RoomScreen({
   focusJob: JobDetail | null;
   ownerName: string;
   onSend?: (body: string) => Promise<void>;
+  /** Turn the draft into a job in this room (same text becomes the brief). */
+  onStartJob?: (text: string) => Promise<void>;
 }) {
   const [draft, setDraft] = React.useState('');
   const [error, setError] = React.useState<string | null>(null);
+  const [starting, setStarting] = React.useState(false);
   const jobById = new Map(jobs.map((j) => [j.id, j]));
   const shownJobCards = new Set<string>();
 
@@ -89,6 +93,30 @@ export function RoomScreen({
         </div>
 
         <div className="mx-auto w-full max-w-3xl px-6 pb-4">
+          {onStartJob && (
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">The draft becomes the job's brief and this room keeps the thread.</span>
+              <button
+                type="button"
+                disabled={!draft.trim() || starting}
+                onClick={async () => {
+                  setStarting(true);
+                  setError(null);
+                  try {
+                    await onStartJob(draft.trim());
+                    setDraft('');
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : String(e));
+                  } finally {
+                    setStarting(false);
+                  }
+                }}
+                className={buttonVariants({ variant: 'default', size: 'sm' })}
+              >
+                {starting ? 'Starting…' : 'Start a job from this draft'}
+              </button>
+            </div>
+          )}
           <Composer
             value={draft}
             onValueChange={setDraft}
