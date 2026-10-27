@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Briefcase, Hash, Home, Inbox, RefreshCw, Search, ShieldCheck, Terminal, Users } from 'lucide-react';
+import { Briefcase, FolderGit2, Hash, Home, Inbox, RefreshCw, Search, Settings, ShieldCheck, Terminal, Users } from 'lucide-react';
 import type { Identity, JobSummary, Room, Session } from '@runtime/types';
 import { Avatar, OwnerAvatar } from '@/components/app/avatar';
 import { Tag } from '@/components/app/status';
@@ -131,6 +131,12 @@ export function Sidebar({
         )}
         <NavLink to={{ name: 'coworkers' }} active={route.name === 'coworkers'} icon={<Users />}>
           Coworkers
+        </NavLink>
+        <NavLink to={{ name: 'workspaces' }} active={route.name === 'workspaces'} icon={<FolderGit2 />}>
+          Workspaces
+        </NavLink>
+        <NavLink to={{ name: 'settings' }} active={route.name === 'settings'} icon={<Settings />}>
+          Settings
         </NavLink>
       </div>
 

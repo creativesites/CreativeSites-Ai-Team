@@ -17,6 +17,7 @@
 | `7fbe4ba` | rooms bind their repo path from the project |
 | `c3e89e8` | planning council engine: cards, scoring rules, verdict → plan + tasks |
 | `958d5c3` | team bridge: job dossiers to threads + inbox notes (opt-in) |
+| (current) | Phase 1 engine walkthrough passes with real Claude: builder turn → auto-commit → runtime check → independent verify → owner approval → done. Shared UI client/routes/nav plumbing landed for the UI workstream. |
 
 A foundation commit implements:
 
@@ -130,6 +131,7 @@ The app still discovers the runtime through the Rust side (or Vite's `/__myaos/r
 | GET/POST | `/v1/jobs/:id/evidence` | append (see rules); GET `/v1/evidence/:id`; POST `/v1/evidence/:id/verify` `{verifiedBy, note?, command?, exitCode?, commitSha?}` |
 | POST | `/v1/jobs/:id/checks` | `{taskId}` — **the runtime runs the task's check itself** in the job worktree; records OBSERVED evidence with real exit code/output/commit |
 | POST | `/v1/jobs/:id/snapshot` | `{actorId?}` — git status + `git diff HEAD` in the job worktree; records OBSERVED diff evidence with content-addressed artifacts |
+| POST | `/v1/jobs/:id/commit` | `{message?, actorId?}` — commits the job worktree (builder changes) and records OBSERVED evidence with the commit SHA + patch/stat artifacts. The session manager also auto-commits after each builder turn, so verification can run on a clean checkout of exactly what was built. |
 | POST | `/v1/jobs/:id/verify` | `{actorId, taskIds?}` — re-runs each check in a **clean detached worktree** at the job base commit; passing runs become VERIFIED, failing runs stay Observed; rejects self-verification |
 | GET | `/v1/artifacts/:sha` | raw artifact bytes (diff/output), token required |
 | GET/POST | `/v1/jobs/:id/approvals`; GET `/v1/approvals?status=&assignedTo=`; GET `/v1/approvals/:id`; POST `/v1/approvals/:id/decision` | decision `{decision:'approve'\|'decline', decidedBy, decidedByKind?, note?, execution?}` |
@@ -224,6 +226,10 @@ Read [ACP_SPIKE_FINDINGS.md](ACP_SPIKE_FINDINGS.md) before building adapter UI. 
 | DeepSeek Harness | **Unsupported as an ACP agent** (no spawnable entry point) |
 
 `GET /v1/adapters` now returns `installed`, `version` and `auth {state, detail}` (Claude/Codex read their CLI auth; Gemini checks credentials). The Coworkers screen shows this panel. A configured key is shown as "Configured" until a turn actually succeeds — auth is not proven by configuration alone. The session manager reports a failed session with the adapter's error in the transcript; show that as Unknown/failed, never as a successful empty turn. Starting a session with a blocked adapter returns a `409` with the reason. A custom adapter can be added via `POST /v1/adapters/:id` (command/args) — the tests use that with a scripted fake agent. Runtime-level check: `node runtime/scripts/smoke-adapter.mjs claude|codex|gemini`.
+
+## Antigravity agents
+
+Two additional agents are working the Phase 1 close-out in parallel. Their assignments, registration steps, branches and file ownership are in [ANTIGRAVITY_ASSIGNMENTS.md](../desktop-v2/ANTIGRAVITY_ASSIGNMENTS.md). Registration helper: `node runtime/scripts/register-agent.mjs`.
 
 ## Requests from the UI side
 

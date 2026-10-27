@@ -1,20 +1,55 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type {
   AdapterInfo,
+  Approval,
+  ApprovalPolicy,
+  Budget,
+  Council,
+  CouncilCard,
+  CouncilVerdict,
+  CreateBudgetInput,
+  CreateCouncilInput,
+  CreateCouncilCardInput,
+  CreateCriterionInput,
+  CreateEvidenceInput,
   CreateIdentityInput,
   CreateJobInput,
+  CreatePolicyInput,
+  CreateProjectFolderInput,
+  CreateProjectInput,
+  CreateRepoInput,
   CreateRoomInput,
+  CreateTaskInput,
+  CreateTeamInput,
+  DecideApprovalInput,
+  Evidence,
   Health,
   Identity,
   JobDetail,
+  JobPlan,
+  JobStage,
+  JobStageHistory,
   JobSummary,
   Message,
   PostMessageInput,
+  Project,
+  Repo,
   Room,
+  RoomMember,
   RuntimeEvent,
   Session,
+  Settings,
   Summary,
+  Task,
+  Team,
+  TeamMember,
+  TranscriptEntry,
   UpdateIdentityInput,
+  UpdatePolicyInput,
+  UpdateProjectInput,
+  UpdateTaskInput,
+  VerifyEvidenceInput,
+  WorkspaceState,
 } from '@runtime/types';
 
 // The desktop's only way to the data: the runtime's local API. The desktop
@@ -60,7 +95,7 @@ export class RuntimeClient {
     this.connection = connection;
   }
 
-  private async request<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+  private async request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
     const res = await fetch(`${this.connection.url}${path}`, {
       method,
       headers: {
@@ -90,6 +125,126 @@ export class RuntimeClient {
   createJob = (input: CreateJobInput) => this.request<JobDetail>('POST', '/v1/jobs', input);
   sessions = () => this.request<Session[]>('GET', '/v1/sessions');
   adapters = () => this.request<AdapterInfo[]>('GET', '/v1/adapters');
+
+  // ---- settings / teams / projects / workspaces
+  settings = () => this.request<Settings>('GET', '/v1/settings');
+  updateSettings = (patch: Settings) => this.request<Settings>('POST', '/v1/settings', patch);
+  teams = () => this.request<Team[]>('GET', '/v1/teams');
+  createTeam = (input: CreateTeamInput) => this.request<Team>('POST', '/v1/teams', input);
+  team = (id: string) => this.request<Team>('GET', `/v1/teams/${encodeURIComponent(id)}`);
+  teamMembers = (id: string) => this.request<TeamMember[]>('GET', `/v1/teams/${encodeURIComponent(id)}/members`);
+  addTeamMember = (id: string, memberId: string, role?: string) =>
+    this.request<TeamMember>('POST', `/v1/teams/${encodeURIComponent(id)}/members`, { memberId, role });
+  removeTeamMember = (id: string, memberId: string) =>
+    this.request<unknown>('DELETE', `/v1/teams/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`);
+
+  projects = () => this.request<Project[]>('GET', '/v1/projects');
+  project = (id: string) => this.request<Project>('GET', `/v1/projects/${encodeURIComponent(id)}`);
+  projectStatus = (id: string) =>
+    this.request<{ project: Project; repos: { repo: Repo; state: WorkspaceState }[] }>(
+      'GET',
+      `/v1/projects/${encodeURIComponent(id)}/status`
+    );
+  createProject = (input: CreateProjectInput) => this.request<Project>('POST', '/v1/projects', input);
+  updateProject = (id: string, input: UpdateProjectInput) =>
+    this.request<Project>('POST', `/v1/projects/${encodeURIComponent(id)}`, input);
+  attachProject = (input: { path: string; name?: string; defaultBranch?: string; teamId?: string }) =>
+    this.request<{ project: Project; state: WorkspaceState }>('POST', '/v1/projects/attach', input);
+  cloneProject = (input: { url: string; parentDir?: string; name?: string; teamId?: string }) =>
+    this.request<{ project: Project; state: WorkspaceState }>('POST', '/v1/projects/clone', input);
+  createProjectFolder = (input: CreateProjectFolderInput) =>
+    this.request<{ project: Project; state: WorkspaceState }>('POST', '/v1/projects/create-folder', input);
+  addRepo = (projectId: string, input: CreateRepoInput) =>
+    this.request<Repo>('POST', `/v1/projects/${encodeURIComponent(projectId)}/repos`, input);
+  removeRepo = (repoId: string) => this.request<unknown>('DELETE', `/v1/repos/${encodeURIComponent(repoId)}`);
+
+  room = (id: string) => this.request<Room>('GET', `/v1/rooms/${encodeURIComponent(id)}`);
+  updateRoom = (id: string, input: { name?: string; projectId?: string | null; teamId?: string | null; archived?: boolean }) =>
+    this.request<Room>('POST', `/v1/rooms/${encodeURIComponent(id)}`, input);
+  roomMembers = (id: string) => this.request<RoomMember[]>('GET', `/v1/rooms/${encodeURIComponent(id)}/members`);
+  addRoomMember = (id: string, memberId: string, kind: 'human' | 'agent' = 'agent', role = 'member') =>
+    this.request<RoomMember>('POST', `/v1/rooms/${encodeURIComponent(id)}/members`, { memberId, kind, role });
+  removeRoomMember = (id: string, memberId: string) =>
+    this.request<unknown>('DELETE', `/v1/rooms/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`);
+
+  // ---- job lifecycle
+  jobsFiltered = (filter: { roomId?: string; projectId?: string; stage?: JobStage; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filter)) if (v !== undefined && v !== '') q.set(k, String(v));
+    const suffix = q.toString() ? `?${q}` : '';
+    return this.request<JobSummary[]>('GET', `/v1/jobs${suffix}`);
+  };
+  updateJob = (id: string, input: { title?: string; brief?: string; risk?: string; priority?: string; budgetCents?: number | null; blockedReason?: string | null }) =>
+    this.request<JobDetail>('PATCH', `/v1/jobs/${encodeURIComponent(id)}`, input);
+  transitionJob = (id: string, input: { to: JobStage; actorId: string; actorKind?: 'human' | 'agent' | 'system'; note?: string; force?: boolean }) =>
+    this.request<JobDetail>('POST', `/v1/jobs/${encodeURIComponent(id)}/stage`, input);
+  setPlan = (id: string, plan: JobPlan, actorId: string) =>
+    this.request<JobDetail>('POST', `/v1/jobs/${encodeURIComponent(id)}/plan`, { plan, actorId });
+  acceptPlan = (id: string, actorId: string) =>
+    this.request<JobDetail>('POST', `/v1/jobs/${encodeURIComponent(id)}/plan/accept`, { actorId });
+  jobHistory = (id: string) => this.request<JobStageHistory[]>('GET', `/v1/jobs/${encodeURIComponent(id)}/history`);
+  jobBudget = (id: string) =>
+    this.request<{ configured: boolean; source: string | null; limitCents: number | null; spentCents: number; remainingCents: number | null }>(
+      'GET',
+      `/v1/jobs/${encodeURIComponent(id)}/budget`
+    );
+  addCriterion = (id: string, input: CreateCriterionInput) =>
+    this.request<unknown>('POST', `/v1/jobs/${encodeURIComponent(id)}/criteria`, input);
+  updateCriterion = (criterionId: string, input: { text?: string; position?: number }) =>
+    this.request<unknown>('PATCH', `/v1/criteria/${encodeURIComponent(criterionId)}`, input);
+  deleteCriterion = (criterionId: string) => this.request<unknown>('DELETE', `/v1/criteria/${encodeURIComponent(criterionId)}`);
+  tasks = (jobId: string) => this.request<Task[]>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/tasks`);
+  createTask = (jobId: string, input: CreateTaskInput) =>
+    this.request<Task>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/tasks`, input);
+  updateTask = (taskId: string, input: UpdateTaskInput) =>
+    this.request<Task>('PATCH', `/v1/tasks/${encodeURIComponent(taskId)}`, input);
+  evidence = (jobId: string) => this.request<Evidence[]>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/evidence`);
+  appendEvidence = (jobId: string, input: CreateEvidenceInput) =>
+    this.request<Evidence>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/evidence`, input);
+  verifyEvidence = (evidenceId: string, input: VerifyEvidenceInput) =>
+    this.request<Evidence>('POST', `/v1/evidence/${encodeURIComponent(evidenceId)}/verify`, input);
+  approvals = (filter: { status?: string; jobId?: string; assignedTo?: string } = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filter)) if (v) q.set(k, String(v));
+    return this.request<Approval[]>('GET', `/v1/approvals${q.toString() ? `?${q}` : ''}`);
+  };
+  approval = (id: string) => this.request<Approval>('GET', `/v1/approvals/${encodeURIComponent(id)}`);
+  decideApproval = (id: string, input: DecideApprovalInput) =>
+    this.request<Approval>('POST', `/v1/approvals/${encodeURIComponent(id)}/decision`, input);
+  policies = () => this.request<ApprovalPolicy[]>('GET', '/v1/policies');
+  createPolicy = (input: CreatePolicyInput) => this.request<ApprovalPolicy>('POST', '/v1/policies', input);
+  updatePolicy = (id: string, input: UpdatePolicyInput) =>
+    this.request<ApprovalPolicy>('PATCH', `/v1/policies/${encodeURIComponent(id)}`, input);
+  deletePolicy = (id: string) => this.request<unknown>('DELETE', `/v1/policies/${encodeURIComponent(id)}`);
+  budgets = () => this.request<Budget[]>('GET', '/v1/budgets');
+  createBudget = (input: CreateBudgetInput) => this.request<Budget>('POST', '/v1/budgets', input);
+
+  // ---- sessions / transcript
+  startSession = (jobId: string, input: { agentId: string; adapterId?: string; taskId?: string; prompt?: string; mode?: string }) =>
+    this.request<Session>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/sessions`, input);
+  session = (id: string) => this.request<Session>('GET', `/v1/sessions/${encodeURIComponent(id)}`);
+  cancelSession = (id: string, actorId: string) =>
+    this.request<Session>('POST', `/v1/sessions/${encodeURIComponent(id)}/cancel`, { actorId });
+  promptSession = (id: string, text: string) =>
+    this.request<{ ok: boolean }>('POST', `/v1/sessions/${encodeURIComponent(id)}/prompt`, { text });
+  transcript = (id: string, since = 0) =>
+    this.request<TranscriptEntry[]>('GET', `/v1/sessions/${encodeURIComponent(id)}/transcript?since=${since}`);
+
+  // ---- councils
+  councils = (jobId: string) => this.request<Council[]>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/councils`);
+  createCouncil = (jobId: string, input: CreateCouncilInput) =>
+    this.request<Council>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/councils`, input);
+  council = (id: string) => this.request<Council>('GET', `/v1/councils/${encodeURIComponent(id)}`);
+  addCouncilCard = (id: string, input: CreateCouncilCardInput) =>
+    this.request<CouncilCard>('POST', `/v1/councils/${encodeURIComponent(id)}/cards`, input);
+  councilVerdict = (id: string) => this.request<CouncilVerdict>('GET', `/v1/councils/${encodeURIComponent(id)}/verdict`);
+  createCouncilVerdict = (id: string) => this.request<CouncilVerdict>('POST', `/v1/councils/${encodeURIComponent(id)}/verdict`);
+  acceptCouncilVerdict = (id: string, input: { actorId: string; tasks?: CreateTaskInput[] }) =>
+    this.request<Council>('POST', `/v1/councils/${encodeURIComponent(id)}/accept`, input);
+
+  // ---- bridge
+  bridgeStatus = () => this.request<{ configured: boolean; enabled: boolean; teamRepo: string | null; threadsDir: string | null; inboxDir: string | null; lastMirrorAt: string | null; lastError: string | null }>('GET', '/v1/bridge/status');
+  mirrorJob = (jobId: string) => this.request<{ path: string }>('POST', `/v1/bridge/mirror/${encodeURIComponent(jobId)}`);
 
   /**
    * Follows the event stream until `signal` aborts, resuming after the last

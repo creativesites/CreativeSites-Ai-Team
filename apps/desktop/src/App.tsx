@@ -93,6 +93,15 @@ function Screen({ route, rooms, jobs, identities, sessions, adapters }: { route:
       return <PlanningNotYet jobId={route.jobId} />;
     case 'dev':
       return <DevContainer jobId={route.jobId ?? jobs[0]?.id} jobs={jobs} identities={identities} sessions={sessions} />;
+    case 'workspaces':
+    case 'settings':
+      return (
+        <div className="mx-auto flex max-w-2xl flex-col gap-4 py-10">
+          <EmptyState title={route.name === 'workspaces' ? 'Workspaces is being wired' : 'Settings is being wired'}>
+            The screen lands with the UI workstream. The runtime already exposes projects, workspaces, budgets, policies and adapter state.
+          </EmptyState>
+        </div>
+      );
     case 'coworkers':
       return (
         <CoworkersScreen
