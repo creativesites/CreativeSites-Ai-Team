@@ -3,10 +3,12 @@ import type { Evidence, Identity, JobDetail, JobSummary, Session, TranscriptEntr
 import { Avatar } from '@/components/app/avatar';
 import { isLive } from '@/components/app/shell';
 import { EmptyState, EvidenceTag, jobLabel, SectionTitle, StageBar, Tag } from '@/components/app/status';
+import { Terminal } from '@/components/terminal';
 import { DiffView } from '@/components/ui/diff-view';
 import { StepList, type Step } from '@/components/ui/tool-steps';
 import { href } from '@/lib/route';
 import { useRuntimeData } from '@/lib/runtime-context';
+import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -49,6 +51,8 @@ export function DevScreen({
   React.useEffect(() => {
     setSelected((current) => (jobSessions.some((s) => s.id === current) ? current : (jobSessions[0]?.id ?? '')));
   }, [jobSessions]);
+  const selectedSession = jobSessions.find((s) => s.id === selected) ?? null;
+  const [terminalOpen, setTerminalOpen] = React.useState(false);
   const transcript = useRuntimeData(
     (c) => (selected ? c.transcript(selected) : Promise.resolve([] as TranscriptEntry[])),
     [selected]
@@ -135,6 +139,21 @@ export function DevScreen({
                 )}
               </section>
             </div>
+            <section aria-label="Terminal" className="border-t border-border/60 p-5">
+              <SectionTitle aside="your login shell, not the agent session">Terminal</SectionTitle>
+              {!terminalOpen ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={() => setTerminalOpen(true)} disabled={!selectedSession?.worktree} className={buttonVariants({ variant: 'glass' })}>
+                    <TerminalIcon /> Open terminal in this worktree
+                  </button>
+                  {!selectedSession?.worktree && <span className="text-xs text-muted-foreground">Start a builder session first; the terminal opens in its worktree.</span>}
+                </div>
+              ) : (
+                <div className="mt-2 h-80 w-full overflow-hidden rounded-lg border border-border/60">
+                  <Terminal cwd={selectedSession?.worktree ?? undefined} />
+                </div>
+              )}
+            </section>
           </>
         )}
       </main>
@@ -178,6 +197,10 @@ export function DevScreen({
       </aside>
     </div>
   );
+}
+
+function TerminalIcon() {
+  return <span aria-hidden="true" className="mr-1 font-mono text-xs">&gt;_</span>;
 }
 
 function TranscriptLine({ entry }: { entry: TranscriptEntry }) {
