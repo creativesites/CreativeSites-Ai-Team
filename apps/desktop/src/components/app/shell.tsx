@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Briefcase, ChevronDown, ChevronRight, FolderGit2, Hash, Home, Inbox, Palette, RefreshCw, Search, Settings, ShieldCheck, Terminal, Users, Workflow } from 'lucide-react';
+import { Briefcase, ChevronDown, ChevronRight, FolderGit2, Hash, Home, Inbox, MessageSquare, Palette, RefreshCw, Search, Settings, ShieldCheck, Terminal, Users, Workflow } from 'lucide-react';
 import type { Identity, JobSummary, Room, Session } from '@runtime/types';
 import { Avatar, OwnerAvatar } from '@/components/app/avatar';
 import { CommandPalette } from '@/components/app/command-palette';
@@ -189,6 +189,9 @@ export function Sidebar({
         )}
         <NavLink to={{ name: 'team' }} active={route.name === 'team'} icon={<Workflow />} trailing={<Tag tone="quiet">Org</Tag>}>
           Team &amp; Org
+        </NavLink>
+        <NavLink to={{ name: 'communication' }} active={route.name === 'communication'} icon={<MessageSquare />}>
+          Communication Hub
         </NavLink>
         <NavLink to={{ name: 'coworkers' }} active={route.name === 'coworkers'} icon={<Users />} trailing={rateLimitedCount > 0 ? <Tag tone="risk">{rateLimitedCount} paused</Tag> : undefined}>
           Coworkers

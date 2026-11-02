@@ -2,6 +2,8 @@ import * as React from 'react';
 
 // A small hash router: the app has a handful of screens and no server routing.
 
+export type CommunicationSubpage = 'inboxes' | 'threads' | 'announcements' | 'social' | 'standups';
+
 export type Route =
   | { name: 'home' }
   | { name: 'room'; roomId: string }
@@ -12,6 +14,7 @@ export type Route =
   | { name: 'dev'; jobId?: string }
   | { name: 'coworkers' }
   | { name: 'team'; agentId?: string }
+  | { name: 'communication'; tab?: CommunicationSubpage }
   | { name: 'approvals' }
   | { name: 'jobs' }
   | { name: 'workspaces' }
@@ -37,6 +40,9 @@ export function parseRoute(hash: string): Route {
       return { name: 'coworkers' };
     case 'team':
       return { name: 'team', agentId: parts[1] };
+    case 'communication':
+    case 'chat':
+      return { name: 'communication', tab: parts[1] as CommunicationSubpage | undefined };
     case 'approvals':
       return { name: 'approvals' };
     case 'jobs':
@@ -72,6 +78,8 @@ export function href(route: Route): string {
       return '#/coworkers';
     case 'team':
       return route.agentId ? `#/team/${e(route.agentId)}` : '#/team';
+    case 'communication':
+      return route.tab ? `#/communication/${e(route.tab)}` : '#/communication';
     case 'approvals':
       return '#/approvals';
     case 'jobs':

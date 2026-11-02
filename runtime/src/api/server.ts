@@ -429,11 +429,28 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     }),
     route('GET', '/v1/projects/:id/files', (ctx) => {
       const project = repo.getProject(ctx.params.id!);
-      const root = project.rootPath || project.repos[0]?.path;
+      const root = ctx.query.get('root') || project.rootPath || project.repos[0]?.path;
       return {
         status: 200,
-        body: root ? workspaces.listProjectFiles(root, ctx.query.get('path') ?? '', Number(ctx.query.get('limit') ?? 100)) : [],
+        body: root ? workspaces.listProjectFiles(root, ctx.query.get('path') ?? '', Number(ctx.query.get('limit') ?? 150)) : [],
       };
+    }),
+    route('GET', '/v1/projects/:id/file', (ctx) => {
+      const project = repo.getProject(ctx.params.id!);
+      const root = ctx.query.get('root') || project.rootPath || project.repos[0]?.path;
+      const filePath = ctx.query.get('path');
+      if (!root || !filePath) return { status: 400, body: { error: 'Missing root or path' } };
+      try {
+        const file = workspaces.readProjectFile(root, filePath);
+        return { status: 200, body: file };
+      } catch (err) {
+        return { status: 404, body: { error: err instanceof Error ? err.message : String(err) } };
+      }
+    }),
+    route('GET', '/v1/projects/:id/worktrees', (ctx) => {
+      const project = repo.getProject(ctx.params.id!);
+      const root = ctx.query.get('root') || project.rootPath || project.repos[0]?.path;
+      return { status: 200, body: root ? workspaces.gitWorktrees(root) : [] };
     }),
     route('POST', '/v1/projects/:id/repos', (ctx) => ({ status: 201, body: repo.addRepo(ctx.params.id!, ctx.body as unknown as T.CreateRepoInput) })),
     route('DELETE', '/v1/repos/:id', (ctx) => {

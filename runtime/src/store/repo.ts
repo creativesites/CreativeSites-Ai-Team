@@ -1,5 +1,8 @@
 import crypto from 'node:crypto';
-import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type * as T from '../api/types.ts';
 import { computeCouncil } from '../council.ts';
 
@@ -103,9 +106,10 @@ export class Repo {
   private readonly db: DatabaseSync;
   private readonly onEvent: (e: T.RuntimeEvent) => void;
 
-  constructor(db: DatabaseSync, onEvent: (e: T.RuntimeEvent) => void = () => {}) {
+  constructor(db: DatabaseSync, onEvent: (e: T.RuntimeEvent) => void = () => {}, legacyDbPath?: string) {
     this.db = db;
     this.onEvent = onEvent;
+    this.seedCommunicationHub(legacyDbPath);
   }
 
   // ---------------------------------------------------------------- plumbing
@@ -3074,6 +3078,408 @@ export class Repo {
       this.recordEvent(events, { type: 'design.frame_deleted', subjectId: id, payload: { boardId: existing.boardId }, subjectType: 'design_frame' });
     });
   }
+
+  // ---------------------------------------------------------------- communication hub
+
+  seedCommunicationHub(legacyDbPath?: string): void {
+    try {
+      const row = this.one('SELECT COUNT(*) AS c FROM threads');
+      if (row && Number(row.c) > 0) return; // already seeded
+
+      const candidates: string[] = [];
+      if (legacyDbPath) candidates.push(legacyDbPath);
+      if (process.env.MYAOS_LEGACY_DB) candidates.push(process.env.MYAOS_LEGACY_DB);
+      candidates.push(
+        path.resolve('data/myaos.db'),
+        path.resolve('../data/myaos.db'),
+        path.resolve('../../data/myaos.db'),
+        path.join(os.homedir(), 'WebstormProjects/CreativeSites-Ai-Team/data/myaos.db')
+      );
+
+      let foundDb: DatabaseSync | null = null;
+      for (const cand of candidates) {
+        if (fs.existsSync(cand)) {
+          try {
+            foundDb = new DatabaseSync(cand, { readOnly: true });
+            break;
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+
+      if (!foundDb) return;
+
+      try {
+        const legacyThreads = foundDb.prepare('SELECT * FROM threads').all() as Row[];
+        const legacyMessages = foundDb.prepare('SELECT * FROM messages').all() as Row[];
+        const legacyAnnouncements = foundDb.prepare('SELECT * FROM announcements').all() as Row[];
+        const legacySocial = foundDb.prepare('SELECT * FROM social_posts').all() as Row[];
+        const legacyStandups = foundDb.prepare('SELECT * FROM standups').all() as Row[];
+
+        this.write(() => {
+          const insertThread = this.db.prepare(
+            `INSERT OR IGNORE INTO threads (id, title, author_identities, target_identities, status, related_task_id, related_project_id, created_at, updated_at, original_file_path)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+          for (const t of legacyThreads) {
+            insertThread.run(
+              String(t.id),
+              String(t.title),
+              str(t.author_identities) ?? '[]',
+              str(t.target_identities) ?? '[]',
+              str(t.status) ?? 'open',
+              str(t.related_task_id),
+              str(t.related_project_id),
+              String(t.created_at || now()),
+              String(t.updated_at || now()),
+              str(t.original_file_path)
+            );
+          }
+
+          const insertThreadMsg = this.db.prepare(
+            `INSERT INTO thread_messages (thread_id, from_identity, to_identity, msg_type, priority, subject, body, read, ts)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+          const insertInboxMsg = this.db.prepare(
+            `INSERT INTO inbox_messages (thread_id, from_identity, to_identity, msg_type, priority, subject, body, read, ts)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+
+          for (const m of legacyMessages) {
+            const threadId = str(m.thread_id);
+            if (threadId) {
+              insertThreadMsg.run(
+                threadId,
+                str(m.from_identity),
+                str(m.to_identity),
+                str(m.type) ?? 'COORDINATION',
+                str(m.priority) ?? 'normal',
+                str(m.subject),
+                String(m.body ?? ''),
+                num(m.read),
+                String(m.ts || now())
+              );
+            } else {
+              insertInboxMsg.run(
+                null,
+                str(m.from_identity),
+                str(m.to_identity) || 'Winston',
+                str(m.type) ?? 'COORDINATION',
+                str(m.priority) ?? 'normal',
+                str(m.subject),
+                String(m.body ?? ''),
+                num(m.read),
+                String(m.ts || now())
+              );
+            }
+          }
+
+          const insertAnn = this.db.prepare(
+            `INSERT INTO announcements (title, author_identity, content, audience, ts, original_file_path)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          );
+          for (const a of legacyAnnouncements) {
+            insertAnn.run(
+              String(a.title),
+              str(a.author_identity),
+              String(a.content ?? ''),
+              str(a.audience) ?? 'all',
+              String(a.ts || now()),
+              str(a.original_file_path)
+            );
+          }
+
+          const insertSoc = this.db.prepare(
+            `INSERT INTO social_posts (channel, author_identity, content, ts, original_file_path)
+             VALUES (?, ?, ?, ?, ?)`
+          );
+          for (const s of legacySocial) {
+            insertSoc.run(
+              String(s.channel),
+              str(s.author_identity),
+              String(s.content ?? ''),
+              String(s.ts || now()),
+              str(s.original_file_path)
+            );
+          }
+
+          const insertStd = this.db.prepare(
+            `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts, original_file_path)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          );
+          for (const st of legacyStandups) {
+            insertStd.run(
+              String(st.standup_date),
+              str(st.facilitator),
+              str(st.present_identities) ?? '[]',
+              str(st.absent_identities) ?? '[]',
+              String(st.content ?? ''),
+              str(st.parsed_updates) ?? '{}',
+              String(st.ts || now()),
+              str(st.original_file_path)
+            );
+          }
+        });
+      } finally {
+        try {
+          foundDb.close();
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch (err) {
+      console.warn('[runtime] seedCommunicationHub notice:', (err as Error).message);
+    }
+  }
+
+  listInboxMessages(identity: string, limit = 50): T.ChatMessage[] {
+    const rows = this.all(
+      `SELECT * FROM inbox_messages
+       WHERE to_identity = ? OR to_identity = 'all' OR to_identity = 'Team'
+       ORDER BY id DESC LIMIT ?`,
+      identity,
+      Math.max(1, limit)
+    );
+    return rows.map(toChatMessage);
+  }
+
+  sendInboxMessage(input: T.SendInboxMessageInput): T.ChatMessage {
+    const from = input.from.trim();
+    const to = input.to.trim();
+    const body = input.body.trim();
+    const subject = input.subject?.trim() || null;
+    const priority = input.priority?.trim() || 'normal';
+    const t = now();
+
+    let id = 0;
+    this.write((events) => {
+      const res = this.db
+        .prepare(
+          `INSERT INTO inbox_messages (from_identity, to_identity, msg_type, priority, subject, body, read, ts)
+           VALUES (?, ?, 'COORDINATION', ?, ?, ?, 0, ?)`
+        )
+        .run(from, to, priority, subject, body, t);
+      id = Number(res.lastInsertRowid);
+
+      this.recordEvent(events, {
+        type: 'communication.inbox_message_sent',
+        subjectId: String(id),
+        payload: { from, to, subject, priority },
+        actorId: from,
+        subjectType: 'inbox_message',
+      });
+    });
+
+    const row = this.one('SELECT * FROM inbox_messages WHERE id = ?', id);
+    return toChatMessage(row!);
+  }
+
+  listThreads(): T.Thread[] {
+    const rows = this.all(
+      `SELECT t.*,
+        (SELECT COUNT(*) FROM thread_messages tm WHERE tm.thread_id = t.id) AS message_count
+       FROM threads t
+       ORDER BY t.updated_at DESC`
+    );
+    return rows.map(toThread);
+  }
+
+  getThread(id: string): T.Thread {
+    const row = this.one(
+      `SELECT t.*,
+        (SELECT COUNT(*) FROM thread_messages tm WHERE tm.thread_id = t.id) AS message_count
+       FROM threads t
+       WHERE t.id = ?`,
+      id
+    );
+    if (!row) throw new NotFoundError(`thread ${id} not found`);
+    return toThread(row);
+  }
+
+  getThreadMessages(threadId: string): T.ChatMessage[] {
+    const rows = this.all(
+      `SELECT * FROM thread_messages
+       WHERE thread_id = ?
+       ORDER BY id ASC`,
+      threadId
+    );
+    return rows.map(toChatMessage);
+  }
+
+  createThread(input: T.CreateThreadInput): T.Thread {
+    const title = input.title.trim();
+    const author = input.author.trim();
+    const initialMsg = input.initialMessage.trim();
+    const targetIdentities = input.targetIdentities ?? [];
+    const t = now();
+    const threadId = `th_${slugify(title)}_${Date.now().toString(36)}`;
+
+    this.write((events) => {
+      this.db
+        .prepare(
+          `INSERT INTO threads (id, title, author_identities, target_identities, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'open', ?, ?)`
+        )
+        .run(threadId, title, JSON.stringify([author]), JSON.stringify(targetIdentities), t, t);
+
+      this.db
+        .prepare(
+          `INSERT INTO thread_messages (thread_id, from_identity, to_identity, msg_type, priority, subject, body, read, ts)
+           VALUES (?, ?, ?, 'COORDINATION', 'normal', ?, ?, 0, ?)`
+        )
+        .run(threadId, author, targetIdentities[0] ?? null, title, initialMsg, t);
+
+      this.recordEvent(events, {
+        type: 'communication.thread_created',
+        subjectId: threadId,
+        payload: { title, author, targetIdentities },
+        actorId: author,
+        subjectType: 'thread',
+      });
+    });
+
+    return this.getThread(threadId);
+  }
+
+  postThreadReply(threadId: string, input: T.PostThreadReplyInput): T.ChatMessage {
+    this.getThread(threadId); // asserts exists
+    const from = input.from.trim();
+    const body = input.body.trim();
+    const t = now();
+
+    let id = 0;
+    this.write((events) => {
+      const res = this.db
+        .prepare(
+          `INSERT INTO thread_messages (thread_id, from_identity, msg_type, priority, body, read, ts)
+           VALUES (?, ?, 'COORDINATION', 'normal', ?, 0, ?)`
+        )
+        .run(threadId, from, body, t);
+      id = Number(res.lastInsertRowid);
+
+      this.db.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(t, threadId);
+
+      this.recordEvent(events, {
+        type: 'communication.thread_reply_posted',
+        subjectId: String(id),
+        payload: { threadId, from },
+        actorId: from,
+        subjectType: 'thread_message',
+      });
+    });
+
+    const row = this.one('SELECT * FROM thread_messages WHERE id = ?', id);
+    return toChatMessage(row!);
+  }
+
+  listAnnouncements(limit = 20): T.Announcement[] {
+    const rows = this.all('SELECT * FROM announcements ORDER BY ts DESC LIMIT ?', Math.max(1, limit));
+    return rows.map(toAnnouncement);
+  }
+
+  createAnnouncement(input: T.CreateAnnouncementInput): T.Announcement {
+    const title = input.title.trim();
+    const author = input.author.trim();
+    const content = input.content.trim();
+    const audience = input.audience?.trim() || 'all';
+    const t = now();
+
+    let id = 0;
+    this.write((events) => {
+      const res = this.db
+        .prepare(
+          `INSERT INTO announcements (title, author_identity, content, audience, ts)
+           VALUES (?, ?, ?, ?, ?)`
+        )
+        .run(title, author, content, audience, t);
+      id = Number(res.lastInsertRowid);
+
+      this.recordEvent(events, {
+        type: 'communication.announcement_created',
+        subjectId: String(id),
+        payload: { title, author, audience },
+        actorId: author,
+        subjectType: 'announcement',
+      });
+    });
+
+    const row = this.one('SELECT * FROM announcements WHERE id = ?', id);
+    return toAnnouncement(row!);
+  }
+
+  listSocialPosts(channel?: string, limit = 50): T.SocialPost[] {
+    const rows = channel && channel !== 'all'
+      ? this.all('SELECT * FROM social_posts WHERE channel = ? ORDER BY ts DESC LIMIT ?', channel, Math.max(1, limit))
+      : this.all('SELECT * FROM social_posts ORDER BY ts DESC LIMIT ?', Math.max(1, limit));
+    return rows.map(toSocialPost);
+  }
+
+  createSocialPost(input: T.CreateSocialPostInput): T.SocialPost {
+    const channel = input.channel.trim();
+    const author = input.author.trim();
+    const content = input.content.trim();
+    const t = now();
+
+    let id = 0;
+    this.write((events) => {
+      const res = this.db
+        .prepare(
+          `INSERT INTO social_posts (channel, author_identity, content, ts)
+           VALUES (?, ?, ?, ?)`
+        )
+        .run(channel, author, content, t);
+      id = Number(res.lastInsertRowid);
+
+      this.recordEvent(events, {
+        type: 'communication.social_posted',
+        subjectId: String(id),
+        payload: { channel, author },
+        actorId: author,
+        subjectType: 'social_post',
+      });
+    });
+
+    const row = this.one('SELECT * FROM social_posts WHERE id = ?', id);
+    return toSocialPost(row!);
+  }
+
+  listStandups(limit = 10): T.Standup[] {
+    const rows = this.all('SELECT * FROM standups ORDER BY standup_date DESC LIMIT ?', Math.max(1, limit));
+    return rows.map(toStandup);
+  }
+
+  createStandup(input: T.CreateStandupInput): T.Standup {
+    const standupDate = input.standup_date.trim();
+    const facilitator = input.facilitator?.trim() || null;
+    const content = input.content.trim();
+    const present = JSON.stringify(input.present_identities ?? []);
+    const absent = JSON.stringify(input.absent_identities ?? []);
+    const parsedUpdates = input.parsed_updates || '{}';
+    const t = now();
+
+    let id = 0;
+    this.write((events) => {
+      const res = this.db
+        .prepare(
+          `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(standupDate, facilitator, present, absent, content, parsedUpdates, t);
+      id = Number(res.lastInsertRowid);
+
+      this.recordEvent(events, {
+        type: 'communication.standup_created',
+        subjectId: String(id),
+        payload: { standupDate, facilitator },
+        actorId: facilitator ?? 'system',
+        subjectType: 'standup',
+      });
+    });
+
+    const row = this.one('SELECT * FROM standups WHERE id = ?', id);
+    return toStandup(row!);
+  }
 }
 
 // ------------------------------------------------------------------ row mapping
@@ -3533,4 +3939,63 @@ const toDesignBoard = (r: Row, frames?: T.DesignFrame[]): T.DesignBoard => ({
   approvedCount: r.approved_count != null ? num(r.approved_count) : frames?.filter((f) => f.status === 'approved').length ?? 0,
   frames,
 });
+
+const toChatMessage = (r: Row): T.ChatMessage => ({
+  id: num(r.id),
+  thread_id: str(r.thread_id),
+  from_identity: str(r.from_identity),
+  to_identity: str(r.to_identity),
+  msg_type: str(r.msg_type) ?? 'COORDINATION',
+  priority: str(r.priority),
+  subject: str(r.subject),
+  body: String(r.body ?? ''),
+  read: num(r.read),
+  ts: String(r.ts),
+});
+
+const toThread = (r: Row): T.Thread => ({
+  id: String(r.id),
+  title: String(r.title),
+  author_identities: str(r.author_identities) ?? '[]',
+  target_identities: str(r.target_identities) ?? '[]',
+  status: str(r.status) ?? 'open',
+  related_task_id: str(r.related_task_id),
+  related_project_id: str(r.related_project_id),
+  created_at: String(r.created_at),
+  updated_at: String(r.updated_at),
+  message_count: num(r.message_count),
+  original_file_path: str(r.original_file_path),
+});
+
+const toAnnouncement = (r: Row): T.Announcement => ({
+  id: num(r.id),
+  title: String(r.title),
+  author_identity: str(r.author_identity),
+  content: str(r.content),
+  audience: str(r.audience) ?? 'all',
+  ts: String(r.ts),
+  original_file_path: str(r.original_file_path),
+});
+
+const toSocialPost = (r: Row): T.SocialPost => ({
+  id: num(r.id),
+  channel: String(r.channel),
+  author_identity: str(r.author_identity),
+  content: String(r.content),
+  ts: String(r.ts),
+  original_file_path: str(r.original_file_path),
+});
+
+const toStandup = (r: Row): T.Standup => ({
+  id: num(r.id),
+  standup_date: String(r.standup_date),
+  facilitator: str(r.facilitator),
+  present_identities: str(r.present_identities) ?? '[]',
+  absent_identities: str(r.absent_identities) ?? '[]',
+  content: str(r.content),
+  parsed_updates: str(r.parsed_updates) ?? '{}',
+  ts: String(r.ts),
+  original_file_path: str(r.original_file_path),
+});
+
 

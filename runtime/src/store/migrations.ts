@@ -669,4 +669,89 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX design_frame_versions_frame ON design_frame_versions(frame_id, version DESC);
     `,
   },
+  {
+    version: 7,
+    name: '007_communication_hub',
+    sql: `
+      -- threads: collaborative multi-agent discussion topics
+      CREATE TABLE IF NOT EXISTS threads (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        author_identities TEXT DEFAULT '[]',
+        target_identities TEXT DEFAULT '[]',
+        status TEXT DEFAULT 'open' CHECK (status IN ('open','resolved','archived')),
+        related_task_id TEXT,
+        related_project_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        original_file_path TEXT
+      );
+
+      -- thread_messages: message history within a discussion thread
+      CREATE TABLE IF NOT EXISTS thread_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        from_identity TEXT,
+        to_identity TEXT,
+        msg_type TEXT NOT NULL DEFAULT 'COORDINATION',
+        priority TEXT DEFAULT 'normal',
+        subject TEXT,
+        body TEXT NOT NULL,
+        read INTEGER DEFAULT 0,
+        ts TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_thread_messages_thread ON thread_messages(thread_id, ts ASC);
+
+      -- inbox_messages: direct communication messages addressed to an agent
+      CREATE TABLE IF NOT EXISTS inbox_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id TEXT,
+        from_identity TEXT,
+        to_identity TEXT NOT NULL,
+        msg_type TEXT NOT NULL DEFAULT 'COORDINATION',
+        priority TEXT DEFAULT 'normal',
+        subject TEXT,
+        body TEXT NOT NULL,
+        read INTEGER DEFAULT 0,
+        ts TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_inbox_messages_to ON inbox_messages(to_identity, ts DESC);
+
+      -- announcements: broadcast directives and mandates
+      CREATE TABLE IF NOT EXISTS announcements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        author_identity TEXT,
+        content TEXT NOT NULL,
+        audience TEXT DEFAULT 'all',
+        ts TEXT NOT NULL,
+        original_file_path TEXT
+      );
+
+      -- social_posts: team channels microblog/watercooler
+      CREATE TABLE IF NOT EXISTS social_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel TEXT NOT NULL,
+        author_identity TEXT,
+        content TEXT NOT NULL,
+        ts TEXT NOT NULL,
+        original_file_path TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_social_posts_channel ON social_posts(channel, ts DESC);
+
+      -- standups: daily roll-call and task commitments
+      CREATE TABLE IF NOT EXISTS standups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        standup_date TEXT NOT NULL,
+        facilitator TEXT,
+        present_identities TEXT DEFAULT '[]',
+        absent_identities TEXT DEFAULT '[]',
+        content TEXT,
+        parsed_updates TEXT DEFAULT '{}',
+        ts TEXT NOT NULL,
+        original_file_path TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_standups_date ON standups(standup_date DESC);
+    `,
+  },
 ];

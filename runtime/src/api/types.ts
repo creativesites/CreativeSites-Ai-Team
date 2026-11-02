@@ -44,6 +44,25 @@ export interface ProjectFileItem {
   size?: number;
 }
 
+export interface ProjectFileContent {
+  path: string;
+  name: string;
+  content: string;
+  size: number;
+  truncated: boolean;
+  isBinary: boolean;
+}
+
+export interface GitWorktreeItem {
+  path: string;
+  head: string;
+  shortHead: string;
+  branch: string;
+  isMain: boolean;
+  detached: boolean;
+  clean?: boolean;
+}
+
 export interface DirectoryListing {
   current: string;
   parent: string | null;

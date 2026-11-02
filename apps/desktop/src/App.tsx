@@ -16,6 +16,7 @@ import { HomeScreen, type StartJobRequest } from '@/screens/home';
 import { JobScreen } from '@/screens/job';
 import { CouncilRoomScreen } from '@/screens/council-room';
 import { DesignStudioScreen } from '@/screens/design-studio';
+import { CommunicationScreen } from '@/screens/communication';
 import { RoomScreen } from '@/screens/room';
 
 const DEFAULT_OWNER_ID = 'winston';
@@ -184,6 +185,16 @@ function Screen({
           selectedAgentId={route.agentId}
           ownerName={ownerName}
           ownerId={ownerId}
+        />
+      );
+    case 'communication':
+      return (
+        <CommunicationScreen
+          initialTab={route.tab}
+          identities={identities}
+          sessions={sessions}
+          ownerId={ownerId}
+          ownerName={ownerName}
         />
       );
     case 'coworkers':

@@ -17,6 +17,10 @@ import type {
   CouncilStreamEvent,
   CouncilVerdict,
   CreateApprovalInput,
+  AiGenerateResponse,
+  Announcement,
+  ChatMessage,
+  CreateAnnouncementInput,
   CreateBudgetInput,
   CreateCouncilInput,
   CreateCouncilCardInput,
@@ -32,8 +36,11 @@ import type {
   CreateRepoInput,
   CreateRoomInput,
   CreateScheduleInput,
+  CreateSocialPostInput,
+  CreateStandupInput,
   CreateTaskInput,
   CreateTeamInput,
+  CreateThreadInput,
   DecideApprovalInput,
   DesignBoard,
   DesignFrame,
@@ -43,6 +50,7 @@ import type {
   GenerateDesignInput,
   GitCommitItem,
   GitDiffSummary,
+  GitWorktreeItem,
   Health,
   Identity,
   IdentityStatusState,
@@ -55,7 +63,9 @@ import type {
   Message,
   PickFolderResult,
   PostMessageInput,
+  PostThreadReplyInput,
   Project,
+  ProjectFileContent,
   ProjectFileItem,
   RateLimitReportInput,
   Repo,
@@ -64,16 +74,20 @@ import type {
   RunCouncilInput,
   RuntimeEvent,
   SearchHit,
+  SendInboxMessageInput,
   Session,
   SessionRotationResult,
   Settings,
   ShipJobInput,
   ShipJobResult,
+  SocialPost,
   SpawnAgentInput,
+  Standup,
   Summary,
   Task,
   Team,
   TeamMember,
+  Thread,
   TranscriptEntry,
   UpdateDesignBoardInput,
   UpdateDesignFrameInput,
@@ -215,10 +229,20 @@ export class RuntimeClient {
     this.request<GitCommitItem[]>('GET', `/v1/projects/${encodeURIComponent(projectId)}/commits?limit=${limit}`);
   projectDiff = (projectId: string) =>
     this.request<GitDiffSummary>('GET', `/v1/projects/${encodeURIComponent(projectId)}/diff`);
-  projectFiles = (projectId: string, subPath = '', limit = 100) =>
+  projectFiles = (projectId: string, subPath = '', limit = 150, root?: string) =>
     this.request<ProjectFileItem[]>(
       'GET',
-      `/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(subPath)}&limit=${limit}`
+      `/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(subPath)}&limit=${limit}${root ? `&root=${encodeURIComponent(root)}` : ''}`
+    );
+  projectFileContent = (projectId: string, filePath: string, root?: string) =>
+    this.request<ProjectFileContent>(
+      'GET',
+      `/v1/projects/${encodeURIComponent(projectId)}/file?path=${encodeURIComponent(filePath)}${root ? `&root=${encodeURIComponent(root)}` : ''}`
+    );
+  projectWorktrees = (projectId: string, root?: string) =>
+    this.request<GitWorktreeItem[]>(
+      'GET',
+      `/v1/projects/${encodeURIComponent(projectId)}/worktrees${root ? `?root=${encodeURIComponent(root)}` : ''}`
     );
   createProject = (input: CreateProjectInput) => this.request<Project>('POST', '/v1/projects', input);
   updateProject = (id: string, input: UpdateProjectInput) =>
@@ -577,6 +601,36 @@ export class RuntimeClient {
     this.request<unknown>('DELETE', `/v1/design-frames/${encodeURIComponent(frameId)}`);
   approveDesignFrame = (frameId: string, input: ApproveDesignFrameInput) =>
     this.request<ApproveDesignFrameResult>('POST', `/v1/design-frames/${encodeURIComponent(frameId)}/approve`, input);
+
+  // ---- communication hub
+  inboxMessages = (identity = 'Winston', limit = 50) =>
+    this.request<ChatMessage[]>('GET', `/v1/communication/inbox?identity=${encodeURIComponent(identity)}&limit=${limit}`);
+  sendInboxMessage = (input: SendInboxMessageInput) =>
+    this.request<ChatMessage>('POST', '/v1/communication/inbox', input);
+  threads = () => this.request<Thread[]>('GET', '/v1/communication/threads');
+  threadMessages = (threadId: string) =>
+    this.request<ChatMessage[]>('GET', `/v1/communication/threads/${encodeURIComponent(threadId)}/messages`);
+  createThread = (input: CreateThreadInput) =>
+    this.request<Thread>('POST', '/v1/communication/threads', input);
+  postThreadReply = (threadId: string, input: PostThreadReplyInput) =>
+    this.request<ChatMessage>('POST', `/v1/communication/threads/${encodeURIComponent(threadId)}/replies`, input);
+  announcements = (limit = 20) =>
+    this.request<Announcement[]>('GET', `/v1/communication/announcements?limit=${limit}`);
+  createAnnouncement = (input: CreateAnnouncementInput) =>
+    this.request<Announcement>('POST', '/v1/communication/announcements', input);
+  socialPosts = (channel?: string, limit = 50) =>
+    this.request<SocialPost[]>(
+      'GET',
+      `/v1/communication/social?limit=${limit}${channel ? `&channel=${encodeURIComponent(channel)}` : ''}`
+    );
+  createSocialPost = (input: CreateSocialPostInput) =>
+    this.request<SocialPost>('POST', '/v1/communication/social', input);
+  standups = (limit = 10) =>
+    this.request<Standup[]>('GET', `/v1/communication/standups?limit=${limit}`);
+  createStandup = (input: CreateStandupInput) =>
+    this.request<Standup>('POST', '/v1/communication/standups', input);
+  generateAi = (prompt: string, contextType?: string, agentId?: string) =>
+    this.request<AiGenerateResponse>('POST', '/v1/communication/ai/generate', { prompt, contextType, agentId });
 
   /**
    * Follows the event stream until `signal` aborts, resuming after the last
