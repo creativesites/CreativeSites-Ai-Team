@@ -27,6 +27,7 @@ import {
   Search,
   Terminal,
   CheckCircle2,
+  Eye,
   X,
 } from 'lucide-react';
 import type {
@@ -38,9 +39,11 @@ import type {
   DirectoryListing,
   GitCommitItem,
   GitDiffSummary,
+  GitWorktreeItem,
   Identity,
   JobSummary,
   Project,
+  ProjectFileContent,
   ProjectFileItem,
   Repo,
   Room,
@@ -496,6 +499,7 @@ function ProjectCard({
   const [showCreateRoom, setShowCreateRoom] = React.useState(false);
   const [showJobLauncher, setShowJobLauncher] = React.useState(false);
   const [copiedRoot, setCopiedRoot] = React.useState(false);
+  const [activeBrowseRoot, setActiveBrowseRoot] = React.useState<string | undefined>(undefined);
 
   // Find active sessions that belong to this project
   const projectRoomIds = new Set(rooms.map((r) => r.id));
@@ -762,74 +766,27 @@ function ProjectCard({
         {/* TAB 3: FILES & WORKTREES */}
         {activeSubTab === 'files' && (
           <div className="flex flex-col gap-4">
-            {/* Active Session Worktrees Section */}
-            <div className="flex flex-col gap-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Active Agent Session Worktrees ({activeSessionWorktrees.length})
-              </span>
-              {activeSessionWorktrees.length > 0 ? (
-                <div className="flex flex-col gap-2">
-                  {activeSessionWorktrees.map((session) => {
-                    const agent = identities.find((i) => i.id === session.agentId);
-                    const job = jobs.find((j) => j.id === session.jobId);
-                    return (
-                      <div
-                        key={session.id}
-                        className="glass-panel flex flex-wrap items-center justify-between gap-3 rounded-lg p-3 text-xs"
-                      >
-                        <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                          <Avatar who={agent ?? { name: session.agentId }} size={24} />
-                          <div className="flex min-w-0 flex-col">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold">{agent?.name ?? session.agentId}</span>
-                              <Tag tone="observed">Worktree</Tag>
-                              {job && (
-                                <span className="text-muted-foreground truncate max-w-xs">
-                                  {job.title}
-                                </span>
-                              )}
-                            </div>
-                            <span className="font-mono text-[11px] text-muted-foreground truncate">
-                              {session.worktree}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <a
-                            href={href({ name: 'dev', jobId: session.jobId ?? undefined })}
-                            className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'gap-1')}
-                          >
-                            <Terminal className="size-3" />
-                            Dev Console
-                          </a>
-                          {session.jobId && (
-                            <a
-                              href={href({ name: 'job', jobId: session.jobId })}
-                              className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'gap-1')}
-                            >
-                              <ExternalLink className="size-3" />
-                              Job
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  No active agent worktrees currently branched for this workspace.
-                </p>
-              )}
-            </div>
+            {/* Git Worktrees & Sessions Section */}
+            <GitWorktreesInspector
+              projectId={project.id}
+              sessions={sessions}
+              jobs={jobs}
+              identities={identities}
+              activeBrowseRoot={activeBrowseRoot}
+              onSelectWorktreeForFiles={(path) => setActiveBrowseRoot(path)}
+            />
 
             {/* Project File Tree Browser */}
             <div className="flex flex-col gap-2 border-t border-border/40 pt-3">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Project Files
               </span>
-              <ProjectFileBrowser projectId={project.id} />
+              <ProjectFileBrowser
+                projectId={project.id}
+                rootPath={project.rootPath ?? undefined}
+                activeRoot={activeBrowseRoot}
+                onSelectRoot={setActiveBrowseRoot}
+              />
             </div>
           </div>
         )}
@@ -1035,27 +992,332 @@ function GitInspectorTab({
   );
 }
 
+// ---------------------------------------------------------------- Git Worktrees Inspector
+
+function GitWorktreesInspector({
+  projectId,
+  sessions,
+  jobs,
+  identities,
+  activeBrowseRoot,
+  onSelectWorktreeForFiles,
+}: {
+  projectId: string;
+  sessions: Session[];
+  jobs: JobSummary[];
+  identities: Identity[];
+  activeBrowseRoot?: string;
+  onSelectWorktreeForFiles?: (worktreePath: string) => void;
+}) {
+  const { client, revision } = useRuntime();
+  const [worktrees, setWorktrees] = React.useState<GitWorktreeItem[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [copiedPath, setCopiedPath] = React.useState<string | null>(null);
+
+  const fetchWorktrees = React.useCallback(async () => {
+    if (!client) return;
+    setLoading(true);
+    try {
+      const res = await client.projectWorktrees(projectId);
+      setWorktrees(res);
+    } catch {
+      setWorktrees([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [client, projectId]);
+
+  React.useEffect(() => {
+    fetchWorktrees();
+  }, [fetchWorktrees, revision]);
+
+  const copyPath = (p: string) => {
+    navigator.clipboard.writeText(p);
+    setCopiedPath(p);
+    setTimeout(() => setCopiedPath(null), 1500);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          Git Worktrees ({worktrees.length})
+        </span>
+        <button
+          type="button"
+          onClick={fetchWorktrees}
+          className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'gap-1')}
+        >
+          <RefreshCw className="size-3" />
+          Refresh
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center p-6 text-xs text-muted-foreground">
+          <RefreshCw className="mr-2 size-3 animate-spin" />
+          Inspecting Git worktrees…
+        </div>
+      ) : worktrees.length === 0 ? (
+        <div className="glass-panel rounded-lg p-3 text-xs text-muted-foreground">
+          No git worktrees found for this project directory.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {worktrees.map((wt) => {
+            const isCurrentlyBrowsing = activeBrowseRoot === wt.path;
+            const matchingSession = sessions.find(
+              (s) => s.worktree && (s.worktree === wt.path || wt.path.endsWith(s.worktree))
+            );
+            const agent = matchingSession ? identities.find((i) => i.id === matchingSession.agentId) : null;
+            const job = matchingSession?.jobId ? jobs.find((j) => j.id === matchingSession.jobId) : null;
+
+            return (
+              <div
+                key={wt.path}
+                className={cn(
+                  'glass-panel flex flex-wrap items-center justify-between gap-3 rounded-lg p-3 text-xs transition-colors',
+                  isCurrentlyBrowsing && 'ring-1 ring-cyan-500/50 bg-cyan-500/5'
+                )}
+              >
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <GitBranch className="size-3.5 text-muted-foreground shrink-0" />
+                    <span className="font-semibold text-foreground">{wt.branch}</span>
+                    <span
+                      className={cn(
+                        'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider',
+                        wt.isMain
+                          ? 'bg-foreground/15 text-foreground'
+                          : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      {wt.isMain ? 'Main' : 'Worktree'}
+                    </span>
+                    {wt.clean !== undefined && (
+                      <span
+                        className={cn(
+                          'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider',
+                          wt.clean
+                            ? 'bg-emerald-500/10 text-emerald-400'
+                            : 'bg-amber-500/10 text-amber-400'
+                        )}
+                      >
+                        {wt.clean ? 'Clean' : 'Dirty'}
+                      </span>
+                    )}
+                    <span className="font-mono text-[11px] text-muted-foreground">({wt.shortHead})</span>
+                    {agent && (
+                      <div className="flex items-center gap-1 ml-2 rounded-full bg-background/60 px-2 py-0.5 border border-border/40">
+                        <Avatar who={agent} size={14} />
+                        <span className="text-[11px] font-medium">{agent.name}</span>
+                        {job && <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">· {job.title}</span>}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
+                    <span className="truncate">{wt.path}</span>
+                    <button
+                      type="button"
+                      onClick={() => copyPath(wt.path)}
+                      title="Copy full worktree path"
+                      className="hover:text-foreground inline-flex items-center p-0.5 shrink-0"
+                    >
+                      {copiedPath === wt.path ? (
+                        <Check className="size-2.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="size-2.5 opacity-60" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {onSelectWorktreeForFiles && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectWorktreeForFiles(wt.path)}
+                      className={cn(
+                        buttonVariants({ variant: isCurrentlyBrowsing ? 'default' : 'glass', size: 'xs' }),
+                        'gap-1'
+                      )}
+                    >
+                      <FolderTree className="size-3" />
+                      {isCurrentlyBrowsing ? 'Viewing Files' : 'Browse Files'}
+                    </button>
+                  )}
+                  {matchingSession && (
+                    <a
+                      href={href({ name: 'dev', jobId: matchingSession.jobId ?? undefined })}
+                      className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'gap-1')}
+                    >
+                      <Terminal className="size-3" />
+                      Dev
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- File Viewer Modal
+
+function FileViewerModal({
+  projectId,
+  filePath,
+  activeRoot,
+  onClose,
+}: {
+  projectId: string;
+  filePath: string;
+  activeRoot?: string;
+  onClose: () => void;
+}) {
+  const { client } = useRuntime();
+  const [data, setData] = React.useState<ProjectFileContent | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const [copied, setCopied] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!client) return;
+    setLoading(true);
+    setError(null);
+    client
+      .projectFileContent(projectId, filePath, activeRoot)
+      .then((res) => {
+        setData(res);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      });
+  }, [client, projectId, filePath, activeRoot]);
+
+  const copyContent = () => {
+    if (data?.content) {
+      navigator.clipboard.writeText(data.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="glass-panel flex flex-col gap-3 rounded-xl w-full max-w-4xl max-h-[85vh] p-5 shadow-2xl border border-border/60 bg-background/95">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 border-b border-border/40 pb-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <FileCode className="size-4 text-cyan-400 shrink-0" />
+            <span className="font-semibold text-foreground text-sm truncate">{filePath}</span>
+            {data && (
+              <span className="text-[11px] text-muted-foreground font-mono">
+                ({formatFileSize(data.size)})
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {data && !data.isBinary && (
+              <button
+                type="button"
+                onClick={copyContent}
+                className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'gap-1')}
+              >
+                {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded p-1 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content Body */}
+        <div className="flex-1 overflow-auto rounded-lg border border-border/30 bg-black/75 p-3 font-mono text-xs text-foreground leading-relaxed">
+          {loading ? (
+            <div className="flex h-64 items-center justify-center text-muted-foreground">
+              <RefreshCw className="mr-2 size-4 animate-spin" />
+              Loading file content…
+            </div>
+          ) : error ? (
+            <div className="flex h-64 flex-col items-center justify-center gap-2 text-risk p-4 text-center">
+              <AlertCircle className="size-5" />
+              <span>Failed to load file: {error}</span>
+            </div>
+          ) : data?.isBinary ? (
+            <div className="flex h-64 flex-col items-center justify-center text-muted-foreground">
+              <File className="mb-2 size-8 opacity-40" />
+              <span>(Binary file cannot be previewed as text)</span>
+            </div>
+          ) : (
+            <div className="flex">
+              {/* Line Numbers */}
+              <div className="select-none pr-3 text-right text-muted-foreground/40 font-mono text-[11px] shrink-0 border-r border-border/30 mr-3">
+                {data?.content.split('\n').map((_: string, idx: number) => (
+                  <div key={idx}>{idx + 1}</div>
+                ))}
+              </div>
+              {/* Code lines */}
+              <pre className="flex-1 overflow-x-auto whitespace-pre font-mono text-[11px] text-foreground/90">
+                {data?.content}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- Project File Browser
 
-function ProjectFileBrowser({ projectId }: { projectId: string }) {
+function ProjectFileBrowser({
+  projectId,
+  rootPath,
+  activeRoot,
+  onSelectRoot,
+}: {
+  projectId: string;
+  rootPath?: string;
+  activeRoot?: string;
+  onSelectRoot?: (root: string) => void;
+}) {
   const { client } = useRuntime();
   const [currentPath, setCurrentPath] = React.useState('');
   const [files, setFiles] = React.useState<ProjectFileItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [filterQuery, setFilterQuery] = React.useState('');
+  const [viewingFile, setViewingFile] = React.useState<string | null>(null);
 
-  const loadFiles = React.useCallback(async (dirPath: string) => {
-    if (!client) return;
-    setLoading(true);
-    try {
-      const res = await client.projectFiles(projectId, dirPath, 150);
-      setFiles(res);
-    } catch {
-      setFiles([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [client, projectId]);
+  const effectiveRoot = activeRoot || rootPath;
+
+  const loadFiles = React.useCallback(
+    async (dirPath: string) => {
+      if (!client) return;
+      setLoading(true);
+      try {
+        const res = await client.projectFiles(projectId, dirPath, 150, effectiveRoot);
+        setFiles(res);
+      } catch {
+        setFiles([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [client, projectId, effectiveRoot]
+  );
 
   React.useEffect(() => {
     loadFiles(currentPath);
@@ -1076,9 +1338,21 @@ function ProjectFileBrowser({ projectId }: { projectId: string }) {
 
   return (
     <div className="glass-panel flex flex-col gap-2 rounded-lg p-3 text-xs">
-      {/* Breadcrumb Navigation & Filter */}
+      {/* Root Location Indicator & Breadcrumb Navigation */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/30 pb-2">
-        <div className="flex flex-wrap items-center gap-1 font-mono text-[11px]">
+        <div className="flex flex-wrap items-center gap-1 font-mono text-[11px] overflow-x-auto max-w-[70%]">
+          {activeRoot && onSelectRoot && (
+            <button
+              type="button"
+              onClick={() => onSelectRoot(rootPath || '')}
+              className="mr-1 inline-flex items-center gap-1 rounded bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-400 hover:bg-cyan-500/20"
+              title="Reset to main project root"
+            >
+              <span>Worktree Target</span>
+              <span>✕</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setCurrentPath('')}
@@ -1146,9 +1420,9 @@ function ProjectFileBrowser({ projectId }: { projectId: string }) {
           {filteredFiles.map((file) => (
             <div
               key={file.path}
-              className="flex items-center justify-between py-1.5 px-1 hover:bg-foreground/5 rounded transition-colors"
+              className="flex items-center justify-between py-1.5 px-1 hover:bg-foreground/5 rounded transition-colors group"
             >
-              <div className="flex min-w-0 items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2 flex-1">
                 {file.isDirectory ? (
                   <Folder className="size-3.5 text-amber-400 shrink-0" />
                 ) : file.name.endsWith('.ts') ||
@@ -1166,21 +1440,49 @@ function ProjectFileBrowser({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     onClick={() => setCurrentPath(file.path)}
-                    className="font-semibold text-foreground hover:underline truncate"
+                    className="font-semibold text-foreground hover:underline truncate text-left"
                   >
                     {file.name}
                   </button>
                 ) : (
-                  <span className="font-mono text-muted-foreground truncate">{file.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setViewingFile(file.path)}
+                    className="font-mono text-muted-foreground hover:text-foreground hover:underline truncate text-left"
+                  >
+                    {file.name}
+                  </button>
                 )}
               </div>
 
-              <span className="font-mono text-[11px] text-muted-foreground/70 shrink-0">
-                {file.isDirectory ? 'dir' : formatFileSize(file.size)}
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                {!file.isDirectory && (
+                  <button
+                    type="button"
+                    onClick={() => setViewingFile(file.path)}
+                    title="View file content"
+                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-foreground text-muted-foreground transition-opacity"
+                  >
+                    <Eye className="size-3.5" />
+                  </button>
+                )}
+                <span className="font-mono text-[11px] text-muted-foreground/70">
+                  {file.isDirectory ? 'dir' : formatFileSize(file.size)}
+                </span>
+              </div>
             </div>
           ))}
         </div>
+      )}
+
+      {/* File Viewer Modal */}
+      {viewingFile && (
+        <FileViewerModal
+          projectId={projectId}
+          filePath={viewingFile}
+          activeRoot={effectiveRoot}
+          onClose={() => setViewingFile(null)}
+        />
       )}
     </div>
   );

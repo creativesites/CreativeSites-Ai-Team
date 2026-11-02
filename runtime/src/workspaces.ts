@@ -68,6 +68,7 @@ export function workspaceState(dir: string): WorkspaceState {
 }
 
 export function expand(p: string): string {
+  if (p === '~') return os.homedir();
   return p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p;
 }
 
@@ -265,7 +266,26 @@ export interface ProjectFileItem {
   size?: number;
 }
 
-export function listProjectFiles(dir: string, subPath = '', maxEntries = 100): ProjectFileItem[] {
+export interface ProjectFileContent {
+  path: string;
+  name: string;
+  content: string;
+  size: number;
+  truncated: boolean;
+  isBinary: boolean;
+}
+
+export interface GitWorktreeItem {
+  path: string;
+  head: string;
+  shortHead: string;
+  branch: string;
+  isMain: boolean;
+  detached: boolean;
+  clean?: boolean;
+}
+
+export function listProjectFiles(dir: string, subPath = '', maxEntries = 150): ProjectFileItem[] {
   const resolvedRoot = path.resolve(expand(dir));
   const targetDir = subPath ? path.resolve(resolvedRoot, subPath) : resolvedRoot;
   if (!isInside(resolvedRoot, targetDir) || !fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) return [];
@@ -287,6 +307,87 @@ export function listProjectFiles(dir: string, subPath = '', maxEntries = 100): P
       if (items.length >= maxEntries) break;
     }
     return items.sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1));
+  } catch {
+    return [];
+  }
+}
+
+export function readProjectFile(dir: string, relPath: string, maxBytes = 256 * 1024): ProjectFileContent {
+  const resolvedRoot = path.resolve(expand(dir));
+  const targetFile = path.resolve(resolvedRoot, relPath);
+  if (!isInside(resolvedRoot, targetFile) || !fs.existsSync(targetFile) || fs.statSync(targetFile).isDirectory()) {
+    throw new Error('File not found or outside project directory');
+  }
+  const stat = fs.statSync(targetFile);
+  const size = stat.size;
+  // Check if binary by reading first 512 bytes
+  const fd = fs.openSync(targetFile, 'r');
+  const buffer = Buffer.alloc(Math.min(size, 512));
+  fs.readSync(fd, buffer, 0, buffer.length, 0);
+  fs.closeSync(fd);
+  const isBinary = buffer.includes(0);
+  if (isBinary) {
+    return {
+      path: relPath,
+      name: path.basename(relPath),
+      content: '(Binary file)',
+      size,
+      truncated: false,
+      isBinary: true,
+    };
+  }
+  const readSize = Math.min(size, maxBytes);
+  const contentBuf = Buffer.alloc(readSize);
+  const fd2 = fs.openSync(targetFile, 'r');
+  fs.readSync(fd2, contentBuf, 0, readSize, 0);
+  fs.closeSync(fd2);
+  const content = contentBuf.toString('utf8');
+  return {
+    path: relPath,
+    name: path.basename(relPath),
+    content,
+    size,
+    truncated: size > maxBytes,
+    isBinary: false,
+  };
+}
+
+export function gitWorktrees(dir: string): GitWorktreeItem[] {
+  const resolved = path.resolve(expand(dir));
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) return [];
+  try {
+    const raw = git(resolved, ['worktree', 'list', '--porcelain']);
+    if (!raw) return [];
+    const blocks = raw.trim().split('\n\n').filter(Boolean);
+    return blocks.map((block) => {
+      const lines = block.split('\n');
+      let wtPath = '';
+      let head = '';
+      let branch = '';
+      let detached = false;
+      for (const l of lines) {
+        if (l.startsWith('worktree ')) wtPath = l.slice(9);
+        else if (l.startsWith('HEAD ')) head = l.slice(5);
+        else if (l.startsWith('branch ')) branch = l.slice(7).replace('refs/heads/', '');
+        else if (l === 'detached') detached = true;
+      }
+      let clean = true;
+      try {
+        const st = git(wtPath, ['status', '--porcelain=v1']);
+        clean = st.trim().length === 0;
+      } catch {
+        clean = false;
+      }
+      return {
+        path: wtPath,
+        head,
+        shortHead: head.slice(0, 7),
+        branch: branch || (detached ? 'detached HEAD' : 'unknown'),
+        isMain: wtPath === resolved,
+        detached,
+        clean,
+      };
+    });
   } catch {
     return [];
   }
