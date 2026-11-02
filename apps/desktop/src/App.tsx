@@ -2,6 +2,7 @@ import * as React from 'react';
 import type { AdapterInfo, Identity, JobSummary, Project, Room, Session } from '@runtime/types';
 import { RuntimeBanner, Sidebar, useMode } from '@/components/app/shell';
 import { EmptyState } from '@/components/app/status';
+import { Toaster } from '@/components/app/toaster';
 import { href, useRoute, type Route } from '@/lib/route';
 import { RuntimeProvider, useRuntime, useRuntimeData, type Loadable } from '@/lib/runtime-context';
 import { ApprovalsScreen } from '@/screens/approvals';
@@ -60,18 +61,19 @@ function Workspace({ route }: { route: Route }) {
   const ownerName = ownerIdentity?.name || DEFAULT_OWNER_NAME;
 
   return (
-    <div className="flex min-h-full flex-col gap-3 p-3 md:flex-row">
+    <div className="flex h-screen flex-col gap-3 overflow-hidden p-3 md:flex-row">
       <Sidebar
         route={route}
         mode={mode}
         onModeChange={setMode}
         ownerName={ownerName}
+        ownerId={ownerId}
         rooms={list(rooms)}
         jobs={list(jobs)}
         identities={idList}
         sessions={list(sessions)}
       />
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
         <RuntimeBanner />
         <Screen
           route={route}
@@ -85,6 +87,7 @@ function Workspace({ route }: { route: Route }) {
           ownerName={ownerName}
         />
       </div>
+      <Toaster />
     </div>
   );
 }

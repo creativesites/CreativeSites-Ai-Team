@@ -17,6 +17,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   width: 100%;
   height: calc(100vh - 96px);
   min-height: 620px;
@@ -463,6 +464,8 @@
 .roast-room-root .center {
   position: absolute;
   width: min(560px, 64%);
+  max-height: calc(100% - 28px);
+  overflow-y: auto;
   z-index: 12;
   text-align: center;
 }
