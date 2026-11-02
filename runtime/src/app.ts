@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
 import type { AddressInfo } from 'node:net';
+import path from 'node:path';
 import { createServer } from './api/server.ts';
 import type { Health, RuntimeEvent } from './api/types.ts';
 import { probeAdapters } from './adapters.ts';
-import { artifactsDir, cloneParentDir, loadConfig, newProjectParentDir, workspaceRoots, worktreeRoot } from './config.ts';
+import { artifactsDir, cloneParentDir, expandHome, loadConfig, newProjectParentDir, workspaceRoots, worktreeRoot } from './config.ts';
 import { Checker } from './checks.ts';
 import { SessionManager } from './acp/session-manager.ts';
 import { Bridge } from './bridge.ts';
@@ -49,19 +50,24 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   const newProjectDir = opts.newProjectParentDir ?? newProjectParentDir(cfg);
   const wtRoot = opts.worktreeRoot ?? worktreeRoot(cfg);
   const artDir = opts.artifactsDir ?? artifactsDir(cfg);
+  const teamRepo = opts.teamRepo === null ? null : (opts.teamRepo ?? cfg.teamRepo ?? null);
+  const legacyDbPath = teamRepo ? path.join(expandHome(teamRepo), 'data/myaos.db') : undefined;
   // The server is created after the repo, so events go through this late-bound hook.
   let broadcast: (e: RuntimeEvent) => void = () => {};
   let bridge: Bridge | null = null;
-  const repo = new Repo(db, (e) => {
-    broadcast(e);
-    bridge?.onEvent(e);
-  });
+  const repo = new Repo(
+    db,
+    (e) => {
+      broadcast(e);
+      bridge?.onEvent(e);
+    },
+    legacyDbPath
+  );
   const checker = new Checker({ repo, workspaceRoots: wsRoots, worktreeRoot: wtRoot, artifactsDir: artDir });
   const sessions = new SessionManager({ repo, checker, env: readAdapterEnv(cfg) });
   const orchestrator = new Orchestrator({ repo, sessions, checker });
   orchestrator.start();
   const terminals = new TerminalManager();
-  const teamRepo = opts.teamRepo === null ? null : (opts.teamRepo ?? cfg.teamRepo ?? null);
   bridge = new Bridge({ repo, teamRepo });
   bridge.start();
 

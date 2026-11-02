@@ -3236,7 +3236,7 @@ export class Repo {
   listInboxMessages(identity: string, limit = 50): T.ChatMessage[] {
     const rows = this.all(
       `SELECT * FROM inbox_messages
-       WHERE to_identity = ? OR to_identity = 'all' OR to_identity = 'Team'
+       WHERE LOWER(to_identity) = LOWER(?) OR LOWER(to_identity) = 'all' OR LOWER(to_identity) = 'team'
        ORDER BY id DESC LIMIT ?`,
       identity,
       Math.max(1, limit)

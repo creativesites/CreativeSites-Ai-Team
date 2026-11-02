@@ -40,6 +40,7 @@ export class Bridge {
   private lastError: string | null = null;
   private readonly ingest: BridgeIngest | null;
   private ingestTimer: NodeJS.Timeout | null = null;
+  private initialIngestTimer: NodeJS.Timeout | null = null;
 
   constructor(opts: BridgeOptions) {
     this.repo = opts.repo;
@@ -51,15 +52,15 @@ export class Bridge {
   /** Starts the periodic ingest of legacy thread replies and inbox notes. */
   start(): void {
     if (!this.root || this.ingestTimer) return;
-    const first = setTimeout(() => this.runIngest(), 2000);
-    first.unref?.();
+    this.initialIngestTimer = setTimeout(() => this.runIngest(), 2000);
+    this.initialIngestTimer.unref?.();
     this.ingestTimer = setInterval(() => this.runIngest(), 20_000);
     this.ingestTimer.unref?.();
   }
 
   private runIngest(): void {
-    if (!this.settings().enabled) return;
     try {
+      if (!this.settings().enabled) return;
       this.ingestNow();
     } catch (e) {
       this.lastError = (e as Error).message;
@@ -348,6 +349,10 @@ export class Bridge {
   dispose(): void {
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
+    if (this.initialIngestTimer) {
+      clearTimeout(this.initialIngestTimer);
+      this.initialIngestTimer = null;
+    }
     if (this.ingestTimer) clearInterval(this.ingestTimer);
     this.ingestTimer = null;
   }

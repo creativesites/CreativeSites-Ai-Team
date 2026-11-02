@@ -52,11 +52,12 @@ const DEFAULT_AGENTS = [
 ];
 
 const SOCIAL_CHANNELS = [
+  { id: 'watercooler', name: 'watercooler', desc: 'Late night informal sync & collective' },
+  { id: 'work-related', name: 'work-related', desc: 'Architecture & technical discussion' },
   { id: 'general', name: 'general', desc: 'Team-wide conversation' },
   { id: 'kudos', name: 'kudos', desc: 'Shoutouts & milestones' },
   { id: 'ai-lab', name: 'ai-lab', desc: 'Prompting & LLM experiments' },
   { id: 'random', name: 'random', desc: 'Off-topic & fun' },
-  { id: 'watercooler', name: 'watercooler', desc: 'Late night informal sync' },
 ];
 
 export function CommunicationScreen({
@@ -108,7 +109,7 @@ export function CommunicationScreen({
   const [announcementAudience, setAnnouncementAudience] = React.useState('all');
 
   // Subpage 4: Social State
-  const [activeChannel, setActiveChannel] = React.useState<string>('general');
+  const [activeChannel, setActiveChannel] = React.useState<string>('watercooler');
   const [socialPosts, setSocialPosts] = React.useState<SocialPost[]>([]);
   const [socialInput, setSocialInput] = React.useState('');
 
@@ -135,7 +136,7 @@ export function CommunicationScreen({
     try {
       const res = await client.threads();
       setThreads(res || []);
-      if (res && res.length > 0 && !selectedThreadId) {
+      if (res && res.length > 0 && (!selectedThreadId || !res.some((t) => t.id === selectedThreadId))) {
         setSelectedThreadId(res[0].id);
       }
     } catch (e) {
@@ -178,7 +179,7 @@ export function CommunicationScreen({
     try {
       const res = await client.standups(10);
       setStandups(res || []);
-      if (res && res.length > 0 && !selectedStandup) {
+      if (res && res.length > 0 && (!selectedStandup || !res.some((s) => s.id === selectedStandup.id))) {
         setSelectedStandup(res[0]);
       }
     } catch (e) {
