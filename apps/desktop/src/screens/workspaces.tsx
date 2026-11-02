@@ -26,6 +26,8 @@ import {
   Folder,
   Search,
   Terminal,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 import type {
   AttachProjectInput,
@@ -33,6 +35,7 @@ import type {
   CreateProjectFolderInput,
   CreateRepoInput,
   CreateRoomInput,
+  DirectoryListing,
   GitCommitItem,
   GitDiffSummary,
   Identity,
@@ -1589,7 +1592,267 @@ function RoomMembersView({
 const inputClass =
   'glass-panel h-9 rounded-md px-2.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-foreground/40';
 
-// Native Folder Path Input with Presets & HTML5 Directory Picker
+// In-App Interactive Directory Navigator Modal
+function DirectoryPickerModal({
+  initialPath,
+  onSelect,
+  onClose,
+}: {
+  initialPath: string;
+  onSelect: (path: string) => void;
+  onClose: () => void;
+}) {
+  const { client } = useRuntime();
+  const [currentPath, setCurrentPath] = React.useState(initialPath || '~');
+  const [listing, setListing] = React.useState<DirectoryListing | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [filterQuery, setFilterQuery] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
+
+  const fetchDirectories = React.useCallback(
+    async (dir: string) => {
+      if (!client) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await client.systemDirectories(dir);
+        setListing(res);
+        setCurrentPath(res.current);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [client]
+  );
+
+  React.useEffect(() => {
+    fetchDirectories(currentPath);
+  }, []);
+
+  const navigateTo = (dir: string) => {
+    setFilterQuery('');
+    fetchDirectories(dir);
+  };
+
+  const handleSelectCurrent = () => {
+    if (listing?.current) {
+      onSelect(listing.current);
+      onClose();
+    }
+  };
+
+  const handleSelectSub = (subPath: string) => {
+    onSelect(subPath);
+    onClose();
+  };
+
+  const shortcuts = [
+    { label: 'Home (~)', path: '~' },
+    { label: 'WebstormProjects', path: '~/WebstormProjects' },
+    { label: 'Projects', path: '~/Projects' },
+    { label: 'Desktop', path: '~/Desktop' },
+    { label: 'Documents', path: '~/Documents' },
+    { label: '/tmp', path: '/tmp' },
+  ];
+
+  const filteredDirs = listing?.directories.filter((d) =>
+    filterQuery ? d.name.toLowerCase().includes(filterQuery.toLowerCase()) : true
+  );
+
+  const pathParts = listing?.current ? listing.current.split('/').filter(Boolean) : [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+      <div className="glass-panel flex flex-col gap-3 rounded-xl w-full max-w-2xl max-h-[85vh] p-5 shadow-2xl border border-border/60 bg-background/95">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 border-b border-border/40 pb-3">
+          <div className="flex flex-col">
+            <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <FolderOpen className="size-4 text-amber-400" />
+              Select Workspace Directory
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Browse folders on your computer and select a workspace or project root.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        {/* Shortcuts */}
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-muted-foreground font-medium">Quick jump:</span>
+          {shortcuts.map((s) => (
+            <button
+              key={s.path}
+              type="button"
+              onClick={() => navigateTo(s.path)}
+              className="rounded border border-border/50 bg-background/50 px-2 py-0.5 text-xs text-foreground/90 hover:bg-foreground/10 hover:text-foreground"
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Breadcrumb Navigation & Filter */}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-y border-border/30 py-2">
+          <div className="flex flex-wrap items-center gap-1 font-mono text-xs overflow-x-auto max-w-[70%]">
+            <button
+              type="button"
+              onClick={() => navigateTo('/')}
+              className="hover:text-foreground text-muted-foreground"
+            >
+              /
+            </button>
+            {pathParts.map((part, idx) => {
+              const sub = '/' + pathParts.slice(0, idx + 1).join('/');
+              const isLast = idx === pathParts.length - 1;
+              return (
+                <React.Fragment key={sub}>
+                  <span className="text-muted-foreground/60">/</span>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo(sub)}
+                    className={cn(
+                      'hover:text-foreground',
+                      isLast ? 'font-bold text-foreground' : 'text-muted-foreground'
+                    )}
+                  >
+                    {part}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {listing?.parent && (
+              <button
+                type="button"
+                onClick={() => navigateTo(listing.parent!)}
+                className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'gap-1')}
+              >
+                <ArrowLeft className="size-3" />
+                Up
+              </button>
+            )}
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
+              <input
+                type="search"
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                placeholder="Filter folders…"
+                className="glass-panel h-7 w-36 rounded pl-7 pr-2 text-xs outline-none"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Directory Listing Body */}
+        <div className="flex-1 overflow-y-auto min-h-[240px] max-h-[360px] rounded-lg border border-border/30 bg-background/40 p-2">
+          {loading ? (
+            <div className="flex h-48 items-center justify-center text-xs text-muted-foreground">
+              <RefreshCw className="mr-2 size-4 animate-spin" />
+              Reading folders…
+            </div>
+          ) : error ? (
+            <div className="flex h-48 flex-col items-center justify-center gap-2 text-xs text-risk p-4 text-center">
+              <AlertCircle className="size-5" />
+              <span>Failed to read directory: {error}</span>
+              <button
+                type="button"
+                onClick={() => navigateTo('~')}
+                className="mt-1 text-foreground underline"
+              >
+                Return to Home
+              </button>
+            </div>
+          ) : !filteredDirs || filteredDirs.length === 0 ? (
+            <div className="flex h-48 flex-col items-center justify-center text-xs text-muted-foreground">
+              <Folder className="mb-2 size-6 opacity-40" />
+              <span>{listing?.directories.length === 0 ? 'No subfolders in this directory.' : 'No folders match your filter.'}</span>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {filteredDirs.map((dir) => (
+                <div
+                  key={dir.path}
+                  className="flex items-center justify-between rounded-lg p-2 hover:bg-foreground/5 transition-colors group"
+                >
+                  <button
+                    type="button"
+                    onClick={() => navigateTo(dir.path)}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                  >
+                    <Folder className="size-4 text-amber-400 shrink-0" />
+                    <span className="font-medium text-xs text-foreground group-hover:underline truncate">
+                      {dir.name}
+                    </span>
+                    {dir.isGit && (
+                      <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400">
+                        <GitBranch className="size-2.5" />
+                        Git
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectSub(dir.path)}
+                    className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'opacity-80 hover:opacity-100')}
+                  >
+                    Select
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/40 pt-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2 text-xs">
+            <span className="text-muted-foreground shrink-0">Current:</span>
+            <span className="font-mono text-foreground truncate">{listing?.current ?? currentPath}</span>
+            {listing?.isGit && (
+              <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400 shrink-0">
+                <GitBranch className="size-2.5" />
+                Git Repo
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className={buttonVariants({ variant: 'glass', size: 'sm' })}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSelectCurrent}
+              disabled={!listing?.exists}
+              className={buttonVariants({ variant: 'default', size: 'sm' })}
+            >
+              Select This Directory
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Native OS & Browser Folder Path Input with Presets & Live Validation
 function FolderPathInput({
   value,
   onChange,
@@ -1601,7 +1864,10 @@ function FolderPathInput({
   placeholder?: string;
   required?: boolean;
 }) {
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const { client } = useRuntime();
+  const [showBrowserModal, setShowBrowserModal] = React.useState(false);
+  const [isPickingOS, setIsPickingOS] = React.useState(false);
+  const [validation, setValidation] = React.useState<{ exists: boolean; isGit: boolean } | null>(null);
 
   const presets = [
     { label: '~', path: '~' },
@@ -1611,61 +1877,135 @@ function FolderPathInput({
     { label: '/tmp', path: '/tmp' },
   ];
 
-  const handleDirectoryPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const file = files[0] as unknown as { webkitRelativePath?: string; path?: string };
-      if (file.path) {
-        const dir = file.path.substring(0, file.path.lastIndexOf('/'));
-        if (dir) onChange(dir);
-      } else if (file.webkitRelativePath) {
-        const rootDir = file.webkitRelativePath.split('/')[0];
-        if (rootDir) onChange(rootDir);
+  // Validate directory live as user types or picks
+  React.useEffect(() => {
+    if (!client || !value.trim()) {
+      setValidation(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      client
+        .systemDirectories(value.trim())
+        .then((res) => {
+          if (!cancelled) setValidation({ exists: res.exists, isGit: res.isGit });
+        })
+        .catch(() => {
+          if (!cancelled) setValidation(null);
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [client, value]);
+
+  const handlePickNativeOS = async () => {
+    if (!client) return;
+    setIsPickingOS(true);
+    try {
+      const res = await client.pickFolder(value.trim() || undefined);
+      if (res.path) {
+        onChange(res.path);
       }
+    } catch (err) {
+      console.error('Failed to trigger OS folder picker:', err);
+    } finally {
+      setIsPickingOS(false);
     }
   };
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="relative flex items-center">
+      <div className="flex items-center gap-2">
         <input
           required={required}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={cn(inputClass, 'w-full pr-24')}
+          className={cn(inputClass, 'flex-1 font-mono text-xs')}
           placeholder={placeholder ?? '/Users/username/Projects/my-app'}
         />
-        <input
-          ref={fileInputRef}
-          type="file"
-          // @ts-expect-error webkitdirectory is standard in browsers
-          webkitdirectory=""
-          directory=""
-          multiple
-          className="hidden"
-          onChange={handleDirectoryPicked}
-        />
+
+        {/* Native OS Folder Dialog Button */}
         <button
           type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded bg-muted/80 px-2 py-1 text-xs font-medium text-foreground hover:bg-muted"
+          disabled={isPickingOS}
+          onClick={handlePickNativeOS}
+          title="Open native OS Finder folder picker dialog"
+          className={cn(
+            buttonVariants({ variant: 'glass', size: 'sm' }),
+            'shrink-0 gap-1.5 text-xs font-medium'
+          )}
         >
-          Browse…
+          {isPickingOS ? (
+            <RefreshCw className="size-3.5 animate-spin" />
+          ) : (
+            <FolderOpen className="size-3.5 text-amber-400" />
+          )}
+          <span>{isPickingOS ? 'Selecting…' : 'OS Dialog'}</span>
+        </button>
+
+        {/* In-App Browser Modal Button */}
+        <button
+          type="button"
+          onClick={() => setShowBrowserModal(true)}
+          title="Browse directories in interactive browser"
+          className={cn(
+            buttonVariants({ variant: 'glass', size: 'sm' }),
+            'shrink-0 gap-1.5 text-xs font-medium'
+          )}
+        >
+          <FolderTree className="size-3.5 text-cyan-400" />
+          <span>Browse Tree…</span>
         </button>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-        <span>Presets:</span>
-        {presets.map((p) => (
-          <button
-            key={p.path}
-            type="button"
-            onClick={() => onChange(p.path)}
-            className="rounded border border-border/50 bg-background/50 px-1.5 py-0.5 hover:bg-accent hover:text-accent-foreground"
-          >
-            {p.label}
-          </button>
-        ))}
+
+      {/* Presets & Live Validation Status */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span>Presets:</span>
+          {presets.map((p) => (
+            <button
+              key={p.path}
+              type="button"
+              onClick={() => onChange(p.path)}
+              className="rounded border border-border/50 bg-background/50 px-1.5 py-0.5 hover:bg-accent hover:text-accent-foreground font-mono"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {validation && (
+          <div className="flex items-center gap-1 text-[11px]">
+            {validation.exists ? (
+              validation.isGit ? (
+                <span className="flex items-center gap-1 text-emerald-400 font-medium">
+                  <CheckCircle2 className="size-3" />
+                  Valid Git repo
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-foreground/80">
+                  <CheckCircle2 className="size-3 text-muted-foreground" />
+                  Directory exists
+                </span>
+              )
+            ) : (
+              <span className="text-amber-400/90">Directory does not exist yet</span>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Directory Browser Modal */}
+      {showBrowserModal && (
+        <DirectoryPickerModal
+          initialPath={value || '~'}
+          onSelect={(selectedPath) => onChange(selectedPath)}
+          onClose={() => setShowBrowserModal(false)}
+        />
+      )}
     </div>
   );
 }

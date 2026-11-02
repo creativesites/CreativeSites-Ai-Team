@@ -44,6 +44,18 @@ export interface ProjectFileItem {
   size?: number;
 }
 
+export interface DirectoryListing {
+  current: string;
+  parent: string | null;
+  directories: { name: string; path: string; isGit: boolean }[];
+  isGit: boolean;
+  exists: boolean;
+}
+
+export interface PickFolderResult {
+  path: string | null;
+}
+
 export interface Health {
   ok: boolean;
   version: string;
@@ -1361,6 +1373,119 @@ export interface ApproveDesignFrameResult {
   evidence: Evidence;
   task: Task | null;
   session: Session | null;
+}
+
+// ------------------------------------------------------------------ communication hub
+
+export interface ChatMessage {
+  id: number;
+  thread_id?: string | null;
+  from_identity?: string | null;
+  to_identity?: string | null;
+  msg_type: string;
+  priority?: string | null;
+  subject?: string | null;
+  body: string;
+  read: number;
+  ts: string;
+}
+
+export interface Thread {
+  id: string;
+  title: string;
+  author_identities?: string;
+  target_identities?: string;
+  status: string;
+  related_task_id?: string;
+  related_project_id?: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  original_file_path?: string;
+}
+
+export interface Announcement {
+  id: number;
+  title: string;
+  author_identity?: string;
+  content?: string;
+  audience?: string;
+  ts: string;
+  original_file_path?: string;
+}
+
+export interface SocialPost {
+  id: number;
+  channel: string;
+  author_identity?: string;
+  content: string;
+  ts: string;
+  original_file_path?: string;
+}
+
+export interface Standup {
+  id: number;
+  standup_date: string;
+  facilitator?: string;
+  present_identities?: string;
+  absent_identities?: string;
+  content?: string;
+  parsed_updates?: string;
+  ts: string;
+  original_file_path?: string;
+}
+
+export interface SendInboxMessageInput {
+  from: string;
+  to: string;
+  body: string;
+  subject?: string;
+  priority?: string;
+}
+
+export interface CreateThreadInput {
+  title: string;
+  author: string;
+  targetIdentities?: string[];
+  initialMessage: string;
+}
+
+export interface PostThreadReplyInput {
+  from: string;
+  body: string;
+}
+
+export interface CreateAnnouncementInput {
+  title: string;
+  author: string;
+  content: string;
+  audience?: string;
+}
+
+export interface CreateSocialPostInput {
+  channel: string;
+  author: string;
+  content: string;
+}
+
+export interface CreateStandupInput {
+  standup_date: string;
+  facilitator?: string;
+  present_identities?: string[];
+  absent_identities?: string[];
+  content: string;
+  parsed_updates?: string;
+}
+
+export interface AiExplainInput {
+  text: string;
+  contextType?: 'instruction' | 'technical' | 'blocker' | 'summary';
+  agentId?: string;
+}
+
+export interface AiGenerateResponse {
+  text: string;
+  model: string;
 }
 
 

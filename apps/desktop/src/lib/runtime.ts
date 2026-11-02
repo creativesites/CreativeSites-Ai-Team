@@ -37,6 +37,7 @@ import type {
   DecideApprovalInput,
   DesignBoard,
   DesignFrame,
+  DirectoryListing,
   Evidence,
   ExtractDesignInput,
   GenerateDesignInput,
@@ -52,6 +53,7 @@ import type {
   JobStageHistory,
   JobSummary,
   Message,
+  PickFolderResult,
   PostMessageInput,
   Project,
   ProjectFileItem,
@@ -195,6 +197,13 @@ export class RuntimeClient {
   removeTeamMember = (id: string, memberId: string) =>
     this.request<unknown>('DELETE', `/v1/teams/${encodeURIComponent(id)}/members/${encodeURIComponent(memberId)}`);
 
+  pickFolder = (defaultPath?: string) =>
+    this.request<PickFolderResult>('POST', '/v1/system/pick-folder', { defaultPath });
+  systemDirectories = (dirPath?: string) =>
+    this.request<DirectoryListing>(
+      'GET',
+      `/v1/system/directories${dirPath ? `?path=${encodeURIComponent(dirPath)}` : ''}`
+    );
   projects = () => this.request<Project[]>('GET', '/v1/projects');
   project = (id: string) => this.request<Project>('GET', `/v1/projects/${encodeURIComponent(id)}`);
   projectStatus = (id: string) =>

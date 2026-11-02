@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -291,3 +291,73 @@ export function listProjectFiles(dir: string, subPath = '', maxEntries = 100): P
     return [];
   }
 }
+
+export interface DirectoryListing {
+  current: string;
+  parent: string | null;
+  directories: { name: string; path: string; isGit: boolean }[];
+  isGit: boolean;
+  exists: boolean;
+}
+
+export function listSystemDirectories(dir?: string): DirectoryListing {
+  const target = dir?.trim() ? dir.trim() : os.homedir();
+  const resolved = path.resolve(expand(target));
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    return { current: resolved, parent: null, directories: [], isGit: false, exists: false };
+  }
+  const isGit = fs.existsSync(path.join(resolved, '.git'));
+  const parent = resolved === '/' ? null : path.dirname(resolved);
+  const directories: { name: string; path: string; isGit: boolean }[] = [];
+  try {
+    const entries = fs.readdirSync(resolved, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue;
+      const full = path.join(resolved, e.name);
+      let subGit = false;
+      try {
+        subGit = fs.existsSync(path.join(full, '.git'));
+      } catch {
+        /* ignore */
+      }
+      directories.push({ name: e.name, path: full, isGit: subGit });
+    }
+    directories.sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    /* ignore permission errors */
+  }
+  return { current: resolved, parent, directories, isGit, exists: true };
+}
+
+export function pickFolderOS(defaultDir?: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const platform = process.platform;
+    if (platform === 'darwin') {
+      let script = 'POSIX path of (choose folder with prompt "Select Project Folder"';
+      if (defaultDir && fs.existsSync(expand(defaultDir))) {
+        const escaped = path.resolve(expand(defaultDir)).replace(/"/g, '\\"');
+        script += ` default location POSIX file "${escaped}"`;
+      }
+      script += ')';
+      execFile('osascript', ['-e', script], { timeout: 120000 }, (err, stdout) => {
+        if (err || !stdout) {
+          resolve(null);
+        } else {
+          resolve(stdout.trim().replace(/\/$/, ''));
+        }
+      });
+    } else if (platform === 'win32') {
+      const ps = `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; if ($f.ShowDialog() -eq 'OK') { $f.SelectedPath }`;
+      execFile('powershell', ['-NoProfile', '-Command', ps], { timeout: 120000 }, (err, stdout) => {
+        if (err || !stdout) resolve(null);
+        else resolve(stdout.trim().replace(/[\\/]$/, ''));
+      });
+    } else {
+      execFile('zenity', ['--file-selection', '--directory', '--title=Select Project Folder'], { timeout: 120000 }, (err, stdout) => {
+        if (err || !stdout) resolve(null);
+        else resolve(stdout.trim().replace(/\/$/, ''));
+      });
+    }
+  });
+}
+
