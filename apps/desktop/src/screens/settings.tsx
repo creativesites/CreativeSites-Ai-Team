@@ -884,18 +884,19 @@ function AdapterHealthSection({
         </div>
       )}
 
-      {/* Gemini auth notice */}
+      {/* Adapter auth notice */}
       <div className="glass-panel flex items-start gap-3 rounded-lg p-3 text-xs text-muted-foreground">
         <Terminal className="size-4 shrink-0 mt-0.5 text-observed" />
         <div className="flex flex-col gap-1 leading-relaxed">
           <span className="font-semibold text-foreground">Configuring Secrets & Keys</span>
           <p>
-            API secrets are never entered or stored in the desktop UI. To authenticate Gemini or add custom keys, run in
+            API secrets are never entered or stored in the desktop UI. To authenticate Antigravity, Gemini, or add custom keys, run in
             terminal:
           </p>
-          <span className="font-mono text-foreground/90 bg-background/50 rounded px-1.5 py-0.5 self-start">
-            node runtime/scripts/set-adapter-key.mjs GEMINI_API_KEY &lt;your-key&gt;
-          </span>
+          <div className="flex flex-col gap-1 font-mono text-foreground/90 bg-background/50 rounded p-1.5 self-start text-[11px]">
+            <span>node runtime/scripts/set-adapter-key.mjs ANTIGRAVITY_API_KEY &lt;your-key&gt;</span>
+            <span>node runtime/scripts/set-adapter-key.mjs GEMINI_API_KEY &lt;your-key&gt;</span>
+          </div>
           <p className="text-[11px]">
             Secrets are saved to <span className="font-mono">~/.myaos/adapters.env</span> (permissions 0600) and passed
             only to the adapter subprocess.

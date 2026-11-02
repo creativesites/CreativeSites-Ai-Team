@@ -72,6 +72,7 @@ const RUNTIMES = [
   { name: 'Claude Code', command: 'claude-agent-acp', adapterId: 'claude' },
   { name: 'Codex', command: 'codex-acp', adapterId: 'codex' },
   { name: 'Gemini CLI', command: 'gemini --acp', adapterId: 'gemini' },
+  { name: 'Antigravity', command: 'antigravity --acp', adapterId: 'antigravity' },
   { name: 'Custom agent', command: 'any command that speaks ACP over stdio', adapterId: 'claude' },
 ];
 
@@ -2158,7 +2159,7 @@ function AddForm({ onCreate, onCancel }: { onCreate: (i: CreateIdentityInput, in
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
         Runs on
         <select value={runtime} onChange={(e) => setRuntime(e.target.value)} className={field}>
-          {RUNTIMES.slice(0, 3).map((r) => (
+          {RUNTIMES.slice(0, 4).map((r) => (
             <option key={r.name}>{r.name}</option>
           ))}
         </select>
@@ -2445,6 +2446,7 @@ function SpawnAgentModal({
                 <option value="claude-agent-acp">Claude Code (ACP)</option>
                 <option value="codex-acp">Codex (ACP)</option>
                 <option value="gemini --acp">Gemini CLI (ACP)</option>
+                <option value="antigravity --acp">Antigravity (ACP)</option>
               </select>
             </div>
           </div>

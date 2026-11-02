@@ -45,6 +45,15 @@ export const ADAPTER_PRESETS: AdapterPreset[] = [
     versionArgs: ['--version'],
   },
   {
+    id: 'antigravity',
+    name: 'Antigravity',
+    kind: 'antigravity',
+    command: 'antigravity',
+    args: ['--acp'],
+    versionArgs: ['--version'],
+    aliases: ['agy'],
+  },
+  {
     id: 'dsh',
     name: 'DeepSeek Harness',
     kind: 'dsh',
@@ -173,6 +182,40 @@ function geminiAuth(adapterInstalled: boolean): AdapterAuth {
   }
 }
 
+function antigravityAuth(adapterInstalled: boolean): AdapterAuth {
+  if (!adapterInstalled) {
+    return { state: 'missing_binary', detail: 'antigravity CLI is not installed (checked ~/.local/bin/antigravity and PATH)' };
+  }
+  const env = readAdapterEnv();
+  if (process.env.ANTIGRAVITY_API_KEY || env.ANTIGRAVITY_API_KEY) {
+    return { state: 'configured', detail: 'ANTIGRAVITY_API_KEY is configured in adapters.env' };
+  }
+  if (process.env.GEMINI_API_KEY || env.GEMINI_API_KEY) {
+    return { state: 'configured', detail: 'GEMINI_API_KEY is configured in adapters.env' };
+  }
+  try {
+    const file = path.join(process.env.HOME ?? '', '.gemini', 'oauth_creds.json');
+    if (fs.existsSync(file)) {
+      const creds = JSON.parse(fs.readFileSync(file, 'utf8')) as { expiry_date?: number; refresh_token?: string };
+      if (creds.expiry_date && creds.expiry_date > Date.now()) {
+        return { state: 'ready', detail: `OAuth token valid until ${new Date(creds.expiry_date).toISOString()}` };
+      }
+      if (creds.refresh_token) {
+        return { state: 'ready', detail: 'Signed in via Google OAuth (refresh token present)' };
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const stateDir = path.join(process.env.HOME ?? '', '.gemini', 'antigravity');
+  if (fs.existsSync(stateDir)) {
+    return { state: 'ready', detail: 'Antigravity runtime state detected and ready' };
+  }
+
+  return { state: 'ready', detail: 'Antigravity CLI is installed and ready' };
+}
+
 function dshAuth(): AdapterAuth {
   return {
     state: 'unsupported',
@@ -188,6 +231,8 @@ function authFor(preset: AdapterPreset, installed: boolean): AdapterAuth {
       return codexAuth(installed);
     case 'gemini':
       return geminiAuth(installed);
+    case 'antigravity':
+      return antigravityAuth(installed);
     case 'dsh':
       return dshAuth();
     default:

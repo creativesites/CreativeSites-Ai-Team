@@ -80,7 +80,10 @@ const RUNTIME_TO_ADAPTER: Record<string, string> = {
   gemini: 'gemini',
   'gemini cli': 'gemini',
   'gemini --acp': 'gemini',
-  antigravity: 'gemini',
+  antigravity: 'antigravity',
+  'antigravity --acp': 'antigravity',
+  'antigravity ide': 'antigravity',
+  agy: 'antigravity',
 };
 
 function pathEnv(...binaries: (string | null)[]): Record<string, string> {

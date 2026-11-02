@@ -372,7 +372,13 @@ export class Orchestrator {
     const adapterId = input.adapterId ?? this.inferAdapterFromRuntime(input.runtime) ?? 'claude';
     const runtimeLabel =
       input.runtime ??
-      (adapterId === 'gemini' ? 'Gemini CLI' : adapterId === 'codex' ? 'Codex' : 'Claude Code');
+      (adapterId === 'antigravity'
+        ? 'Antigravity'
+        : adapterId === 'gemini'
+        ? 'Gemini CLI'
+        : adapterId === 'codex'
+        ? 'Codex'
+        : 'Claude Code');
 
     let identity: T.Identity;
     try {
@@ -846,7 +852,8 @@ export class Orchestrator {
   private inferAdapterFromRuntime(runtime?: string | null): string {
     if (!runtime) return 'claude';
     const r = runtime.toLowerCase();
-    if (r.includes('gemini') || r.includes('antigravity')) return 'gemini';
+    if (r.includes('antigravity') || r.includes('agy')) return 'antigravity';
+    if (r.includes('gemini')) return 'gemini';
     if (r.includes('codex') || r.includes('openai')) return 'codex';
     if (r.includes('claude')) return 'claude';
     return r;
