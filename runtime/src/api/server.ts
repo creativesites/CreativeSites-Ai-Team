@@ -24,6 +24,7 @@ import {
   writeFrameFileToDisk,
 } from '../design-studio.ts';
 import type { Bridge } from '../bridge.ts';
+import { DesignRunner } from '../design-agent.ts';
 import type { Orchestrator } from '../orchestrator.ts';
 import type { TerminalManager } from '../terminal-manager.ts';
 import { getRosterPayload } from '../council-roster.ts';
@@ -208,6 +209,7 @@ async function listSessionWorktreeFiles(worktreePath: string): Promise<T.Worktre
 
 export function createServer(opts: ServerOptions): RuntimeServer {
   const { repo, token } = opts;
+  const designRunner = new DesignRunner({ repo, sessions: opts.sessions });
   const origins = new Set([...BASE_ORIGINS, ...(opts.allowedOrigins ?? [])]);
   const streams = new Set<http.ServerResponse>();
 
@@ -842,12 +844,29 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     // They return 501 until an agent session builds the frames.
     route('POST', '/v1/design-boards/:id/generate', (ctx) => {
       repo.getDesignBoard(ctx.params.id!);
-      return { status: 501, body: { error: 'Agent-built design generation is not available yet; no frames were created.' } };
+      return { status: 501, body: { error: 'Template generation was removed; start an agent run with POST /v1/design-boards/:id/runs.' } };
     }),
     route('POST', '/v1/design-boards/:id/extract', (ctx) => {
       repo.getDesignBoard(ctx.params.id!);
-      return { status: 501, body: { error: 'Agent-built extraction of existing UI is not available yet; no frames were created.' } };
+      return { status: 501, body: { error: 'Template extraction was removed; start an agent run with kind "from-code" via POST /v1/design-boards/:id/runs.' } };
     }),
+    // An agent session builds designs onto the board; frames appear as it writes them.
+    route('POST', '/v1/design-boards/:id/runs', async (ctx) => ({
+      status: 202,
+      body: await designRunner.start(ctx.params.id!, ctx.body as unknown as T.StartDesignRunInput),
+    })),
+    route('GET', '/v1/design-boards/:id/runs', (ctx) => ({
+      status: 200,
+      body: designRunner.listRuns(ctx.params.id!),
+    })),
+    route('POST', '/v1/design-boards/:id/runs/:sessionId/cancel', async (ctx) => ({
+      status: 200,
+      body: await designRunner.cancel(
+        ctx.params.id!,
+        ctx.params.sessionId!,
+        String((ctx.body as { actorId?: string } | undefined)?.actorId ?? 'winston')
+      ),
+    })),
     route('POST', '/v1/design-boards/:id/frames', (ctx) => {
       const board = repo.getDesignBoard(ctx.params.id!);
       let baseDir = opts.workspaceRoots[0] ?? process.cwd();

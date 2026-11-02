@@ -18,6 +18,10 @@ export interface StartSessionInput {
   parentSessionId?: string | null;
   generation?: number;
   batonCapsule?: string | null;
+  /** Working folder for sessions that are not job builds (design boards). */
+  worktree?: string | null;
+  /** Send `prompt` exactly as written, without the job/team coordination wrapper. */
+  rawPrompt?: boolean;
 }
 
 export interface SessionLifecycleHooks {
@@ -428,7 +432,7 @@ export class SessionManager {
 
     const adapter = this.resolveAdapter(input.adapterId ?? agent.adapterId ?? agent.runtime);
 
-    let worktreePath = room?.repoPath ?? process.cwd() ?? os.homedir();
+    let worktreePath = input.worktree ?? room?.repoPath ?? process.cwd() ?? os.homedir();
     let baseSha: string | null = null;
     let baseBranch: string | null = null;
 
@@ -478,7 +482,8 @@ export class SessionManager {
       });
     }
 
-    const baseAcpPrompt = this.buildPrompt(job, room, task, agent, input.prompt);
+    const baseAcpPrompt =
+      input.rawPrompt && input.prompt?.trim() ? input.prompt.trim() : this.buildPrompt(job, room, task, agent, input.prompt);
     const acpPrompt = input.batonCapsule ? `${input.batonCapsule}\n\n${baseAcpPrompt}` : baseAcpPrompt;
     const displayPrompt = stripCoordinationBoilerplate(input.prompt?.trim() ? input.prompt : baseAcpPrompt);
     this.repo.appendTranscript(session.id, {
@@ -667,7 +672,7 @@ export class SessionManager {
     const task = existing.taskId ? this.repo.getTask(existing.taskId) : null;
     const adapter = this.resolveAdapter(existing.adapterId ?? agent.adapterId ?? agent.runtime);
     const worktreePath = existing.worktree ?? process.cwd() ?? os.homedir();
-    const acpPrompt = this.buildPrompt(job, room, task, agent, cleanText);
+    const acpPrompt = existing.mode === 'design' ? cleanText : this.buildPrompt(job, room, task, agent, cleanText);
     // Summarise before appending this turn's prompt, so the summary covers only earlier turns.
     const priorSummary = buildResumeSummary(this.repo.listTranscript(sessionId, 0, 10000));
     this.repo.appendTranscript(sessionId, { kind: 'prompt', role: 'user', title: 'Wake / follow-up prompt', payload: { text: cleanText } });
@@ -1022,6 +1027,20 @@ export class SessionManager {
     const toolCall = req.toolCall ?? {};
     const options: PermissionOption[] = req.options ?? [];
     const raw = (toolCall.rawInput && typeof toolCall.rawInput === 'object' ? toolCall.rawInput : {}) as Record<string, unknown>;
+
+    // Design sessions have no job: decide here instead of filing an approval on an unrelated job.
+    const sessionRow = this.repo.getSession(sessionId);
+    if (sessionRow.mode === 'design') {
+      const decision = designPermission(sessionRow.worktree ?? '', toolCall, raw);
+      const pick = options.find((o) => (decision.allow ? o.kind === 'allow_once' || o.kind === 'allow_always' : o.kind === 'reject_once' || o.kind === 'reject_always'));
+      this.repo.appendTranscript(sessionId, {
+        kind: 'permission_request',
+        role: 'system',
+        title: `${decision.allow ? 'Allowed' : 'Refused'}: ${String(toolCall.title ?? toolCall.kind ?? 'tool action')}`,
+        payload: { reason: decision.reason, toolCall },
+      });
+      return pick ? { outcome: 'selected', optionId: pick.optionId } : { outcome: 'cancelled' };
+    }
     const title = typeof toolCall.title === 'string' && toolCall.title ? toolCall.title : `Allow ${String(toolCall.kind ?? 'tool action')}`;
     const target = typeof raw.file_path === 'string' ? raw.file_path : typeof raw.command === 'string' ? raw.command : '';
     const consequence = target
@@ -1196,4 +1215,35 @@ export class SessionManager {
       .filter(Boolean)
       .join('\n');
   }
+}
+
+/**
+ * Permission rule for design sessions. The agent works in its board folder and
+ * may only read elsewhere: writes inside the board folder, read-only commands
+ * and reads are allowed; anything else is refused.
+ */
+export function designPermission(
+  boardDir: string,
+  toolCall: Record<string, unknown>,
+  raw: Record<string, unknown>
+): { allow: boolean; reason: string } {
+  const kind = String(toolCall.kind ?? '');
+  const target = typeof raw.file_path === 'string' ? raw.file_path : typeof raw.path === 'string' ? raw.path : '';
+  const command = typeof raw.command === 'string' ? raw.command.trim() : '';
+  const inside = (p: string) => {
+    if (!boardDir || !p) return false;
+    const abs = path.resolve(boardDir, p);
+    return abs === boardDir || abs.startsWith(boardDir.endsWith(path.sep) ? boardDir : boardDir + path.sep);
+  };
+  if (kind === 'read' || kind === 'search' || kind === 'think' || kind === 'fetch') return { allow: true, reason: 'read-only' };
+  if (kind === 'edit' || kind === 'delete' || kind === 'move') {
+    return inside(target) && !target.includes(`${path.sep}source${path.sep}`)
+      ? { allow: true, reason: 'inside the board folder' }
+      : { allow: false, reason: 'design sessions may only change files in their board folder' };
+  }
+  if (kind === 'execute' && command) {
+    const readOnly = /^(ls|cat|head|tail|wc|rg|grep|find|tree|file|pwd|git (status|log|show|diff|ls-files))\b/.test(command) && !/[>|;&`$]/.test(command);
+    return readOnly ? { allow: true, reason: 'read-only command' } : { allow: false, reason: 'design sessions may only run read-only commands' };
+  }
+  return { allow: false, reason: `not allowed in a design session (${kind || 'unknown tool'})` };
 }

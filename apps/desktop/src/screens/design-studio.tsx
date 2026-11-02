@@ -18,6 +18,7 @@ import {
   Send,
   Smartphone,
   Sparkles,
+  Square,
   Tablet,
   Trash2,
 } from 'lucide-react';
@@ -25,10 +26,12 @@ import type {
   DesignBoard,
   DesignDeviceKind,
   DesignFrame,
+  DesignRun,
   Identity,
   JobSummary,
   Project,
   Room,
+  StartDesignRunInput,
 } from '@runtime/types';
 import { Tag } from '@/components/app/status';
 import { Button } from '@/components/ui/button';
@@ -124,8 +127,11 @@ export function DesignStudioScreen({
   const [newBoardProjectId, setNewBoardProjectId] = React.useState<string>(projects[0]?.id ?? '');
   const [newBoardJobId, setNewBoardJobId] = React.useState<string>(jobs[0]?.id ?? '');
 
+  const [newBoardDevice, setNewBoardDevice] = React.useState<DesignDeviceKind>('phone');
+  const [newBoardVariants, setNewBoardVariants] = React.useState<number>(1);
+  const [newBoardScope, setNewBoardScope] = React.useState('');
+
   const [showExtractModal, setShowExtractModal] = React.useState(false);
-  const [extractProjectId, setExtractProjectId] = React.useState<string>(projects[0]?.id ?? '');
   const [extractPaths, setExtractPaths] = React.useState<string>('');
   const [extractDevice, setExtractDevice] = React.useState<DesignDeviceKind>('desktop');
   const [extractPrompt, setExtractPrompt] = React.useState<string>('');
@@ -135,6 +141,21 @@ export function DesignStudioScreen({
   const [approveDispatchBuild, setApproveDispatchBuild] = React.useState(true);
   const [approveAssigneeId, setApproveAssigneeId] = React.useState<string>('atlas');
   const [approveTargetFiles, setApproveTargetFiles] = React.useState<string>('');
+
+  // Agent runs on the active board: every frame is written by a real agent session.
+  const [runs, setRuns] = React.useState<DesignRun[]>([]);
+  const designers = React.useMemo(
+    () => identities.filter((i) => !i.isOwner && (i.adapterId || i.runtime)),
+    [identities]
+  );
+  const [designerId, setDesignerId] = React.useState('');
+  React.useEffect(() => {
+    if (designerId || designers.length === 0) return;
+    const pick = designers.find((d) => /design|ux|ui/i.test(`${d.role ?? ''} ${d.lane ?? ''}`)) ?? designers[0]!;
+    setDesignerId(pick.id);
+  }, [designers, designerId]);
+  const nameOf = (id: string) => identities.find((i) => i.id === id)?.name ?? id;
+  const activeRun = runs.find((r) => r.state === 'starting' || r.state === 'running') ?? null;
 
   const loadBoards = React.useCallback(
     async (preferBoardId?: string) => {
@@ -147,6 +168,7 @@ export function DesignStudioScreen({
         if (targetId) {
           const full = await client.designBoard(targetId);
           setActiveBoard(full);
+          setRuns(await client.designRuns(full.id));
         } else {
           // No boards yet: show the empty state; nothing is created on the owner's behalf.
           setActiveBoard(null);
@@ -192,12 +214,21 @@ export function DesignStudioScreen({
     try {
       const fresh = await client.designBoard(activeBoard.id);
       setActiveBoard(fresh);
+      setRuns(await client.designRuns(activeBoard.id));
       const list = await client.designBoards();
       setBoards(list);
     } catch (e) {
       notify.error((e as Error).message);
     }
   };
+  // While an agent is designing, pull the board every 1.5s so frames appear as they are written.
+  React.useEffect(() => {
+    if (!activeRun || !client || !activeBoard) return;
+    const timer = window.setInterval(() => void refreshActiveBoard(), 1500);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRun?.sessionId, activeBoard?.id, client]);
+
 
   // Canvas mouse pan handlers
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -249,30 +280,33 @@ export function DesignStudioScreen({
     }
   };
 
+  /** Starts an agent session on a board. Frames appear on the canvas as the agent writes them. */
+  const startRun = async (boardId: string, input: Omit<StartDesignRunInput, 'agentId' | 'actorId'>) => {
+    if (!client) return;
+    if (!designerId) throw new Error('No coworker with an agent runtime is available to design. Add one on the Coworkers screen.');
+    const run = await client.startDesignRun(boardId, { ...input, agentId: designerId, actorId: ownerId });
+    setRuns((prev) => [run, ...prev.filter((r) => r.sessionId !== run.sessionId)]);
+    notify.success(`${nameOf(run.agentId)} is working on it. Frames appear on the canvas as they are written.`);
+  };
+
   const handleGenerateOrIterate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!client || !activeBoard || !prompt.trim()) return;
     setBusy(true);
     try {
-      const res = await client.generateDesign(activeBoard.id, {
-        prompt: prompt.trim(),
-        device,
-        variantCount: actionMode === 'create' ? variantCount : 1,
-        targetFrameIds: actionMode === 'create' ? [] : selectedFrameIds,
-        action: actionMode,
-        pinnedElement: pinnedElement?.section ?? null,
-        actorId: ownerId,
-      });
-      setActiveBoard(res.board);
+      if (actionMode === 'create') {
+        await startRun(activeBoard.id, { kind: 'new', prompt: prompt.trim(), device, variants: variantCount });
+      } else {
+        await startRun(activeBoard.id, {
+          kind: 'iterate',
+          action: actionMode,
+          prompt: prompt.trim(),
+          frameIds: selectedFrameIds,
+          pinnedElement: pinnedElement?.section ?? null,
+        });
+      }
       setPrompt('');
       setPinnedElement(null);
-      notify.success(
-        actionMode === 'create'
-          ? `Added ${res.frames.length} new frame(s) to canvas`
-          : actionMode === 'fork'
-            ? `Forked variant onto canvas`
-            : `Updated frame to v${res.frames[0]?.version ?? 2}`
-      );
     } catch (err) {
       notify.error((err as Error).message);
     } finally {
@@ -284,19 +318,26 @@ export function DesignStudioScreen({
     if (!client || !activeBoard) return;
     setBusy(true);
     try {
-      const res = await client.generateDesign(activeBoard.id, {
-        prompt: prompt.trim() || `Explore an alternative layout variation of ${frame.title}`,
-        device: frame.device,
-        targetFrameIds: [frame.id],
+      await startRun(activeBoard.id, {
+        kind: 'iterate',
         action: 'fork',
-        actorId: ownerId,
+        prompt: prompt.trim() || `Explore a clearly different layout for ${frame.title}`,
+        frameIds: [frame.id],
       });
-      setActiveBoard(res.board);
-      notify.success(`Forked "${frame.title}" onto canvas`);
     } catch (err) {
       notify.error((err as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleCancelRun = async (run: DesignRun) => {
+    if (!client) return;
+    try {
+      const updated = await client.cancelDesignRun(run.boardId, run.sessionId, ownerId);
+      setRuns((prev) => prev.map((r) => (r.sessionId === updated.sessionId ? updated : r)));
+    } catch (err) {
+      notify.error((err as Error).message);
     }
   };
 
@@ -305,6 +346,8 @@ export function DesignStudioScreen({
     if (!client || !newBoardTitle.trim()) return;
     setBusy(true);
     try {
+      if (newBoardMode === 'extracted' && !newBoardProjectId) throw new Error('Choose the project whose UI should be brought in.');
+      if (newBoardMode === 'greenfield' && !newBoardDesc.trim()) throw new Error('Describe what should be designed.');
       const created = await client.createDesignBoard({
         title: newBoardTitle.trim(),
         description: newBoardDesc.trim() || null,
@@ -313,12 +356,24 @@ export function DesignStudioScreen({
         jobId: newBoardJobId || null,
         createdBy: ownerId,
       });
+      const scope = newBoardScope.split(',').map((x) => x.trim()).filter(Boolean);
+      await startRun(
+        created.id,
+        newBoardMode === 'greenfield'
+          ? { kind: 'new', prompt: newBoardDesc.trim(), device: newBoardDevice, variants: newBoardVariants }
+          : {
+              kind: 'from-code',
+              prompt: newBoardDesc.trim() || 'Recreate the current UI so we can review and iterate on it.',
+              device: newBoardDevice,
+              scope,
+            }
+      );
       setShowNewBoardModal(false);
       setNewBoardTitle('');
       setNewBoardDesc('');
+      setNewBoardScope('');
       await loadBoards(created.id);
       window.location.hash = href({ name: 'design-studio', boardId: created.id });
-      notify.success(`Created board "${created.title}"`);
     } catch (err) {
       notify.error((err as Error).message);
     } finally {
@@ -331,22 +386,16 @@ export function DesignStudioScreen({
     if (!client || !activeBoard) return;
     setBusy(true);
     try {
-      const targetPaths = extractPaths
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const res = await client.extractDesign(activeBoard.id, {
-        projectId: extractProjectId || activeBoard.projectId || projects[0]?.id || null,
-        targetPaths: targetPaths.length > 0 ? targetPaths : undefined,
+      const scope = extractPaths.split(',').map((x) => x.trim()).filter(Boolean);
+      await startRun(activeBoard.id, {
+        kind: 'from-code',
+        prompt: extractPrompt.trim() || 'Recreate the current UI so we can review and iterate on it.',
         device: extractDevice,
-        prompt: extractPrompt.trim() || null,
-        actorId: ownerId,
+        scope,
       });
-      setActiveBoard(res.board);
       setShowExtractModal(false);
       setExtractPaths('');
       setExtractPrompt('');
-      notify.success(`Extracted ${res.frames.length} screen(s) from codebase onto canvas`);
     } catch (err) {
       notify.error((err as Error).message);
     } finally {
@@ -375,8 +424,8 @@ export function DesignStudioScreen({
       await refreshActiveBoard();
       notify.success(
         res.task
-          ? `Approved "${res.frame.title}" (VERIFIED) & dispatched Build Task to ${approveAssigneeId}`
-          : `Approved "${res.frame.title}" as VERIFIED Design Evidence`
+          ? `Approved "${res.frame.title}" and handed it to ${nameOf(approveAssigneeId)} to build`
+          : `Approved "${res.frame.title}"`
       );
     } catch (err) {
       notify.error((err as Error).message);
@@ -456,19 +505,17 @@ export function DesignStudioScreen({
           </select>
 
           <Button size="sm" variant="glass" onClick={() => setShowNewBoardModal(true)}>
-            <Plus className="size-3.5" /> New Board
+            <Plus className="size-3.5" /> New board
           </Button>
 
           <Button
             size="sm"
             variant="glass"
-            onClick={() => {
-              setExtractProjectId(activeBoard?.projectId ?? projects[0]?.id ?? '');
-              setShowExtractModal(true);
-            }}
-            title="Extract existing screens/components from a repository onto this canvas to iterate"
+            disabled={!activeBoard}
+            onClick={() => setShowExtractModal(true)}
+            title="Have an agent recreate the project's current screens on this canvas so you can iterate on them"
           >
-            <FolderGit2 className="size-3.5 text-sky-400" /> Extract Repo UI to Canvas
+            <FolderGit2 className="size-3.5 text-sky-400" /> Bring in existing UI
           </Button>
         </div>
 
@@ -559,6 +606,57 @@ export function DesignStudioScreen({
             </span>
           )}
         </div>
+
+        {/* No board yet: the two ways in */}
+        {!loading && !activeBoard && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center p-6">
+            <div className="glass-panel flex w-full max-w-2xl flex-col gap-4 rounded-2xl p-6">
+              <div className="flex flex-col gap-1">
+                <h2 className="text-base font-semibold">Start a design</h2>
+                <p className="text-xs text-muted-foreground">
+                  An agent builds every frame live on this canvas. You review and iterate here before anyone builds it.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewBoardMode('greenfield');
+                    setShowNewBoardModal(true);
+                  }}
+                  className="flex flex-col items-start gap-1.5 rounded-xl border border-border bg-background/40 p-4 text-left hover:bg-background/70"
+                >
+                  <Sparkles className="size-4 text-amber-400" />
+                  <span className="text-sm font-semibold">Design something new</span>
+                  <span className="text-xs text-muted-foreground">
+                    A feature, page or app that doesn't exist yet, optionally based on a project.
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewBoardMode('extracted');
+                    setShowNewBoardModal(true);
+                  }}
+                  className="flex flex-col items-start gap-1.5 rounded-xl border border-border bg-background/40 p-4 text-left hover:bg-background/70"
+                >
+                  <Layers className="size-4 text-sky-400" />
+                  <span className="text-sm font-semibold">Bring in existing UI</span>
+                  <span className="text-xs text-muted-foreground">
+                    Recreate a project's current screens, all or some, to review and iterate on.
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {activeBoard && frames.length === 0 && !activeRun && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
+            <p className="rounded-xl border border-dashed border-foreground/15 px-4 py-3 text-xs text-muted-foreground">
+              This board is empty. Describe a design below, or use "Bring in existing UI".
+            </p>
+          </div>
+        )}
 
         {/* Transformed 2D Stage */}
         <div
@@ -849,6 +947,42 @@ export function DesignStudioScreen({
         </div>
       </div>
 
+      {/* Agent runs on this board */}
+      {runs.length > 0 && (
+        <div className="glass-panel flex flex-col gap-1.5 rounded-xl px-4 py-2.5 text-xs" aria-label="Design runs">
+          {runs.slice(0, 3).map((r) => {
+            const live = r.state === 'starting' || r.state === 'running';
+            return (
+              <div key={r.sessionId} className="flex flex-wrap items-center gap-2.5">
+                <Tag tone={live ? 'observed' : r.state === 'failed' ? 'risk' : 'quiet'}>
+                  {live ? 'Designing' : r.state === 'failed' ? 'Failed' : r.state === 'stopped' ? 'Stopped' : 'Done'}
+                </Tag>
+                <span className="font-medium">{nameOf(r.agentId)}</span>
+                <span className="text-muted-foreground">
+                  {r.kind === 'new' ? 'new design' : r.kind === 'from-code' ? 'existing UI' : 'iteration'}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-foreground/80" title={r.prompt}>
+                  {r.prompt}
+                </span>
+                <span className="text-muted-foreground">
+                  {r.framesTouched} frame{r.framesTouched === 1 ? '' : 's'}
+                </span>
+                {r.error && (
+                  <span className="max-w-[40%] truncate text-red-300" title={r.error}>
+                    {r.error}
+                  </span>
+                )}
+                {live && (
+                  <Button size="sm" variant="glass" onClick={() => void handleCancelRun(r)}>
+                    <Square className="size-3" /> Stop
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Bottom Studio Iteration & Generation Dock */}
       <form
         onSubmit={handleGenerateOrIterate}
@@ -899,8 +1033,21 @@ export function DesignStudioScreen({
             )}
           </div>
 
-          {/* Viewport & Variant Count Controls */}
+          {/* Designer, viewport & variant count */}
           <div className="flex items-center gap-2">
+            <select
+              aria-label="Designer"
+              value={designerId}
+              onChange={(e) => setDesignerId(e.target.value)}
+              className="rounded-lg border border-border bg-background px-2 py-1 text-xs"
+            >
+              {designers.length === 0 && <option value="">No coworker with an agent runtime</option>}
+              {designers.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} designs
+                </option>
+              ))}
+            </select>
             <div className="inline-flex items-center rounded-lg border border-border bg-background/60 p-0.5">
               {(
                 [
@@ -953,16 +1100,18 @@ export function DesignStudioScreen({
           />
           <Button
             type="submit"
-            disabled={busy || !prompt.trim() || (actionMode !== 'create' && selectedFrameIds.length === 0)}
+            disabled={busy || !activeBoard || !designerId || !prompt.trim() || (actionMode !== 'create' && selectedFrameIds.length === 0)}
           >
             <Send className="size-3.5" />
             {busy
-              ? 'Working…'
+              ? 'Starting…'
               : actionMode === 'create'
-                ? `Build ${variantCount > 1 ? `${variantCount} Frames` : 'Frame'}`
+                ? variantCount > 1
+                  ? `Design ${variantCount} directions`
+                  : 'Design it'
                 : actionMode === 'fork'
-                  ? 'Fork Variant'
-                  : 'Update Frame'}
+                  ? 'Make a variant'
+                  : 'Update frame'}
           </Button>
         </div>
       </form>
@@ -975,7 +1124,7 @@ export function DesignStudioScreen({
             className="glass-panel flex w-full max-w-lg flex-col gap-4 rounded-2xl border border-border bg-popover p-6 shadow-2xl"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold">New Design Studio Canvas</h2>
+              <h2 className="text-base font-semibold">New design board</h2>
               <button
                 type="button"
                 onClick={() => setShowNewBoardModal(false)}
@@ -997,9 +1146,9 @@ export function DesignStudioScreen({
                 )}
               >
                 <Sparkles className="size-4 text-amber-400" />
-                <span className="text-xs font-semibold">1. New Feature / Greenfield</span>
+                <span className="text-xs font-semibold">Design something new</span>
                 <span className="text-[11px] text-muted-foreground">
-                  Design new phone or web UI variations from a feature prompt or job brief.
+                  A feature, page or app that doesn't exist yet. Optionally grounded in a project.
                 </span>
               </button>
 
@@ -1014,15 +1163,15 @@ export function DesignStudioScreen({
                 )}
               >
                 <Layers className="size-4 text-sky-400" />
-                <span className="text-xs font-semibold">2. Extract Current Repo UI</span>
+                <span className="text-xs font-semibold">Bring in existing UI</span>
                 <span className="text-[11px] text-muted-foreground">
-                  Generate current screens from an existing codebase onto the canvas to iterate.
+                  An agent recreates a project's current screens, all or some, so you can iterate on them.
                 </span>
               </button>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium">Canvas Title</label>
+              <label className="text-xs font-medium">Board name</label>
               <Input
                 value={newBoardTitle}
                 onChange={(e) => setNewBoardTitle(e.target.value)}
@@ -1032,24 +1181,89 @@ export function DesignStudioScreen({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium">Feature Brief / Initial Prompt</label>
+              <label className="text-xs font-medium">
+                {newBoardMode === 'greenfield' ? 'What should be designed?' : 'Anything to focus on? (optional)'}
+              </label>
               <Textarea
                 value={newBoardDesc}
                 onChange={(e) => setNewBoardDesc(e.target.value)}
-                placeholder="What user experience are we creating or iterating on?"
+                placeholder={
+                  newBoardMode === 'greenfield'
+                    ? 'Describe the feature, page or app: who it is for, what they do, and what done looks like.'
+                    : 'e.g. focus on the checkout flow and its empty states'
+                }
                 rows={3}
+                required={newBoardMode === 'greenfield'}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-muted-foreground">Project / Repo (for tokens & extraction)</label>
+                <label className="text-xs text-muted-foreground">Device</label>
+                <select
+                  value={newBoardDevice}
+                  onChange={(e) => setNewBoardDevice(e.target.value as DesignDeviceKind)}
+                  className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
+                >
+                  <option value="phone">Phone</option>
+                  <option value="tablet">Tablet</option>
+                  <option value="desktop">Web</option>
+                </select>
+              </div>
+              {newBoardMode === 'greenfield' ? (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-foreground">Directions to explore</label>
+                  <select
+                    value={newBoardVariants}
+                    onChange={(e) => setNewBoardVariants(Number(e.target.value))}
+                    className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
+                  >
+                    <option value={1}>One design</option>
+                    <option value={2}>2 directions</option>
+                    <option value={3}>3 directions</option>
+                    <option value={4}>4 directions</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs text-muted-foreground">Which screens (blank = whole app)</label>
+                  <Input
+                    value={newBoardScope}
+                    onChange={(e) => setNewBoardScope(e.target.value)}
+                    placeholder="e.g. checkout, src/screens/Home.tsx"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">Designer</label>
+              <select
+                value={designerId}
+                onChange={(e) => setDesignerId(e.target.value)}
+                className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
+              >
+                {designers.length === 0 && <option value="">No coworker with an agent runtime</option>}
+                {designers.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                    {d.role ? ` · ${d.role}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">
+                  Project {newBoardMode === 'extracted' ? '(required)' : '(optional)'}
+                </label>
                 <select
                   value={newBoardProjectId}
                   onChange={(e) => setNewBoardProjectId(e.target.value)}
                   className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
                 >
-                  <option value="">Standalone (No repo)</option>
+                  <option value="">{newBoardMode === 'extracted' ? 'Choose a project…' : 'No project'}</option>
                   {projects.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
@@ -1078,8 +1292,16 @@ export function DesignStudioScreen({
               <Button type="button" variant="glass" onClick={() => setShowNewBoardModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={busy || !newBoardTitle.trim()}>
-                Create Canvas
+              <Button
+                type="submit"
+                disabled={
+                  busy ||
+                  !newBoardTitle.trim() ||
+                  !designerId ||
+                  (newBoardMode === 'greenfield' ? !newBoardDesc.trim() : !newBoardProjectId)
+                }
+              >
+                {busy ? 'Starting…' : 'Create board and start'}
               </Button>
             </div>
           </form>
@@ -1094,7 +1316,7 @@ export function DesignStudioScreen({
             className="glass-panel flex w-full max-w-lg flex-col gap-4 rounded-2xl border border-border bg-popover p-6 shadow-2xl"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold">Extract Existing Codebase UI to Canvas</h2>
+              <h2 className="text-base font-semibold">Bring in existing UI</h2>
               <button
                 type="button"
                 onClick={() => setShowExtractModal(false)}
@@ -1104,23 +1326,15 @@ export function DesignStudioScreen({
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Scans your repository’s screens/components and builds interactive baseline frames onto this canvas so you can iterate on the design before handing off to an engineering agent.
+              {nameOf(designerId)} reads the project and recreates its current screens on this board, as they are in the code today, so you can review and iterate before anyone builds.
             </p>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium">Source Project / Repository</label>
-                <select
-                  value={extractProjectId}
-                  onChange={(e) => setExtractProjectId(e.target.value)}
-                  className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
-                >
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.rootPath})
-                    </option>
-                  ))}
-                </select>
+                <label className="text-xs font-medium">Project</label>
+                <span className="rounded-lg border border-border bg-background/60 px-2.5 py-1.5 text-xs">
+                  {projects.find((p) => p.id === activeBoard?.projectId)?.name ?? 'This board has no project. Create a new board for a project instead.'}
+                </span>
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium">Target Viewport</label>
@@ -1129,16 +1343,16 @@ export function DesignStudioScreen({
                   onChange={(e) => setExtractDevice(e.target.value as DesignDeviceKind)}
                   className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs"
                 >
-                  <option value="desktop">Web / Desktop (1200×780)</option>
-                  <option value="phone">Phone UI (393×852)</option>
-                  <option value="tablet">Tablet UI (834×1080)</option>
+                  <option value="desktop">Web (1440×900)</option>
+                  <option value="phone">Phone (390×844)</option>
+                  <option value="tablet">Tablet (834×1112)</option>
                 </select>
               </div>
             </div>
 
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium">
-                Specific File Paths (optional, comma-separated — leave blank to auto-discover screens)
+                Which screens or paths (comma-separated; blank = the whole app)
               </label>
               <Input
                 value={extractPaths}
@@ -1160,8 +1374,8 @@ export function DesignStudioScreen({
               <Button type="button" variant="glass" onClick={() => setShowExtractModal(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={busy}>
-                <FolderGit2 className="size-3.5" /> Extract to Canvas
+              <Button type="submit" disabled={busy || !activeBoard?.projectId || !designerId}>
+                <FolderGit2 className="size-3.5" /> {busy ? 'Starting…' : 'Recreate on this board'}
               </Button>
             </div>
           </form>

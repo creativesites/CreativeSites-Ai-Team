@@ -46,8 +46,8 @@ import type {
   DesignFrame,
   DirectoryListing,
   Evidence,
-  ExtractDesignInput,
-  GenerateDesignInput,
+  DesignRun,
+  StartDesignRunInput,
   GitBranchItem,
   GitCommitItem,
   GitDiffSummary,
@@ -612,17 +612,16 @@ export class RuntimeClient {
     this.request<DesignBoard>('PATCH', `/v1/design-boards/${encodeURIComponent(id)}`, input);
   deleteDesignBoard = (id: string) =>
     this.request<unknown>('DELETE', `/v1/design-boards/${encodeURIComponent(id)}`);
-  generateDesign = (boardId: string, input: GenerateDesignInput) =>
-    this.request<{ board: DesignBoard; frames: DesignFrame[] }>(
+  /** Starts an agent session that builds designs onto the board; frames appear as it writes them. */
+  startDesignRun = (boardId: string, input: StartDesignRunInput) =>
+    this.request<DesignRun>('POST', `/v1/design-boards/${encodeURIComponent(boardId)}/runs`, input);
+  designRuns = (boardId: string) =>
+    this.request<DesignRun[]>('GET', `/v1/design-boards/${encodeURIComponent(boardId)}/runs`);
+  cancelDesignRun = (boardId: string, sessionId: string, actorId: string) =>
+    this.request<DesignRun>(
       'POST',
-      `/v1/design-boards/${encodeURIComponent(boardId)}/generate`,
-      input
-    );
-  extractDesign = (boardId: string, input: ExtractDesignInput) =>
-    this.request<{ board: DesignBoard; frames: DesignFrame[] }>(
-      'POST',
-      `/v1/design-boards/${encodeURIComponent(boardId)}/extract`,
-      input
+      `/v1/design-boards/${encodeURIComponent(boardId)}/runs/${encodeURIComponent(sessionId)}/cancel`,
+      { actorId }
     );
   createDesignFrame = (boardId: string, input: Omit<CreateDesignFrameInput, 'boardId'>) =>
     this.request<DesignFrame>('POST', `/v1/design-boards/${encodeURIComponent(boardId)}/frames`, input);

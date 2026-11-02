@@ -187,12 +187,13 @@ export async function approveFrameAndHandoff(
   const actorId = input.actorId?.trim() || 'winston';
   const nowIso = new Date().toISOString();
 
-  // 1. Record VERIFIED Design Evidence on the Job (or standalone)
+  // 1. Record what was approved: the runtime observed this exact frame version.
+  // An approval is the owner's decision, not a re-run check, so it is never Verified.
   const evidence = repo.appendEvidence({
     jobId: board.jobId ?? undefined,
     kind: 'artifact',
     class: 'OBSERVED',
-    summary: `Approved Design Studio Frame: ${frame.title} (v${frame.version}, ${frame.device})`,
+    summary: `Owner ${actorId} approved design frame: ${frame.title} (v${frame.version}, ${frame.device})`,
     payload: {
       boardId: board.id,
       boardTitle: board.title,
@@ -209,14 +210,13 @@ export async function approveFrameAndHandoff(
     recordedBy: 'runtime',
     recordedByKind: 'system',
   });
-  const verifiedEvidence = repo.verifyEvidence(evidence.id, { verifiedBy: actorId });
 
   // 2. Mark the frame approved in SQLite
   const approvedFrame = repo.updateDesignFrame(frame.id, {
     status: 'approved',
     approvedBy: actorId,
     approvedAt: nowIso,
-    evidenceId: verifiedEvidence.id,
+    evidenceId: evidence.id,
     sourceFiles: input.targetFiles ?? frame.sourceFiles,
     notes: input.note ? `${frame.notes ? `${frame.notes} · ` : ''}Approved: ${input.note}` : frame.notes,
     bumpVersion: false,
@@ -239,7 +239,7 @@ export async function approveFrameAndHandoff(
     const handoffPrompt = [
       `DESIGN STUDIO APPROVED UI HANDOFF — IMPLEMENT EXACT SPECIFICATION`,
       `Approved Frame: "${approvedFrame.title}" (v${approvedFrame.version}, viewport: ${approvedFrame.device} ${approvedFrame.width}x${approvedFrame.height})`,
-      `Approved By: ${actorId} (Evidence ID: ${verifiedEvidence.id})`,
+      `Approved By: ${actorId} (Evidence ID: ${evidence.id})`,
       input.note ? `Owner Implementation Note: ${input.note}` : '',
       targetFilesList ? `Target Repository Files to Update/Create: ${targetFilesList}` : '',
       approvedFrame.htmlPath ? `Approved Design HTML File in Workspace: ${approvedFrame.htmlPath}` : '',
@@ -267,7 +267,7 @@ export async function approveFrameAndHandoff(
 
   return {
     frame: approvedFrame,
-    evidence: verifiedEvidence,
+    evidence,
     task: createdTask,
     session: startedSession,
   };

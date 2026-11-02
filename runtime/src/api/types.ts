@@ -1377,6 +1377,50 @@ export interface GenerateDesignInput {
   actorId?: string;
 }
 
+/**
+ * A request for an agent to build designs onto a board.
+ * - `new`: design something that does not exist yet (a feature, page or app).
+ * - `from-code`: recreate the project's current UI (all of it, or `scope`) so it can be iterated on.
+ * - `iterate`: change frames already on the board, in place (`update`) or as new variants (`fork`).
+ */
+export type DesignRunKind = 'new' | 'from-code' | 'iterate';
+
+export interface StartDesignRunInput {
+  kind: DesignRunKind;
+  /** What the owner asked for, in their words. */
+  prompt: string;
+  device?: DesignDeviceKind;
+  /** `new`: how many distinct directions to draw (1 to 4). */
+  variants?: number;
+  /** `from-code`: paths or screen names to recreate; empty means the whole app. */
+  scope?: string[];
+  /** `iterate`: the frames to change. */
+  frameIds?: string[];
+  action?: 'update' | 'fork';
+  /** `iterate`: an element the owner pinned inside a frame. */
+  pinnedElement?: string | null;
+  agentId?: string;
+  adapterId?: string | null;
+  actorId?: string;
+}
+
+/** One agent session working on a board, read back from the session store. */
+export interface DesignRun {
+  sessionId: string;
+  boardId: string;
+  agentId: string;
+  kind: DesignRunKind;
+  prompt: string;
+  device: DesignDeviceKind | null;
+  frameIds: string[];
+  state: SessionState;
+  error: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  /** Frames the agent created or changed during this run. */
+  framesTouched: number;
+}
+
 export interface ExtractDesignInput {
   projectId?: string | null;
   targetPaths?: string[];

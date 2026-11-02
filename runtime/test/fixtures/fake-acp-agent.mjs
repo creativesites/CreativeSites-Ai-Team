@@ -94,6 +94,31 @@ async function handlePrompt(message) {
         ? promptText.slice(promptText.lastIndexOf('\n\n')).trim() || promptText
         : promptText;
 
+    // Design Studio runs: write frames into the working folder the way a real agent would.
+    if (/myaos-design-test: new/i.test(activeText)) {
+      const file = join(cwd, 'home.html');
+      const result = await request('fs/write_text_file', {
+        sessionId,
+        path: file,
+        content: '<!-- myaos:frame title="Home" device="phone" notes="first direction" -->\n<main>Home</main>\n',
+      });
+      agentText(result.error ? `write failed: ${result.error.message}` : 'wrote home.html');
+      respond(message.id, { stopReason: 'end_turn' });
+      return;
+    }
+    if (/myaos-design-test: update/i.test(activeText)) {
+      const target = activeText.match(/\): (\/\S+\.html)$/m)?.[1];
+      const read = await request('fs/read_text_file', { sessionId, path: target });
+      const write = await request('fs/write_text_file', {
+        sessionId,
+        path: target,
+        content: `${read.result?.content ?? ''}<footer>Updated</footer>\n`,
+      });
+      agentText(write.error ? `update failed: ${write.error.message}` : 'updated frame');
+      respond(message.id, { stopReason: 'end_turn' });
+      return;
+    }
+
     if (/sleep/i.test(activeText)) {
       toolCall('t-sleep', 'Run sleep 20', 'pending', { command: 'sleep 20' });
       const created = await request('terminal/create', { sessionId, command: 'sleep', args: ['20'], cwd });

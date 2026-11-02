@@ -239,6 +239,6 @@ test('2. Design Studio starts empty, refuses canned generation, versions frames 
   });
   assert.equal(approved.status, 200);
   assert.equal(approved.json.frame.status, 'approved');
-  assert.equal(approved.json.evidence.class, 'VERIFIED');
+  assert.equal(approved.json.evidence.class, 'OBSERVED', 'an approval is a decision, not a re-run check');
   assert.ok(approved.json.task?.id, 'created build task on job from approved frame');
 });
