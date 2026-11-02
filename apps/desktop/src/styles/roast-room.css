@@ -1,0 +1,1240 @@
+/* Roast-Room Council Stage & Verdict Sheet Styles (Scoped under .roast-room-root) */
+
+.roast-room-root {
+  --bg: #0c0e13;
+  --panel: #13161e;
+  --panel2: #191d27;
+  --line: rgba(255, 255, 255, 0.08);
+  --line2: rgba(255, 255, 255, 0.14);
+  --text: #eef0f5;
+  --muted: #939bb0;
+  --dim: #5e667a;
+  --gold: #f0b44c;
+  --green: #2ecc8b;
+  --amber: #f5a524;
+  --red: #f05a5a;
+  --blue: #5aa9ff;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: calc(100vh - 96px);
+  min-height: 620px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+}
+
+.roast-room-root * {
+  box-sizing: border-box;
+}
+
+.roast-room-root .topbar {
+  height: 54px;
+  padding: 0 18px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  background: rgba(13, 15, 21, 0.9);
+  backdrop-filter: blur(10px);
+  z-index: 20;
+}
+
+.roast-room-root .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.roast-room-root .brand-logo {
+  height: 22px;
+  width: auto;
+  display: block;
+}
+
+.roast-room-root .brand-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--line2);
+}
+
+.roast-room-root .brand .title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+
+.roast-room-root .brand .sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.roast-room-root .phase {
+  justify-self: center;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  font-size: 12.5px;
+  color: var(--text);
+  max-width: 460px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roast-room-root .top-actions {
+  justify-self: end;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.roast-room-root .ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line2);
+  padding: 6px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.roast-room-root .ghost:hover {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.roast-room-root .primary {
+  background: linear-gradient(180deg, #f3be5e, #d9972e);
+  color: #16120a;
+  font-weight: 600;
+  border: 0;
+  padding: 9px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.roast-room-root .primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.roast-room-root .room {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 370px;
+  overflow: hidden;
+}
+
+@media (max-width: 1080px) {
+  .roast-room-root .room {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------- THE STAGE ---------------- */
+.roast-room-root .stage {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(ellipse 70% 55% at 50% 62%, #1d2231 0%, #10131c 62%, #0a0c12 100%);
+  min-height: 520px;
+}
+
+.roast-room-root .wall {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 50% 28% at 50% 8%, rgba(240, 180, 76, 0.1), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 64px);
+  pointer-events: none;
+}
+
+.roast-room-root .spot {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease, background 0.35s ease;
+  z-index: 3;
+}
+
+.roast-room-root .spot.on {
+  opacity: 1;
+}
+
+.roast-room-root .table {
+  position: absolute;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse 65% 55% at 50% 42%, #3a2b1c 0%, #261b11 58%, #18110a 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 220, 160, 0.18),
+    inset 0 0 60px rgba(0, 0, 0, 0.65),
+    0 30px 80px rgba(0, 0, 0, 0.85),
+    0 0 0 8px #15100b,
+    0 0 0 10px rgba(240, 180, 76, 0.22);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.roast-room-root .table-ring {
+  position: absolute;
+  inset: 7%;
+  border-radius: 50%;
+  border: 1px solid rgba(240, 180, 76, 0.18);
+}
+
+.roast-room-root .table-logo {
+  position: absolute;
+  left: 50%;
+  top: 23%;
+  width: 24%;
+  transform: translate(-50%, -50%);
+  opacity: 0.055;
+  pointer-events: none;
+  user-select: none;
+}
+
+.roast-room-root .links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.roast-room-root .links path {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-dasharray: 6 5;
+  animation: rr-dash 1.2s linear infinite;
+  opacity: 0.78;
+}
+
+@keyframes rr-dash {
+  to {
+    stroke-dashoffset: -22;
+  }
+}
+
+.roast-room-root .seats {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.roast-room-root .seat {
+  position: absolute;
+  width: 196px;
+  transform: translate(-50%, -100%);
+  text-align: center;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+  transition: filter 0.25s ease, opacity 0.25s ease, transform 0.3s ease;
+}
+
+.roast-room-root .seat.off {
+  opacity: 0.22;
+  filter: grayscale(0.8);
+}
+
+.roast-room-root .seat.dim {
+  opacity: 0.52;
+  filter: brightness(0.75);
+}
+
+.roast-room-root .seat.speaking {
+  z-index: 8;
+  filter: drop-shadow(0 10px 26px rgba(240, 180, 76, 0.45));
+}
+
+.roast-room-root .seat.target .bust {
+  box-shadow: 0 0 0 3px var(--red), 0 12px 30px rgba(240, 90, 90, 0.45);
+  border-radius: 50%;
+}
+
+.roast-room-root .bust {
+  position: relative;
+  width: 184px;
+  height: 184px;
+  margin: 0 auto;
+  transform-origin: 50% 95%;
+  transition: transform 0.25s ease;
+}
+
+.roast-room-root .bust img.frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  opacity: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.65));
+}
+
+.roast-room-root .bust[data-shape="base"] img.f-base,
+.roast-room-root .bust[data-shape="open"] img.f-open,
+.roast-room-root .bust[data-shape="mid"] img.f-mid,
+.roast-room-root .bust[data-shape="blink"] img.f-blink {
+  opacity: 1;
+}
+
+.roast-room-root .seat.speaking .bust {
+  animation: rr-talkBob 0.42s ease-in-out infinite alternate;
+}
+
+@keyframes rr-talkBob {
+  from {
+    transform: translateY(0) scale(1.05);
+  }
+  to {
+    transform: translateY(-4px) scale(1.065);
+  }
+}
+
+.roast-room-root .nameplates {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.roast-room-root .nameplate {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(14, 16, 23, 0.92);
+  border: 1px solid var(--line2);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: opacity 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.roast-room-root .nameplate.off {
+  opacity: 0.25;
+}
+
+.roast-room-root .nameplate.speaking {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(240, 180, 76, 0.28), 0 6px 16px rgba(0, 0, 0, 0.55);
+}
+
+.roast-room-root .nameplate .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.roast-room-root .nameplate .w {
+  color: var(--gold);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(240, 180, 76, 0.14);
+}
+
+.roast-room-root .nameplate .stance {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+}
+
+.roast-room-root .nameplate .stance.yes {
+  color: var(--green);
+  background: rgba(46, 204, 139, 0.13);
+}
+
+.roast-room-root .nameplate .stance.cond {
+  color: var(--amber);
+  background: rgba(245, 165, 36, 0.14);
+}
+
+.roast-room-root .nameplate .stance.no {
+  color: var(--red);
+  background: rgba(240, 90, 90, 0.14);
+}
+
+.roast-room-root .think {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(15, 18, 26, 0.92);
+  border: 1px solid var(--line2);
+  font-size: 11px;
+  color: var(--muted);
+  display: none;
+  gap: 3px;
+  align-items: center;
+}
+
+.roast-room-root .seat.thinking .think {
+  display: inline-flex;
+}
+
+.roast-room-root .think i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: rr-bob 0.9s infinite ease-in-out;
+}
+
+.roast-room-root .think i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.roast-room-root .think i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes rr-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.roast-room-root .vote {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-6deg);
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1.5px solid currentColor;
+  background: rgba(12, 14, 19, 0.9);
+}
+
+.roast-room-root .vote.endorse {
+  color: var(--green);
+}
+
+.roast-room-root .vote.amend {
+  color: var(--amber);
+}
+
+.roast-room-root .vote.dissent {
+  color: var(--red);
+}
+
+/* ---------------- TABLE CENTER ---------------- */
+.roast-room-root .center {
+  position: absolute;
+  width: min(560px, 64%);
+  z-index: 12;
+  text-align: center;
+}
+
+.roast-room-root .ask {
+  background: rgba(17, 20, 29, 0.92);
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(12px);
+  text-align: left;
+}
+
+.roast-room-root .ask-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.roast-room-root .ask textarea {
+  width: 100%;
+  resize: vertical;
+  background: #0d1017;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 10px 12px;
+  font: inherit;
+  outline: none;
+}
+
+.roast-room-root .ask textarea:focus {
+  border-color: rgba(240, 180, 76, 0.55);
+}
+
+.roast-room-root .ask-row {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.roast-room-root .mode {
+  display: inline-flex;
+  background: #0d1017;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.roast-room-root .mode button {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.roast-room-root .mode button.on {
+  background: var(--panel2);
+  color: var(--text);
+}
+
+.roast-room-root .samples {
+  margin-top: 10px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+.roast-room-root .samples button {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.roast-room-root .samples button:hover {
+  color: var(--text);
+  border-color: var(--line2);
+}
+
+.roast-room-root .caption {
+  background: rgba(14, 17, 25, 0.94);
+  border: 1px solid rgba(240, 180, 76, 0.38);
+  border-radius: 14px;
+  padding: 14px 18px;
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.75);
+  text-align: left;
+  animation: rr-popIn 0.22s ease-out;
+}
+
+@keyframes rr-popIn {
+  from {
+    transform: translateY(6px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.roast-room-root .cap-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.roast-room-root .cap-who {
+  font-weight: 700;
+}
+
+.roast-room-root .cap-tag {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.roast-room-root .cap-stance {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.roast-room-root .cap-text {
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: #f6f7fb;
+}
+
+.roast-room-root .cap-text .w {
+  transition: color 0.12s, background 0.12s;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.roast-room-root .cap-text .w.on {
+  background: rgba(240, 180, 76, 0.26);
+  color: #fff;
+}
+
+.roast-room-root .waitcard {
+  background: rgba(14, 17, 25, 0.88);
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  padding: 13px 18px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+
+.roast-room-root .wait-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--gold);
+  flex: none;
+  box-shadow: 0 0 0 0 rgba(240, 180, 76, 0.7);
+  animation: rr-pulseRing 1.6s ease-out infinite;
+}
+
+@keyframes rr-pulseRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(240, 180, 76, 0.65);
+  }
+  70% {
+    box-shadow: 0 0 0 11px rgba(240, 180, 76, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(240, 180, 76, 0);
+  }
+}
+
+.roast-room-root .wait-step {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.roast-room-root .wait-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.roast-room-root .wait-time {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--dim);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.roast-room-root .cruxes {
+  background: rgba(14, 17, 25, 0.92);
+  border: 1px solid var(--line2);
+  border-radius: 12px;
+  padding: 12px 15px;
+  text-align: left;
+  font-size: 12.5px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.65);
+}
+
+.roast-room-root .cruxes h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+}
+
+.roast-room-root .crux {
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+}
+
+.roast-room-root .crux:first-of-type {
+  border-top: 0;
+}
+
+.roast-room-root .crux-q {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.roast-room-root .crux-sides {
+  color: var(--muted);
+  font-size: 11.5px;
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.roast-room-root .crux-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.roast-room-root .crux-faces {
+  display: inline-flex;
+}
+
+.roast-room-root .crux-faces img {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #1b2030;
+  border: 1px solid #0c0e13;
+  margin-left: -4px;
+}
+
+.roast-room-root .crux-faces img:first-child {
+  margin-left: 0;
+}
+
+.roast-room-root .plate {
+  background: rgba(14, 17, 25, 0.95);
+  border: 1px solid rgba(240, 180, 76, 0.5);
+  border-radius: 14px;
+  padding: 16px 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
+}
+
+.roast-room-root .plate-badge {
+  display: inline-block;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  padding: 4px 12px;
+  border-radius: 999px;
+  margin-bottom: 8px;
+}
+
+.roast-room-root .badge-go {
+  background: rgba(46, 204, 139, 0.18);
+  color: var(--green);
+  border: 1px solid var(--green);
+}
+
+.roast-room-root .badge-cond {
+  background: rgba(240, 180, 76, 0.18);
+  color: var(--gold);
+  border: 1px solid var(--gold);
+}
+
+.roast-room-root .badge-reshape,
+.roast-room-root .badge-wait {
+  background: rgba(90, 169, 255, 0.18);
+  color: var(--blue);
+  border: 1px solid var(--blue);
+}
+
+.roast-room-root .badge-no {
+  background: rgba(240, 90, 90, 0.18);
+  color: var(--red);
+  border: 1px solid var(--red);
+}
+
+.roast-room-root .plate-call {
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.roast-room-root .playbar {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 9;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(14, 16, 23, 0.9);
+  border: 1px solid var(--line2);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---------------- RIGHT FEED ---------------- */
+.roast-room-root .feed {
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.roast-room-root .options-bar {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.roast-room-root .opt {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 12.5px;
+}
+
+.roast-room-root .opt-id {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 11.5px;
+}
+
+.roast-room-root .opt.top .opt-id {
+  background: rgba(240, 180, 76, 0.2);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.roast-room-root .opt-label {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roast-room-root .opt-score {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+}
+
+.roast-room-root .feed-head {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.roast-room-root .feed-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--dim);
+}
+
+.roast-room-root .feed-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roast-room-root .round-sep {
+  text-align: center;
+  font-size: 11px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 6px 0 2px;
+}
+
+.roast-room-root .item {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--c, var(--gold));
+  border-radius: 9px;
+  padding: 9px 11px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.roast-room-root .item:hover {
+  border-color: var(--line2);
+  border-left-color: var(--c, var(--gold));
+  background: #1e2330;
+}
+
+.roast-room-root .item.active {
+  box-shadow: 0 0 0 1px var(--gold);
+}
+
+.roast-room-root .item-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.roast-room-root .item-face {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #0d1017;
+  border: 1px solid var(--line2);
+  flex: none;
+}
+
+.roast-room-root .item-who {
+  font-weight: 700;
+}
+
+.roast-room-root .item-round {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.roast-room-root .item-scores {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.roast-room-root .item-body {
+  font-size: 12.5px;
+  color: #d7dbe6;
+}
+
+.roast-room-root .item-sub {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ---------------- MODALS ---------------- */
+.roast-room-root .modal {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 7, 11, 0.72);
+  backdrop-filter: blur(6px);
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.roast-room-root .modal-box {
+  width: min(680px, 100%);
+  max-height: 82vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: 14px;
+  padding: 20px 22px;
+  position: relative;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.8);
+}
+
+.roast-room-root .modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.roast-room-root .card-text {
+  white-space: pre-wrap;
+  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: #0d1017;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 12px 14px;
+  color: #e4e7f0;
+}
+
+.roast-room-root .tabs {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+
+.roast-room-root .tabs button {
+  background: var(--panel2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  padding: 5px 11px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.roast-room-root .tabs button.on {
+  color: var(--text);
+  border-color: var(--gold);
+}
+
+.roast-room-root .quotes {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.roast-room-root .q-ok {
+  color: var(--green);
+}
+
+.roast-room-root .q-un {
+  color: var(--amber);
+}
+
+/* ---------------- VERDICT SHEET ---------------- */
+.roast-room-root .verdict-sheet {
+  position: absolute;
+  inset: 54px 0 0 0;
+  background:
+    radial-gradient(ellipse 60% 35% at 50% 0%, rgba(240, 180, 76, 0.1), transparent 70%),
+    rgba(10, 12, 18, 0.97);
+  z-index: 25;
+  overflow-y: auto;
+  padding: 28px 24px 60px;
+  animation: rr-sheetUp 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes rr-sheetUp {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.roast-room-root .verdict-inner {
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.roast-room-root .v-stamp {
+  display: inline-block;
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  padding: 6px 16px;
+  border-radius: 999px;
+  animation: rr-stampIn 0.38s cubic-bezier(0.2, 1.3, 0.3, 1);
+}
+
+@keyframes rr-stampIn {
+  from {
+    transform: scale(1.35) rotate(-6deg);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.roast-room-root .v-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.roast-room-root .v-call {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 10px 0 6px;
+}
+
+.roast-room-root .v-meta {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.roast-room-root .v-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+@media (max-width: 760px) {
+  .roast-room-root .v-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.roast-room-root .v-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 14px 16px;
+}
+
+.roast-room-root .v-card.full {
+  grid-column: 1 / -1;
+}
+
+.roast-room-root .v-card h3 {
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--gold);
+}
+
+.roast-room-root .v-card ul,
+.roast-room-root .v-card ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.roast-room-root .v-card li {
+  margin: 5px 0;
+  color: #dfe3ee;
+}
+
+.roast-room-root .why-list {
+  list-style: none;
+  padding-left: 0 !important;
+}
+
+.roast-room-root .why-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 0;
+}
+
+.roast-room-root .v-face {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #0d1017;
+  border: 1px solid var(--line2);
+  flex: none;
+}
+
+.roast-room-root .minority-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.roast-room-root .minority-row .v-face {
+  width: 44px;
+  height: 44px;
+}
+
+.roast-room-root .v-more {
+  margin-top: 16px;
+}
+
+.roast-room-root .v-more > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12.5px;
+  padding: 8px 2px;
+  user-select: none;
+}
+
+.roast-room-root .v-more > summary:hover {
+  color: var(--text);
+}
+
+.roast-room-root .v-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.roast-room-root .v-table th,
+.roast-room-root .v-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.roast-room-root .v-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+.roast-room-root .v-disc {
+  margin-top: 20px;
+  font-size: 11.5px;
+  color: var(--dim);
+  text-align: center;
+}

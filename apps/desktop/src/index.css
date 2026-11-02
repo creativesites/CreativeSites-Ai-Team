@@ -4,6 +4,7 @@
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 @import "./styles/solid-glass.css";
+@import "./styles/roast-room.css";
 
 /* App tokens on top of Solid Glass. Colour is only ever a status:
    blue Observed, green Verified, amber Needs you, red Risk. Claimed is a

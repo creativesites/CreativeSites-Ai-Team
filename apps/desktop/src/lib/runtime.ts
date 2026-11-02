@@ -7,6 +7,9 @@ import type {
   Budget,
   Council,
   CouncilCard,
+  CouncilSessionPayload,
+  CouncilSessionSummary,
+  CouncilStreamEvent,
   CouncilVerdict,
   CreateApprovalInput,
   CreateBudgetInput,
@@ -38,6 +41,7 @@ import type {
   Repo,
   Room,
   RoomMember,
+  RunCouncilInput,
   RuntimeEvent,
   Session,
   Settings,
@@ -252,9 +256,35 @@ export class RuntimeClient {
     this.request<TranscriptEntry[]>('GET', `/v1/sessions/${encodeURIComponent(id)}/transcript?since=${since}`);
 
   // ---- councils
+  councilRoster = () =>
+    this.request<{
+      board: 'default' | 'ask' | 'auto';
+      default: string[];
+      defaultOperators: string[];
+      seats: {
+        key: string;
+        name: string;
+        short: string;
+        initials: string;
+        slug: string;
+        pillar: string;
+        question: string;
+        dimension: string;
+        color: string;
+        boardGroup: 'myaos' | 'operators';
+        identityId?: string;
+        portraitKey?: string;
+      }[];
+    }>('GET', '/v1/councils/roster');
+  councilSessions = () =>
+    this.request<{ liveId: string | null; sessions: CouncilSessionSummary[] }>('GET', '/v1/councils/sessions');
+  councilSession = (id: string) =>
+    this.request<CouncilSessionPayload>('GET', `/v1/councils/sessions/${encodeURIComponent(id)}`);
   councils = (jobId: string) => this.request<Council[]>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/councils`);
   createCouncil = (jobId: string, input: CreateCouncilInput) =>
     this.request<Council>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/councils`, input);
+  runCouncil = (jobId: string, input: RunCouncilInput) =>
+    this.request<{ council: Council; sessionId: string }>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/councils/run`, input);
   council = (id: string) => this.request<Council>('GET', `/v1/councils/${encodeURIComponent(id)}`);
   addCouncilCard = (id: string, input: CreateCouncilCardInput) =>
     this.request<CouncilCard>('POST', `/v1/councils/${encodeURIComponent(id)}/cards`, input);
@@ -262,6 +292,39 @@ export class RuntimeClient {
   createCouncilVerdict = (id: string) => this.request<CouncilVerdict>('POST', `/v1/councils/${encodeURIComponent(id)}/verdict`);
   acceptCouncilVerdict = (id: string, input: { actorId: string; tasks?: CreateTaskInput[] }) =>
     this.request<Council>('POST', `/v1/councils/${encodeURIComponent(id)}/accept`, input);
+  async streamCouncil(
+    id: string,
+    onEvent: (ev: CouncilStreamEvent) => void,
+    signal: AbortSignal
+  ): Promise<void> {
+    const res = await fetch(`${this.connection.url}/v1/councils/${encodeURIComponent(id)}/stream`, {
+      headers: { Authorization: `Bearer ${this.connection.token}` },
+      signal,
+    });
+    if (!res.ok || !res.body) throw new RuntimeError(res.status, 'council stream refused');
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut: number;
+      while ((cut = buffer.indexOf('\n\n')) >= 0) {
+        const block = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const data = block
+          .split('\n')
+          .filter((l) => l.startsWith('data: '))
+          .map((l) => l.slice(6))
+          .join('\n');
+        if (!data) continue;
+        const ev = JSON.parse(data) as CouncilStreamEvent;
+        if (ev.type === 'end') return;
+        onEvent(ev);
+      }
+    }
+  }
 
   // ---- bridge
   bridgeStatus = () => this.request<BridgeStatus>('GET', '/v1/bridge/status');
