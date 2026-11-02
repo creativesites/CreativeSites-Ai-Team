@@ -7,6 +7,7 @@ import { href, useRoute, type Route } from '@/lib/route';
 import { RuntimeProvider, useRuntime, useRuntimeData, type Loadable } from '@/lib/runtime-context';
 import { ApprovalsScreen } from '@/screens/approvals';
 import { CoworkersScreen } from '@/screens/coworkers';
+import { TeamScreen } from '@/screens/team';
 import { JobsScreen } from '@/screens/jobs';
 import { SettingsScreen } from '@/screens/settings';
 import { WorkspacesScreen } from '@/screens/workspaces';
@@ -174,6 +175,17 @@ function Screen({
       );
     case 'settings':
       return <SettingsScreen identities={identities} adapters={adapters} projects={projects} />;
+    case 'team':
+      return (
+        <TeamScreen
+          identities={identities}
+          sessions={sessions}
+          teams={teams}
+          selectedAgentId={route.agentId}
+          ownerName={ownerName}
+          ownerId={ownerId}
+        />
+      );
     case 'coworkers':
       return (
         <CoworkersScreen
