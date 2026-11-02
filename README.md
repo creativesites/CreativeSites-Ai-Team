@@ -136,6 +136,9 @@ npm run runtime:test
 - The runtime keeps its own store at `~/.myaos/runtime.db` (or `$MYAOS_RUNTIME_DB`) and publishes its address and token in `~/.myaos/runtime.json`, readable only by you. `data/myaos.db` keeps serving the current app and the team.
 - `node bin/myaos.js status` reports the runtime as well.
 - During development, `#/preview/<screen>` shows each screen with the design's sample data. The live app never shows sample data.
+- The Design Studio has two entry points: "Design something new" (a feature, page or app, in 1 to 4 directions) and "Bring in existing UI" (an agent recreates the project's current screens so they can be iterated on).
+- Both run as a real agent session. Agent-built designs are written as HTML files to `~/.myaos/designs/<board>/` (under `$MYAOS_HOME` when set), and appear on the canvas as the agent writes them.
+- Approving a design frame records Observed evidence for that exact version.
 
 ### Machine config and the database:
 

@@ -19,6 +19,8 @@
 | `958d5c3` | team bridge: job dossiers to threads + inbox notes (opt-in) |
 | (current) | Phase 1 engine walkthrough passes with real Claude: builder turn → auto-commit → runtime check → independent verify → owner approval → done. |
 | UI | Job screen is a working control plane (plan, criteria, tasks, checks, sessions, approvals, verification, budget); Dev shows live session transcript; new Needs-you approval inbox and Jobs index; Workspaces + Settings screens merged and routed; Room can start a job from its draft. Terminal/PTY branch in review. |
+| `9681193` | fix(v2): remove demo data and canned AI output. Design Studio templates removed (`/generate` and `/extract` return 501); `/v1/communication/ai/generate` returns 503 instead of canned text; communication lists only registry coworkers. |
+| `d6f3872` | feat(design-studio): agents build designs live onto the canvas. Design runs API, design-session permission rule, run listing and cancel; frame approval records Observed evidence. |
 
 A foundation commit implements:
 
@@ -182,6 +184,26 @@ Enable auto-mirror/ingest with `POST /v1/settings {"bridge":{"enabled":true,"inb
 | GET | `/v1/adapters` | presets + overrides; `installed/version` probed; `?probe=1` forces |
 | POST | `/v1/adapters/:id` | override `{command?, args?, enabled?, abilities?}` |
 
+### Design Studio
+
+| Method | Path | Notes |
+|---|---|---|
+| GET/POST | `/v1/design-boards` | GET filters `projectId`, `jobId`, `roomId`. POST `{title, description?, projectId?, jobId?, roomId?, mode?}`; a new board starts empty. |
+| GET/PATCH/DELETE | `/v1/design-boards/:id` | GET first syncs frames whose files changed on disk: a new version, noted as "Updated via workspace file sync". |
+| POST | `/v1/design-boards/:id/runs` | Starts an agent session on the board; `202` with the `DesignRun`. Body is `StartDesignRunInput`: `kind` (`new`, `from-code`, `iterate`), `prompt` (required), `device` (`phone`, `tablet`, `desktop`, `custom`), `variants` (`new`, 1 to 4), `scope` (`from-code`: screens or paths, empty means the whole app), `frameIds` (`iterate`, at least one), `action` (`update` or `fork`, `iterate`), `pinnedElement` (`iterate`), `agentId`, `adapterId`, `actorId`. `from-code` needs a board linked to a project (400 otherwise). |
+| GET | `/v1/design-boards/:id/runs` | Runs on the board: `sessionId`, `kind`, `prompt`, `state`, `error`, `framesTouched`. |
+| POST | `/v1/design-boards/:id/runs/:sessionId/cancel` | `{actorId?}`. Refused (400) unless the session is a run on this board. |
+| POST | `/v1/design-boards/:id/frames` | Creates a frame by hand. Its HTML file goes to `<project root>/.myaos/designs/<board>/` (or the first workspace root when the board has no project), not to the agent folder. |
+| PATCH/DELETE | `/v1/design-frames/:id` | PATCH with `htmlContent` also rewrites the frame's file. |
+| POST | `/v1/design-frames/:id/approve` | `{actorId, note?, targetFiles?, dispatchBuildTask?, assigneeId?}`. Records OBSERVED artifact evidence for this exact frame version. |
+| POST | `/v1/design-boards/:id/generate`, `/extract` | **501**. Template generation and extraction were removed. Use a run instead. |
+
+**How a run works.** The agent session's working folder is `~/.myaos/designs/<board>/` (under `$MYAOS_HOME` when set), outside every project repo. The agent writes one self-contained HTML file per screen. Each file starts with a `<!-- myaos:frame title="..." device="..." -->` header; `parent`, `source`, `notes`, `width` and `height` are optional. The runtime watches the folder (a file watcher, with a 2-second poll as fallback). A new file becomes a frame, and a changed file becomes a new version of its frame, both credited to the run's agent as the file lands. Approved frames move to `iterating` when edited. The last pass runs when the session ends.
+
+Design sessions have their own permission rule, not the job approval queue. Writes are allowed only inside the board folder. Reads and read-only commands are allowed. Anything else is refused and recorded in the transcript. The default agent is a coworker whose role or lane mentions design, UX or UI and who has an agent runtime; the owner is never picked. Cancelling stops the session. A session row is a run record, not proof that a process is alive.
+
+Approving a frame records **Observed** evidence of that exact version. It is never Verified, because the owner's approval is not a re-run check.
+
 ## Semantics the UI must honor
 
 - **Stage gates.** `brief→plan→build→verify→approve→done` (plus `cancelled`, and `verify→build` / `approve→build` for send-back). Build requires a plan summary and at least one task. Verify requires all tasks done and each evidence-required task has evidence. Approve requires every criterion at `OBSERVED` or better. Done requires no pending approvals. A `409` body explains which gate failed. Owner-only `force` is an escape hatch and is recorded.
@@ -192,6 +214,7 @@ Enable auto-mirror/ingest with `POST /v1/settings {"bridge":{"enabled":true,"inb
 - **Events.** Every write emits a hash-chained event; the chain is verifiable via `/v1/events/recent`. A `gap` SSE event means the client missed data: show Unknown and refetch.
 - **Idempotency.** Send `Idempotency-Key` on retryable POSTs; the runtime replays the stored response.
 - **Errors.** 400 validation with a field message; 403 permission/owner-only; 404; 409 gate/conflict/overspend. Show these, don't swallow.
+- **AI text.** `POST /v1/communication/ai/generate` returns `503` when no model answers. Only Gemini is tried, and only when `GEMINI_API_KEY` is set. There is no canned fallback text. Show the error; never invent a summary.
 
 ## UI workstream (owned by Claude)
 
