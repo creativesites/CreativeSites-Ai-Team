@@ -74,7 +74,29 @@ Never start from:
 
 ## 2. Core Engineering & Quality Standards
 
-*   **Substrate-Native Truth**: The SQLite database (`data/myaos.db`) is the absolute single source of record. All progress trackers, dashboards, and metrics must calculate values dynamically using relational analytics, maintaining 100% truthfulness and surfacing `UNKNOWN` for missing telemetry.
+*   **Substrate-Native Truth**: The SQLite database (`data/myaos.db` in v1; `~/.myaos/runtime.db` in v2) is the absolute single source of record. All progress trackers, dashboards, and metrics must calculate values dynamically using relational analytics, maintaining 100% truthfulness and surfacing `UNKNOWN` for missing telemetry.
 *   **The Independent Verifier Rule**: To prevent confirmation bias and protect the codebase's epistemic integrity, **the implementing agent is strictly forbidden from self-verifying their own work**. 
     *   Upon completing an implementation, the author must author robust, un-mocked regression tests, and transition the task status to `in_review`.
     *   Independent verification (e.g. via Lead Verifier Kael or Automated QA Antigravity) must run the verification commands, inspect outcomes, and write the final passed status to the `evidence` table.
+
+---
+
+## 3. Git Committing, Worktree & Repository Hygiene Mandates
+
+Every human developer and autonomous agent working in this repository must follow strict git hygiene so work is never lost, stranded in dirty working trees, or tangled across branches:
+
+1.  **Zero Uncommitted Drift**: Do not leave completed features, bug fixes, architecture threads (`community/threads/`), proposals (`community/proposals/`), or inbox dispatches (`community/inboxes/`) sitting uncommitted at the end of a work turn. Commit and push completed units of work promptly.
+2.  **Conventional, Scoped Commits**: Format every commit message as `<type>(<scope>): <concise outcome summary>`:
+    *   `feat(<scope>)`: New product or runtime capability (e.g., `feat(council): port roast-room talking-head stage and playback queue`).
+    *   `fix(<scope>)`: Bug fix or regression repair.
+    *   `docs(<scope>)`: Planning threads, proposals, verification logs, or registry documentation.
+    *   `chore(<scope>)` / `refactor(<scope>)` / `test(<scope>)`: Maintenance, restructuring, or test suites.
+3.  **Atomic Logical Grouping**: Stage and commit related files together by concern (e.g., separate agent registry/community thread updates from Desktop UI or Rust backend changes). Never use `git add .` blindly without inspecting `git status -s` and `git diff --stat`.
+4.  **Pre-Commit Verification Gate**: Before committing code changes in `runtime/`, `apps/desktop/`, or `desktop/`, run the appropriate build/typecheck gate (`npm test`, `npx tsc --noEmit`, `npm run typecheck`, or `cargo check`).
+5.  **Zero Secrets, Zero Blobs, Zero Ephemeral Artifacts**:
+    *   Never commit `.env`, API keys (`AIza...`, `sk-...`), credentials, `node_modules/`, `dist/`, `target/`, or ad-hoc scratch/backup files (`*.bak*`, `*.tsv` scratch dumps).
+    *   Live v2 runtime stores (`~/.myaos/runtime.db`, `~/.myaos/adapters.env`) and raw portrait/corpus build folders stay strictly out of git.
+6.  **Worktree & Push Discipline**:
+    *   Parallel agent streams must use isolated git worktrees (`.claude/worktrees/<stream>`) on dedicated branches and merge cleanly into the target branch after verification.
+    *   Never `git push --force` on `main` or shared integration branches. Always `git pull --rebase` (or merge cleanly) before pushing to `origin`.
+

@@ -13,3 +13,6 @@ data/*.bak-*
 desktop/node_modules/
 desktop/dist/
 desktop/src-tauri/target/
+
+# Local worktrees
+.claude/worktrees/
