@@ -132,6 +132,15 @@ export function Sidebar({
         <NavLink to={{ name: 'coworkers' }} active={route.name === 'coworkers'} icon={<Users />}>
           Coworkers
         </NavLink>
+        {jobs[0] && (
+          <NavLink
+            to={{ name: 'council', jobId: route.name === 'job' || route.name === 'council' ? route.jobId : jobs[0].id }}
+            active={route.name === 'council'}
+            icon={<ShieldCheck />}
+          >
+            Council Room
+          </NavLink>
+        )}
         <NavLink to={{ name: 'workspaces' }} active={route.name === 'workspaces'} icon={<FolderGit2 />}>
           Workspaces
         </NavLink>
