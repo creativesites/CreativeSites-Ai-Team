@@ -42,19 +42,43 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
     };
   }, [attempt]);
 
-  // While connected, check health every 10s; a failed check is shown, not hidden.
+  // While connected, check health every 10s; tolerate transient blips and auto-rediscover if the runtime restarted on a new port.
   React.useEffect(() => {
     if (!client) return;
+    let consecutiveFailures = 0;
     const timer = window.setInterval(async () => {
       try {
         await client.health();
+        consecutiveFailures = 0;
       } catch {
-        setClient(null);
-        setState({ status: 'unavailable', reason: 'The runtime stopped answering.' });
+        consecutiveFailures += 1;
+        // Try immediate re-discovery in case the runtime restarted on a new port
+        try {
+          const freshConnection = await discoverRuntime();
+          if (freshConnection.url !== client.connection.url || freshConnection.token !== client.connection.token) {
+            setAttempt((a) => a + 1);
+            return;
+          }
+        } catch {
+          /* ignore discovery failure during transient blip */
+        }
+        if (consecutiveFailures >= 3) {
+          setClient(null);
+          setState({ status: 'unavailable', reason: 'The runtime stopped answering. Reconnecting automatically…' });
+        }
       }
     }, 10000);
     return () => window.clearInterval(timer);
   }, [client]);
+
+  // When unavailable, automatically attempt to reconnect every 3.5s so the user never has to click "Try again" manually.
+  React.useEffect(() => {
+    if (state.status !== 'unavailable') return;
+    const timer = window.setInterval(() => {
+      setAttempt((a) => a + 1);
+    }, 3500);
+    return () => window.clearInterval(timer);
+  }, [state.status]);
 
   const value = React.useMemo(
     () => ({ state, client, revision, retry: () => setAttempt((a) => a + 1) }),

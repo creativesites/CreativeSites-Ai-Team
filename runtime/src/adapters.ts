@@ -197,9 +197,12 @@ function authFor(preset: AdapterPreset, installed: boolean): AdapterAuth {
 
 let cache: { at: number; list: AdapterInfo[] } | null = null;
 
-/** Probes the four supported adapters; results are cached briefly. */
+/**
+ * Probes the four supported adapters; results are cached in memory unless `force === true`
+ * so periodic `/health` heartbeats never block the Node HTTP event loop on slow CLI subshells.
+ */
 export function probeAdapters(force = false): AdapterInfo[] {
-  if (!force && cache && Date.now() - cache.at < 60_000) return cache.list;
+  if (!force && cache) return cache.list;
   const list = ADAPTER_PRESETS.map((preset): AdapterInfo => {
     const binary = findExecutable(preset.command, preset.aliases);
     const installed = Boolean(binary);

@@ -26,11 +26,16 @@ function git(cwd: string, args: string[], timeout = 5000): string {
   }).trim();
 }
 
+let cachedGitAvailable: boolean | null = null;
+
 export function gitAvailable(): boolean {
+  if (cachedGitAvailable !== null) return cachedGitAvailable;
   try {
     execFileSync('git', ['--version'], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
+    cachedGitAvailable = true;
     return true;
   } catch {
+    cachedGitAvailable = false;
     return false;
   }
 }

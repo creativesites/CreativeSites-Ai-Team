@@ -107,21 +107,42 @@ export class RuntimeError extends Error {
 }
 
 export class RuntimeClient {
-  readonly connection: RuntimeConnection;
+  connection: RuntimeConnection;
 
   constructor(connection: RuntimeConnection) {
     this.connection = connection;
   }
 
   private async request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.connection.url}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${this.connection.token}`,
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    const doFetch = async (conn: RuntimeConnection) =>
+      fetch(`${conn.url}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${conn.token}`,
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+
+    let res: Response;
+    try {
+      res = await doFetch(this.connection);
+      if (res.status === 401) {
+        const fresh = await discoverRuntime().catch(() => null);
+        if (fresh && (fresh.url !== this.connection.url || fresh.token !== this.connection.token)) {
+          this.connection = fresh;
+          res = await doFetch(this.connection);
+        }
+      }
+    } catch (err) {
+      const fresh = await discoverRuntime().catch(() => null);
+      if (fresh) {
+        this.connection = fresh;
+        res = await doFetch(this.connection);
+      } else {
+        throw err;
+      }
+    }
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) throw new RuntimeError(res.status, data.error ?? `HTTP ${res.status}`);
     return data as T;
@@ -496,6 +517,8 @@ export class RuntimeClient {
         }
       } catch {
         if (signal.aborted) return;
+        const fresh = await discoverRuntime().catch(() => null);
+        if (fresh) this.connection = fresh;
       }
       // Stream ended or failed: wait a moment, then resume where it left off.
       await new Promise((r) => setTimeout(r, 1500));

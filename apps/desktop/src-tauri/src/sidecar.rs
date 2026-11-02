@@ -73,10 +73,10 @@ fn find_node() -> Option<PathBuf> {
 
 /// A bare HTTP GET of /health; true only for a 200 answer.
 fn healthy(port: u16) -> bool {
-    let Ok(mut stream) = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(800)) else {
+    let Ok(mut stream) = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(2000)) else {
         return false;
     };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(1500)));
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(3000)));
     let req = format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
@@ -110,7 +110,11 @@ fn start(sidecar: &Sidecar) -> Result<(), String> {
     let log_err = log.try_clone().map_err(|e| e.to_string())?;
 
     // The webview's origin while developing; packaged builds use tauri:// origins the runtime already allows.
-    let origins = if cfg!(debug_assertions) { "http://127.0.0.1:1430" } else { "" };
+    let origins = if cfg!(debug_assertions) {
+        "http://127.0.0.1:1430,http://localhost:1430"
+    } else {
+        ""
+    };
 
     let child = Command::new(node)
         .arg(&entry)
