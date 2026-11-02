@@ -12,13 +12,11 @@ import { WorkspacesScreen } from '@/screens/workspaces';
 import { DevScreen } from '@/screens/dev';
 import { HomeScreen, type StartJobRequest } from '@/screens/home';
 import { JobScreen } from '@/screens/job';
-import { PlanningNotYet } from '@/screens/planning';
+import { CouncilRoomScreen } from '@/screens/council-room';
 import { RoomScreen } from '@/screens/room';
 
-// The owner's display name. The runtime has no owner record yet (Phase 2),
-// so the app says "You" rather than guess a name.
-const OWNER_ID = 'owner';
-const OWNER_NAME = 'You';
+const DEFAULT_OWNER_ID = 'winston';
+const DEFAULT_OWNER_NAME = 'Winston';
 
 // Sample data lives only in the dev build, behind #/preview/<screen>.
 const Preview = import.meta.env.DEV ? React.lazy(() => import('@/preview/preview')) : null;
@@ -51,6 +49,15 @@ function Workspace({ route }: { route: Route }) {
   const sessions = useRuntimeData((c) => c.sessions());
   const adapters = useRuntimeData((c) => c.adapters());
   const projects = useRuntimeData((c) => c.projects());
+  const settings = useRuntimeData((c) => c.settings());
+
+  const idList = list(identities);
+  const ownerIdentity = idList.find((i) => i.isOwner);
+  const ownerId =
+    (settings.status === 'ready' && typeof settings.data.ownerId === 'string' && settings.data.ownerId) ||
+    ownerIdentity?.id ||
+    DEFAULT_OWNER_ID;
+  const ownerName = ownerIdentity?.name || DEFAULT_OWNER_NAME;
 
   return (
     <div className="flex min-h-full flex-col gap-3 p-3 md:flex-row">
@@ -58,21 +65,51 @@ function Workspace({ route }: { route: Route }) {
         route={route}
         mode={mode}
         onModeChange={setMode}
-        ownerName={OWNER_NAME}
+        ownerName={ownerName}
         rooms={list(rooms)}
         jobs={list(jobs)}
-        identities={list(identities)}
+        identities={idList}
         sessions={list(sessions)}
       />
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <RuntimeBanner />
-        <Screen route={route} rooms={list(rooms)} jobs={list(jobs)} identities={list(identities)} sessions={list(sessions)} adapters={list(adapters)} projects={list(projects)} />
+        <Screen
+          route={route}
+          rooms={list(rooms)}
+          jobs={list(jobs)}
+          identities={idList}
+          sessions={list(sessions)}
+          adapters={list(adapters)}
+          projects={list(projects)}
+          ownerId={ownerId}
+          ownerName={ownerName}
+        />
       </div>
     </div>
   );
 }
 
-function Screen({ route, rooms, jobs, identities, sessions, adapters, projects }: { route: Route; rooms: Room[]; jobs: JobSummary[]; identities: Identity[]; sessions: Session[]; adapters: AdapterInfo[]; projects: Project[] }) {
+function Screen({
+  route,
+  rooms,
+  jobs,
+  identities,
+  sessions,
+  adapters,
+  projects,
+  ownerId,
+  ownerName,
+}: {
+  route: Route;
+  rooms: Room[];
+  jobs: JobSummary[];
+  identities: Identity[];
+  sessions: Session[];
+  adapters: AdapterInfo[];
+  projects: Project[];
+  ownerId: string;
+  ownerName: string;
+}) {
   const { client } = useRuntime();
 
   const startJob = async (req: StartJobRequest) => {
@@ -81,8 +118,8 @@ function Screen({ route, rooms, jobs, identities, sessions, adapters, projects }
     // The title is the brief's first sentence; the whole text stays as the brief.
     const first = req.text.split('\n')[0].split(/(?<=[.!?])\s/)[0].replace(/[.]$/, '');
     const title = first.length > 90 ? `${first.slice(0, 87)}…` : first;
-    const job = await client.createJob({ roomId, title, brief: req.text, createdBy: OWNER_ID });
-    await client.postMessage(roomId, { authorId: OWNER_ID, authorKind: 'human', body: req.text, jobId: job.id });
+    const job = await client.createJob({ roomId, title, brief: req.text, createdBy: ownerId });
+    await client.postMessage(roomId, { authorId: ownerId, authorKind: 'human', body: req.text, jobId: job.id });
     window.location.hash = href({ name: 'room', roomId });
   };
 
@@ -94,12 +131,13 @@ function Screen({ route, rooms, jobs, identities, sessions, adapters, projects }
     case 'jobs':
       return <JobsScreen />;
     case 'room':
-      return <RoomContainer roomId={route.roomId} rooms={rooms} jobs={jobs} identities={identities} />;
+      return <RoomContainer roomId={route.roomId} rooms={rooms} jobs={jobs} identities={identities} ownerId={ownerId} ownerName={ownerName} />;
     case 'job':
-      return <JobContainer jobId={route.jobId} rooms={rooms} identities={identities} />;
+      return <JobContainer jobId={route.jobId} rooms={rooms} identities={identities} ownerName={ownerName} />;
     case 'council':
+      return <CouncilRoomScreen jobId={route.jobId} identities={identities} ownerId={ownerId} />;
     case 'verdict':
-      return <PlanningNotYet jobId={route.jobId} />;
+      return <CouncilRoomScreen jobId={route.jobId} initialOpenVerdict identities={identities} ownerId={ownerId} />;
     case 'dev':
       return <DevContainer jobId={route.jobId ?? jobs[0]?.id} jobs={jobs} identities={identities} sessions={sessions} />;
     case 'workspaces':
@@ -127,7 +165,7 @@ function Loading({ what }: { what: Loadable<unknown> }) {
   return <p className="p-4 text-sm text-muted-foreground">Loading…</p>;
 }
 
-function RoomContainer({ roomId, rooms, jobs, identities }: { roomId: string; rooms: Room[]; jobs: JobSummary[]; identities: Identity[] }) {
+function RoomContainer({ roomId, rooms, jobs, identities, ownerId, ownerName }: { roomId: string; rooms: Room[]; jobs: JobSummary[]; identities: Identity[]; ownerId: string; ownerName: string }) {
   const { client } = useRuntime();
   const messages = useRuntimeData((c) => c.messages(roomId), [roomId]);
   const roomJobs = jobs.filter((j) => j.roomId === roomId);
@@ -143,15 +181,15 @@ function RoomContainer({ roomId, rooms, jobs, identities }: { roomId: string; ro
       jobs={roomJobs}
       identities={identities}
       focusJob={focus.status === 'ready' ? focus.data : null}
-      ownerName={OWNER_NAME}
-      onSend={client ? async (body) => void (await client.postMessage(roomId, { authorId: OWNER_ID, authorKind: 'human', body })) : undefined}
+      ownerName={ownerName}
+      onSend={client ? async (body) => void (await client.postMessage(roomId, { authorId: ownerId, authorKind: 'human', body })) : undefined}
       onStartJob={
         client
           ? async (text) => {
               const first = text.split('\n')[0]!.split(/(?<=[.!?])\s/)[0]!.replace(/[.]$/, '');
               const title = first.length > 90 ? `${first.slice(0, 87)}…` : first;
-              const job = await client.createJob({ roomId, title, brief: text, createdBy: OWNER_ID });
-              await client.postMessage(roomId, { authorId: OWNER_ID, authorKind: 'human', body: text, jobId: job.id });
+              const job = await client.createJob({ roomId, title, brief: text, createdBy: ownerId });
+              await client.postMessage(roomId, { authorId: ownerId, authorKind: 'human', body: text, jobId: job.id });
               window.location.hash = href({ name: 'job', jobId: job.id });
             }
           : undefined
@@ -160,10 +198,10 @@ function RoomContainer({ roomId, rooms, jobs, identities }: { roomId: string; ro
   );
 }
 
-function JobContainer({ jobId, rooms, identities }: { jobId: string; rooms: Room[]; identities: Identity[] }) {
+function JobContainer({ jobId, rooms, identities, ownerName }: { jobId: string; rooms: Room[]; identities: Identity[]; ownerName: string }) {
   const job = useRuntimeData((c) => c.job(jobId), [jobId]);
   if (job.status !== 'ready') return <Loading what={job} />;
-  return <JobScreen job={job.data} room={rooms.find((r) => r.id === job.data.roomId)} identities={identities} ownerName={OWNER_NAME} />;
+  return <JobScreen job={job.data} room={rooms.find((r) => r.id === job.data.roomId)} identities={identities} ownerName={ownerName} />;
 }
 
 function DevContainer({ jobId, jobs, identities, sessions }: { jobId?: string; jobs: JobSummary[]; identities: Identity[]; sessions: Session[] }) {

@@ -140,6 +140,9 @@ export function JobScreen({
           <Tag tone={job.risk === 'high' || job.risk === 'critical' ? 'risk' : 'quiet'}>Risk {job.risk ?? 'low'}</Tag>
           <span className="text-xs text-muted-foreground">Owner: {ownerName}</span>
           <Tag tone="quiet">{job.costCents ?? 0}¢ spent</Tag>
+          <a href={href({ name: 'council', jobId: job.id })} className={buttonVariants({ variant: 'default' })}>
+            Convene Council
+          </a>
           <a href={href({ name: 'dev', jobId: job.id })} className={buttonVariants({ variant: 'glass' })}>
             <Terminal /> Dev
           </a>
@@ -191,6 +194,9 @@ export function JobScreen({
               <button type="button" onClick={() => act('plan', () => client!.setPlan(job.id, { ...job.plan, summary: planSummary, approvedAt: job.plan?.approvedAt }, ownerId))} disabled={busy !== null || !planSummary.trim()} className={buttonVariants({ variant: 'glass' })}>
                 {busy === 'plan' ? 'Saving…' : 'Save plan'}
               </button>
+              <a href={href({ name: 'council', jobId: job.id })} className={buttonVariants({ variant: 'glass' })}>
+                Open Council Room
+              </a>
               {!job.plan?.approvedAt && (
                 <button type="button" onClick={() => act('accept', () => client!.acceptPlan(job.id, ownerId))} disabled={busy !== null || !job.plan?.summary} className={buttonVariants({ variant: 'default' })}>
                   <Check /> Accept plan
