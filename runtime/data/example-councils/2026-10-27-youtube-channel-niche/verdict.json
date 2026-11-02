@@ -1,0 +1,52 @@
+{
+  "label": "GO WITH CONDITIONS",
+  "call": "Run a 90-day pilot of one channel under 'science and history, told as stories,' with 'what if' as the labelled lead. Four long videos cut into native pieces, each linking a paid Odoo offer, at 4 founder hours a week with Odoo work scheduled first. Do not commit to a niche yet. Stop on day 60 or day 90 if the Odoo signals do not come.",
+  "recommended": "F",
+  "why": [
+    { "point": "Views do not pay. The test is a signed Odoo client, not views. Four thousand watch hours earns about $200 to $400 a year at vendor RPMs.", "seat": "Graham", "framework": "Startup = Growth" },
+    { "point": "The hours are the real price. Each long video displaces about $300 of client work, so the cap is 4 hours a week and Odoo is scheduled first.", "seat": "Buffett", "framework": "Circle of competence" },
+    { "point": "One channel with a labelled format umbrella keeps one audience alive when a topic fails. Tag every piece by format and read results by format at day 60.", "seat": "Gary V", "framework": "Document Everything" }
+  ],
+  "minority": {
+    "seat": "Hormozi",
+    "quote": "Five long videos is not a test, and I said so in Round 2 (volume before verdict, S052). Set the test unit at ten or more offer-linked pieces, and make day 90 continue only at one-to-one on hours: five signed Odoo clients.",
+    "would_have_to_be_true": "One signed client does not pay for the hours. The first 90 days would have to yield five signed clients at $320 gross profit each to break even on about $1,560 of forgone work."
+  },
+  "next_steps": [
+    { "when": "This week", "action": "Write the kill criteria in a dated file, write the Odoo billing rate at the top of the hour log, and start the two-week hour log." },
+    { "when": "Day 14", "action": "Name the 100 people who would be upset if the channel stopped (fewer than 30 stops it), and check the first video's hours against the 10-hour estimate." },
+    { "when": "Day 60", "action": "Read views, retention and traced Odoo inquiries by format. Stop on median under 300 views or average view under 35% duration, or on no traced inquiry. Switch the lead to history if fewer than two videos reached 1,000 views." }
+  ],
+  "kill_criteria": "Day 90: no signed Odoo client sourced from the channel, or Odoo billing down more than 10% from baseline. Either one ends the channel.",
+  "conditions": [
+    "Kill criteria in a dated file before the first upload",
+    "Odoo billing rate written down; under $30 an hour raise the client price first; over $50 drop to one video a month",
+    "100 named people by day 14; fewer than 30 stops the channel",
+    "Two-week hour log; first video over 10 hours drops the pilot to two long videos",
+    "Channel hours capped at 4 a week, cuts included; more than 4 for three straight weeks pauses the channel",
+    "Every claim has a named primary source and a second check; failed episodes are pulled",
+    "Odoo billing within 10% of the three-month baseline; down more than 10% at day 45 pauses, at day 90 stops",
+    "Day 180 continue bar: five signed clients, at least the first on a fixed-price product",
+    "$150 cash cap over 90 days; tool spend under $50 a month"
+  ],
+  "fights": [
+    { "crux": "Which format leads the pilot?", "story": "Bezos and Martell wanted space and science what-if; Buffett and Hormozi wanted untold history; Gary V and Graham wanted one umbrella with what-if as the labelled lead. Graham's argument won: a single niche can fail on its topic and lose the audience. Gary V moved to the umbrella shape. Bezos kept what-if as the lead and accepted a switch to history at day 60 if the views do not come. Format is tagged and read at day 60." },
+    { "crux": "Does the channel earn anything beyond attention?", "story": "Gary V and Bezos said attention is worth a cheap test. Hormozi, Buffett and Naval said views earn about $12 to $22 a month. All seven now agree only a paid Odoo offer counts as a result." },
+    { "crux": "How many founder hours a week?", "story": "Martell and Gary V wanted 3; Bezos, Buffett, Hormozi and Naval wanted 4. The Chair set 4 with cuts counted inside the cap. Four videos, not five, because five at 10 hours leaves no slack for the cuts." }
+  ],
+  "amendments": [
+    { "seat": "Bezos", "amendment": "Odoo billing down more than 10% at day 90 is an automatic stop.", "adopted": true, "reason": "No seat objected; Buffett already had it." },
+    { "seat": "Graham", "amendment": "Day 60 stop on median under 300 views or average view under 35% duration, regardless of inquiries.", "adopted": true, "reason": "The draft joined the two with AND, which let a channel failing on viewers survive on one inquiry." },
+    { "seat": "Hormozi", "amendment": "Test unit of ten or more offer-linked pieces.", "adopted": true, "reason": "Adopted in part: the unit is pieces cut from four long videos, each linking an offer, which covers the ten." },
+    { "seat": "Hormozi", "amendment": "Day 90 continues only at five signed clients.", "adopted": false, "reason": "Day 90 is a read. One signed client is the day-90 bar, and five is the day-180 bar. Recorded in the minority report." },
+    { "seat": "Naval", "amendment": "Continue rule requires a fixed-price Odoo product, not a custom project.", "adopted": true, "reason": "Applied to the day-180 bar. Day 90 stays one signed client of any kind; the objection is recorded in the minority report." },
+    { "seat": "Gary V", "amendment": "Six native cuts per long video are the test unit, logged against the hour cap.", "adopted": true, "reason": "Covers the test unit and keeps the cuts inside the 4-hour cap." },
+    { "seat": "Gary V", "amendment": "Cap channel time at 3 hours a week, not 4.", "adopted": false, "reason": "Four seats set 4. Recorded in the minority report." },
+    { "seat": "Martell", "amendment": "Cap at 3 hours and four videos.", "adopted": false, "reason": "The 3-hour cap is not adopted (see Gary V). Four videos is adopted." },
+    { "seat": "Martell", "amendment": "Day-60 gate: no paid Odoo inquiry traced to the channel means stop.", "adopted": true, "reason": "Early Odoo signal is the only income test under $1,000 a month revenue." },
+    { "seat": "Buffett", "amendment": "Day-90 bar is one signed Odoo client, not an inquiry.", "adopted": true, "reason": "An inquiry costs nothing to count and pays nothing." }
+  ],
+  "cheapest_test": "The two-week hour log, then one long video with a paid Odoo link. Under $150 and about 20 founder hours.",
+  "revisit": "Day 60, with views, retention and traced inquiries by format; day 90, with signed Odoo clients and billing.",
+  "override_note": ""
+}
