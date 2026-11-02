@@ -3842,6 +3842,7 @@ export class Repo {
 
         this.write(() => {
           // 1. Projects
+          const projectIdMap = new Map<string, string>();
           for (const p of legacyProjects) {
             try {
               const pId = String(p.id);
@@ -3855,6 +3856,7 @@ export class Repo {
 
               const existing = this.one('SELECT id FROM projects WHERE id = ? OR name = ?', pId, pTitle);
               if (existing) {
+                projectIdMap.set(pId, existing.id as string);
                 this.db.prepare(
                   `UPDATE projects SET
                      target_date = COALESCE(?, target_date),
@@ -3864,6 +3866,7 @@ export class Repo {
                    WHERE id = ?`
                 ).run(pTargetDate, pStatus, pRepo, pUpdated, existing.id as string);
               } else {
+                projectIdMap.set(pId, pId);
                 this.db.prepare(
                   `INSERT OR IGNORE INTO projects (id, name, slug, description, root_path, repo, status, target_date, team_id, settings, archived, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creativesites', '{}', 0, ?, ?)`
@@ -3888,12 +3891,13 @@ export class Repo {
           // 2. Milestones
           for (const m of legacyMilestones) {
             try {
+              const mProjId = m.project_id ? (projectIdMap.get(String(m.project_id)) ?? String(m.project_id)) : null;
               this.db.prepare(
                 `INSERT OR IGNORE INTO milestones (id, project_id, title, description, status, due_at, completed_at, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
               ).run(
                 String(m.id),
-                m.project_id ? String(m.project_id) : null,
+                mProjId,
                 String(m.title),
                 m.description ? String(m.description) : null,
                 m.status ? String(m.status) : 'pending',
@@ -3906,6 +3910,34 @@ export class Repo {
 
           // 3. Tasks -> project_tasks
           for (const t of legacyTasks) {
+            let mappedProjId = t.project_id ? (projectIdMap.get(String(t.project_id)) ?? String(t.project_id)) : null;
+            if (!mappedProjId) {
+              const tid = String(t.id);
+              const trepo = String(t.repo || '');
+              if (tid.startsWith('TASK_MSDK_') || trepo.includes('RN')) {
+                const p = this.one("SELECT id FROM projects WHERE name LIKE '%Mobile SDK%'");
+                if (p) mappedProjId = p.id as string;
+              } else if (tid.startsWith('TASK_HJ_') || tid.startsWith('TASK-P0-AUTH') || trepo.toLowerCase().includes('hair-journey')) {
+                const p = this.one("SELECT id FROM projects WHERE name LIKE '%Hair Journey%'");
+                if (p) mappedProjId = p.id as string;
+              } else if (tid.startsWith('TASK_DF_') || trepo.includes('DogFrce')) {
+                const p = this.one("SELECT id FROM projects WHERE name LIKE '%DogForce%'");
+                if (p) mappedProjId = p.id as string;
+              } else if (tid.startsWith('TASK_MM_') || trepo.includes('MeetingMind') || String(t.project_id) === 'meetingmind') {
+                const p = this.one("SELECT id FROM projects WHERE name LIKE '%MeetingMind%'");
+                if (p) mappedProjId = p.id as string;
+              } else if (tid.startsWith('TASK_MYAOS_') || tid.startsWith('TASK_INTEL_') || trepo.includes('CreativeSites')) {
+                const p = this.one("SELECT id FROM projects WHERE name LIKE '%MyaOS%'");
+                if (p) mappedProjId = p.id as string;
+              } else if (tid.startsWith('TASK_CHAT_')) {
+                const p = this.one("SELECT id FROM projects WHERE name LIKE '%Chatbot & Streaming%'");
+                if (p) mappedProjId = p.id as string;
+              } else if (tid.startsWith('task_design_fleet_') || tid.startsWith('TASK_DFLEET_')) {
+                const p = this.one("SELECT id FROM projects WHERE name LIKE '%DeployFleet%'");
+                if (p) mappedProjId = p.id as string;
+              }
+            }
+
             this.db.prepare(
               `INSERT OR IGNORE INTO project_tasks (
                  id, project_id, milestone_id, okr_kr_id, title, description, creator,
@@ -3915,7 +3947,7 @@ export class Repo {
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             ).run(
               String(t.id),
-              t.project_id ? String(t.project_id) : null,
+              mappedProjId,
               t.milestone_id ? String(t.milestone_id) : null,
               t.okr_kr_id ? String(t.okr_kr_id) : null,
               String(t.title),
