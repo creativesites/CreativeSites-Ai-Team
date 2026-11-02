@@ -7,6 +7,9 @@ import { after, before, test } from 'node:test';
 import { startRuntime, type RunningRuntime } from '../src/app.ts';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'myaos-baton-design-'));
+// Design frames are written under $MYAOS_HOME/designs; keep them out of the real home folder.
+const savedHome = process.env.MYAOS_HOME;
+process.env.MYAOS_HOME = path.join(dir, 'home');
 const workRoot = path.join(dir, 'work');
 fs.mkdirSync(workRoot, { recursive: true });
 const fixture = new URL('./fixtures/fake-acp-agent.mjs', import.meta.url).pathname;
@@ -115,6 +118,8 @@ before(async () => {
 });
 
 after(async () => {
+  if (savedHome === undefined) delete process.env.MYAOS_HOME;
+  else process.env.MYAOS_HOME = savedHome;
   await rt.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });

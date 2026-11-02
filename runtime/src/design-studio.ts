@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type * as T from './api/types.ts';
+import { boardDir } from './design-agent.ts';
 import type { Orchestrator } from './orchestrator.ts';
 import type { Repo } from './store/repo.ts';
 
@@ -68,16 +69,17 @@ export function extractProjectDesignTokens(projectRoot: string | null): T.Design
 }
 
 /**
- * Ensures the `.myaos/designs/<boardId>/<frameId>.html` file is written on disk so
- * coding/design agents can surgically edit frames using standard file tools.
+ * Writes a frame's HTML to the board folder (`~/.myaos/designs/<boardId>/<frameId>.html`),
+ * where design agents edit it with ordinary file tools. Never inside a project repo:
+ * `_baseDir` is ignored and kept only so existing callers keep compiling.
  */
 export function writeFrameFileToDisk(
-  baseDir: string,
+  _baseDir: string,
   boardId: string,
   frameId: string,
   htmlContent: string
 ): string {
-  const dir = path.join(baseDir, '.myaos', 'designs', boardId);
+  const dir = boardDir(boardId);
   fs.mkdirSync(dir, { recursive: true });
   const filePath = path.join(dir, `${frameId}.html`);
   fs.writeFileSync(filePath, htmlContent, 'utf8');
@@ -173,7 +175,7 @@ export function ingestAgentDesignDirectives(
 }
 
 /**
- * Approves a design frame on the canvas, records a VERIFIED Design Evidence artifact,
+ * Approves a design frame on the canvas, records Observed evidence of the approved version,
  * and optionally dispatches an implementation task to a coding agent with the exact approved HTML/JSX spec.
  */
 export async function approveFrameAndHandoff(
