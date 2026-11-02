@@ -231,10 +231,20 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({
                 </div>
               )}
 
-              {/* Artifact Markdown Content */}
-              <div className="prose prose-zinc max-w-none text-xs leading-relaxed font-sans text-zinc-800 whitespace-pre-wrap">
-                {art.content}
-              </div>
+              {art.type === 'design_concept' ? (
+                <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100">
+                  <iframe
+                    title={art.title}
+                    srcDoc={art.content}
+                    sandbox="allow-scripts"
+                    className="h-[560px] w-full bg-white"
+                  />
+                </div>
+              ) : (
+                <div className="prose prose-zinc max-w-none text-xs leading-relaxed font-sans text-zinc-800 whitespace-pre-wrap">
+                  {art.content}
+                </div>
+              )}
             </div>
           ))}
         </div>

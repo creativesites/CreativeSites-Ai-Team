@@ -2628,8 +2628,8 @@ impl DbBridge {
         // Candidate subdirectories to scan: React/Next.js, WordPress/PHP template plugins,
         // and React Native shapes all land somewhere in here.
         let target_dirs = [
+            "templates/views", "templates/pages", "templates/components", "templates", "assets/css", "assets/js",
             "src/app", "src/pages", "src/views", "src/screens", "src/components", "src",
-            "templates/views", "templates/pages", "templates/components", "templates",
         ];
 
         'dirs: for rel_dir in &target_dirs {
@@ -2652,19 +2652,23 @@ impl DbBridge {
                             || file_name_lower.ends_with(".vue")
                             || file_name_lower.ends_with(".html")
                             || file_name_lower.ends_with(".js")
-                            || file_name_lower.ends_with(".php");
+                            || file_name_lower.ends_with(".php")
+                            || file_name_lower.ends_with(".css");
 
                         if is_ui_file {
                             let rel_path = path_str.replace(workspace_path, "");
                             let rel_path_lower = rel_path.to_lowercase();
                             let mut category = "component";
-                            if rel_path_lower.contains("/app/") || rel_path_lower.contains("/pages/") || file_name_lower.contains("page.") {
+                            if rel_path_lower.contains("/assets/css/") || rel_path_lower.contains("/assets/js/") {
+                                category = "style";
+                            }
+                            if category != "style" && (rel_path_lower.contains("/app/") || rel_path_lower.contains("/pages/") || file_name_lower.contains("page.")) {
                                 category = "route";
                                 routes.push(rel_path.clone());
-                            } else if rel_path_lower.contains("/screens/") || rel_path_lower.contains("/views/") || file_name_lower.contains("screen") || file_name_lower.contains("view") {
+                            } else if category != "style" && (rel_path_lower.contains("/screens/") || rel_path_lower.contains("/views/") || file_name_lower.contains("screen") || file_name_lower.contains("view")) {
                                 category = "screen";
-                                screens.push(file_name.clone());
-                            } else {
+                                screens.push(rel_path.clone());
+                            } else if category != "style" {
                                 components.push(file_name.clone());
                             }
 

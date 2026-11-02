@@ -24,7 +24,7 @@ import { extractDesignPhilosophy } from '../../services/designSystemExtractor';
 
 interface DesignStudioNormalViewProps {
   currentWorkspace: string;
-  onBuildWithMyaOS: (projectTitle: string, screenHtml: string) => void;
+  onBuildWithMyaOS: (projectTitle: string, screenHtml: string, workspacePath: string) => void;
 }
 
 interface NormalChatMessage {
@@ -161,23 +161,36 @@ function cleanLabel(raw: string): string {
 function deriveScreens(scan: ProjectUiScanData): ScreenRef[] {
   const byKey = new Map<string, ScreenRef>();
   scan.screens.forEach((s) => {
-    const key = (s.split('/').pop() || s).replace(/\.(tsx|jsx|js|php|vue|html)$/i, '').toLowerCase();
+    const key = s.replace(/\\/g, '/').replace(/\.(tsx|jsx|js|php|vue|html)$/i, '').toLowerCase();
     if (key && !byKey.has(key)) byKey.set(key, { key, label: cleanLabel(s), flow: 'Views' });
   });
   scan.routes.forEach((r) => {
-    const key = (r.split('/').pop() || r).replace(/\.(tsx|jsx|js|php|vue|html)$/i, '').toLowerCase();
+    const key = r.replace(/\\/g, '/').replace(/\.(tsx|jsx|js|php|vue|html)$/i, '').toLowerCase();
     if (key && !byKey.has(key)) byKey.set(key, { key, label: cleanLabel(r), flow: 'Pages' });
   });
   return Array.from(byKey.values()).slice(0, 16);
 }
 
-export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ onBuildWithMyaOS }) => {
+export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ currentWorkspace, onBuildWithMyaOS }) => {
+  const currentWorkspaceProject: RealDesignProject = {
+    id: 'current_workspace',
+    name: 'Current workspace',
+    kind: 'nextjs',
+    workspacePath: currentWorkspace,
+    fidelityNote: 'Scan and design the project currently open in MyaOS',
+  };
+  const availableProjects = currentWorkspace && !REAL_PROJECTS.some((p) => p.workspacePath === currentWorkspace)
+    ? [...REAL_PROJECTS, currentWorkspaceProject]
+    : REAL_PROJECTS;
   const [selectedProjectId, setSelectedProjectId] = useState(REAL_PROJECTS[0].id);
   const [showProjectMenu, setShowProjectMenu] = useState(false);
-  const project = REAL_PROJECTS.find((p) => p.id === selectedProjectId) || REAL_PROJECTS[0];
+  const project = availableProjects.find((p) => p.id === selectedProjectId) || REAL_PROJECTS[0];
 
   const [isScanning, setIsScanning] = useState(false);
+  const [scanAttempt, setScanAttempt] = useState(0);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
   const [scanData, setScanData] = useState<ProjectUiScanData | null>(null);
   const [philosophy, setPhilosophy] = useState<DesignPhilosophyData | null>(null);
   const [screens, setScreens] = useState<ScreenRef[]>([]);
@@ -209,15 +222,22 @@ export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ 
     ]);
   };
 
-  const runReconstruction = async (screenKey: string, flowName: string, instruction?: string) => {
-    if (!scanData || !philosophy) return;
+  const runReconstruction = async (
+    screenKey: string,
+    flowName: string,
+    instruction?: string,
+    sourceScan = scanData,
+    sourcePhilosophy = philosophy,
+  ) => {
+    if (!sourceScan || !sourcePhilosophy || isGenerating) return;
     setIsGenerating(true);
+    setGenerationError(null);
     try {
       const result = await reconstructProjectScreenFromSource(
         screenKey,
         flowName,
-        scanData,
-        philosophy,
+        sourceScan,
+        sourcePhilosophy,
         viewport,
         instruction
       );
@@ -235,10 +255,8 @@ export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ 
         is_approved: 0,
         created_at: new Date().toISOString(),
       };
+      await invoke('myaos_save_project_screen_version', { version: versionRow });
       setVersionsByScreen((prev) => ({ ...prev, [screenKey]: versionRow }));
-      invoke('myaos_save_project_screen_version', { version: versionRow }).catch((err) =>
-        console.warn('Failed to persist screen version:', err)
-      );
       pushMessage({
         sender: 'assistant',
         text: `${instruction ? 'Updated' : 'Reconstructed'} **${cleanLabel(screenKey)}** (v${nextVersion}) from the real source of ${project.name}. ${result.summary}`,
@@ -247,6 +265,7 @@ export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ 
       });
     } catch (e: any) {
       console.error('Faithful reconstruction failed:', e);
+      setGenerationError(e?.message || String(e) || 'Design generation failed.');
       pushMessage({
         sender: 'system',
         text: `Reconstruction failed: ${e?.message || e || 'Unknown error'}. Please try again.`,
@@ -263,6 +282,8 @@ export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ 
     const run = async () => {
       setIsScanning(true);
       setScanError(null);
+      setGenerationError(null);
+      setApprovalError(null);
       setScanData(null);
       setPhilosophy(null);
       setScreens([]);
@@ -343,7 +364,7 @@ export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ 
             }`,
           });
           if (!hasVersion) {
-            await runReconstruction(firstScreen.key, firstScreen.flow);
+            await runReconstruction(firstScreen.key, firstScreen.flow, undefined, scan, philData);
           }
         } else {
           setScanError('Scan completed but no screens/routes could be identified in this project.');
@@ -362,7 +383,7 @@ export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ 
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProjectId]);
+  }, [selectedProjectId, scanAttempt]);
 
   // Handle postMessage from preview iframe for click-to-pin element selection
   useEffect(() => {
@@ -404,6 +425,20 @@ export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ 
       ? `Focus the change on the selected element: \`${selectedElement.selector}\` containing text: "${selectedElement.text}".`
       : '';
     await runReconstruction(activeScreen.key, activeScreen.flow, [instruction, elementContext].filter(Boolean).join('\n'));
+  };
+
+  const handleApprove = async () => {
+    if (!activeScreen || !activeVersion || activeVersion.is_approved) return;
+    setApprovalError(null);
+    const approved = { ...activeVersion, is_approved: 1 };
+    try {
+      await invoke('myaos_save_project_screen_version', { version: approved });
+      setVersionsByScreen((prev) => ({ ...prev, [activeScreen.key]: approved }));
+      pushMessage({ sender: 'system', text: `Approved **${activeScreen.label} v${approved.version}**. Starting the implementation session in ${project.name}.` });
+      onBuildWithMyaOS(`${project.name} — ${activeScreen.label} v${approved.version}`, approved.html_content, project.workspacePath);
+    } catch (e: any) {
+      setApprovalError(`Could not approve this design: ${e?.message || e}`);
+    }
   };
 
   const handleAddComment = (e: React.FormEvent) => {
@@ -461,7 +496,7 @@ export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ 
           </button>
           {showProjectMenu && (
             <div className="absolute top-8 left-0 w-72 bg-white border border-black/10 rounded-xl shadow-xl z-50 p-1.5 space-y-0.5">
-              {REAL_PROJECTS.map((p) => (
+              {availableProjects.map((p) => (
                 <button
                   key={p.id}
                   onClick={() => {
@@ -531,12 +566,12 @@ export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ 
         {/* Action Handoff */}
         <div className="flex items-center gap-2 ml-4">
           <button
-            onClick={() => activeVersion && onBuildWithMyaOS(`${project.name} — ${activeScreen?.label}`, activeVersion.html_content)}
-            disabled={!activeVersion}
+            onClick={handleApprove}
+            disabled={!activeVersion || !activeScreen || isGenerating || activeVersion.is_approved === 1}
             className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 disabled:opacity-40 text-white rounded-xl text-xs font-semibold shadow-2xs transition flex items-center gap-1.5 cursor-pointer active:scale-[0.97]"
           >
             <Code2 className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Build with MyaOS →</span>
+            <span>{activeVersion?.is_approved ? 'Approved · Build started' : 'Approve & build'}</span>
           </button>
         </div>
       </header>
@@ -603,8 +638,18 @@ export const DesignStudioNormalView: React.FC<DesignStudioNormalViewProps> = ({ 
             )}
 
             {scanError && (
-              <div className="p-3 bg-red-50 border border-red-100 rounded-2xl text-red-800 text-[11px]">{scanError}</div>
+              <div className="p-3 bg-red-50 border border-red-100 rounded-2xl text-red-800 text-[11px] space-y-2">
+                <div>{scanError}</div>
+                <button onClick={() => setScanAttempt((attempt) => attempt + 1)} disabled={isScanning} className="px-2.5 py-1 rounded-lg bg-white border border-red-200 font-semibold hover:bg-red-100 disabled:opacity-50">Retry scan</button>
+              </div>
             )}
+            {generationError && (
+              <div className="p-3 bg-red-50 border border-red-100 rounded-2xl text-red-800 text-[11px] space-y-2">
+                <div>{generationError}</div>
+                {activeScreen && <button onClick={() => runReconstruction(activeScreen.key, activeScreen.flow)} disabled={isGenerating || isScanning} className="px-2.5 py-1 rounded-lg bg-white border border-red-200 font-semibold hover:bg-red-100 disabled:opacity-50">Retry design generation</button>}
+              </div>
+            )}
+            {approvalError && <div className="p-3 bg-red-50 border border-red-100 rounded-2xl text-red-800 text-[11px]">{approvalError}</div>}
           </div>
 
           {philosophy && (

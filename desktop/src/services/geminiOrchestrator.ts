@@ -989,17 +989,27 @@ export async function reconstructProjectScreenFromSource(
   customInstruction?: string
 ): Promise<DesignGenerationResult> {
   // Select up to 10 most relevant files with high character budget
-  const normalizedScreen = screenName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normalizedScreen = screenName.toLowerCase().replace(/\\/g, '/').replace(/[^a-z0-9/]/g, '');
   const relevantFiles = scanData.scannedFiles
-    .filter(
-      (f) =>
-        f.fileName.toLowerCase().replace(/[^a-z0-9]/g, '').includes(normalizedScreen) ||
-        (f.snippet && f.snippet.toLowerCase().includes(screenName.toLowerCase())) ||
-        f.category === 'screen' ||
-        f.category === 'route' ||
-        f.path.includes('/components/')
-    )
-    .slice(0, 10);
+    .map((f) => {
+      const normalizedPath = f.path.toLowerCase().replace(/\\/g, '/').replace(/[^a-z0-9/]/g, '');
+      const normalizedName = f.fileName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const basename = normalizedScreen.split('/').pop() || normalizedScreen;
+      const score = normalizedPath.includes(normalizedScreen) || normalizedName.includes(basename)
+        ? 5
+        : f.category === 'route' || f.category === 'screen'
+        ? 3
+        : f.category === 'style'
+        ? 2
+        : f.path.toLowerCase().includes('/components/')
+        ? 1
+        : 0;
+      return { file: f, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 14)
+    .map((item) => item.file);
 
   const filesContext = relevantFiles
     .map(
