@@ -585,6 +585,30 @@
       "status": "WORKING",
       "current_task": "CT-008 & CT-009 Independent Claim Verification & EDL Audit",
       "evidence_source": "Registered 2026-10-27 in Claude Code session (PID 6083); unified into CarringtonTomorrow workspace."
+    },
+    {
+      "identity": {
+        "id": "tessera",
+        "name": "Tessera",
+        "symbol": "\u25eb",
+        "primary_domain": "Desktop product design and polish: Design Studio, screen UX, honest empty/error states"
+      },
+      "declared_capabilities": [
+        "product-design-review",
+        "frontend-ux",
+        "design-systems",
+        "desktop-app-polish"
+      ],
+      "declared_responsibilities": [
+        "Thread 044: ideal Design Studio page and v2 app polish, with Codex",
+        "Desktop direction brief for Winston (options A-E)"
+      ],
+      "declared_repository_ownership": [],
+      "observed_liveness": "UNKNOWN",
+      "confidence_provenance": "DECLARED",
+      "status": "WORKING",
+      "current_task": "Thread 044: Design Studio and app polish",
+      "evidence_source": "Self-registered 2026-11-03 at Winston direction (Claude Code session, branch claude/desktop-app-ai-team-direction-ab19d3)."
     }
   ]
 }
