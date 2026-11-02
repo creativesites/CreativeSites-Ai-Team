@@ -14,7 +14,7 @@ import {
   Terminal as TerminalIcon,
   Zap,
 } from 'lucide-react';
-import type { Evidence, Identity, JobDetail, JobSummary, Session, TranscriptEntry } from '@runtime/types';
+import type { Evidence, Identity, JobDetail, JobSummary, Session, TranscriptEntry, WorktreeFile } from '@runtime/types';
 import { Avatar } from '@/components/app/avatar';
 import { isLive } from '@/components/app/shell';
 import { EmptyState, EvidenceTag, jobLabel, SectionTitle, StageBar, Tag } from '@/components/app/status';
@@ -29,7 +29,7 @@ import { cn } from '@/lib/utils';
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 type DevViewMode = 'stream' | 'agent-terminal' | 'split' | 'shell';
-type InspectorTab = 'evidence' | 'steps' | 'changes';
+type InspectorTab = 'evidence' | 'files' | 'steps' | 'changes';
 
 /** Commands and file changes the runtime recorded, shown as the agent's steps. */
 function stepsFrom(evidence: Evidence[]): Step[] {
@@ -61,7 +61,7 @@ export function DevScreen({
   jobs: JobSummary[];
   job: JobDetail | null;
 }) {
-  const { client } = useRuntime();
+  const { client, revision } = useRuntime();
   const who = (id: string) => identities.find((i) => i.id === id) ?? { id, name: id, seats: [] };
   const steps = job ? stepsFrom(job.evidence) : [];
   const patches = job ? job.evidence.filter((e) => e.kind === 'diff' && (e.payload as { patch?: string })?.patch) : [];
@@ -145,6 +145,36 @@ export function DevScreen({
   };
 
   const [inspectorTab, setInspectorTab] = React.useState<InspectorTab>('evidence');
+  const [sessionFiles, setSessionFiles] = React.useState<WorktreeFile[]>([]);
+  const [selectedFilePath, setSelectedFilePath] = React.useState<string | null>(null);
+  const [loadingFiles, setLoadingFiles] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!client || !selectedSession) {
+      setSessionFiles([]);
+      setSelectedFilePath(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingFiles(true);
+    client
+      .sessionFiles(selectedSession.id)
+      .then((files) => {
+        if (!cancelled) {
+          setSessionFiles(files);
+          setSelectedFilePath((prev) => (files.some((f) => f.path === prev) ? prev : (files[0]?.path ?? null)));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSessionFiles([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingFiles(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, selectedSession?.id, revision]);
 
   // Quick Wake bar state (left rail)
   const coworkers = identities.filter((i) => !i.isOwner);
@@ -483,13 +513,27 @@ export function DevScreen({
                       </span>
                     )}
                   </div>
-                  <div className="flex max-w-md items-center gap-2 truncate font-mono text-[11px] text-muted-foreground">
+                  <div className="flex max-w-xl items-center gap-2 truncate font-mono text-[11px] text-muted-foreground">
                     <span>{selectedSession.id}</span>
                     {selectedSession.acpSessionId && <span>· acp: {selectedSession.acpSessionId.slice(0, 14)}</span>}
                     {selectedSession.worktree && (
                       <span className="truncate" title={selectedSession.worktree}>
                         · {selectedSession.worktree.split('/').slice(-2).join('/')}
                       </span>
+                    )}
+                    <span>·</span>
+                    {selectedSession.usage ? (
+                      <span
+                        className="text-zinc-300 font-medium"
+                        title={`${selectedSession.usage.inputTokens.toLocaleString()} in · ${selectedSession.usage.outputTokens.toLocaleString()} out`}
+                      >
+                        {selectedSession.usage.totalTokens.toLocaleString()} tokens
+                        {selectedSession.usage.costCents > 0
+                          ? ` ($${(selectedSession.usage.costCents / 100).toFixed(2)})`
+                          : ''}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground/60">tokens: UNKNOWN</span>
                     )}
                   </div>
                 </div>
@@ -572,8 +616,9 @@ export function DevScreen({
 
         {/* Active Session Viewport (takes 100% of remaining height above the composer) */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3.5">
-          {viewMode === 'stream' && (
-            !selectedSession ? (
+          {/* 1. Live Stream View */}
+          <div className={cn('min-h-0 flex-1 flex flex-col', viewMode !== 'stream' && 'hidden')}>
+            {!selectedSession ? (
               <EmptyState title="No session selected">
                 Select a session on the left or type an instruction below to wake an agent.
               </EmptyState>
@@ -588,11 +633,12 @@ export function DevScreen({
                 sessionState={selectedSession.state}
                 className="min-h-0 flex-1"
               />
-            )
-          )}
+            )}
+          </div>
 
-          {viewMode === 'agent-terminal' && (
-            !selectedSession ? (
+          {/* 2. Agent Terminal View (ANSI) */}
+          <div className={cn('min-h-0 flex-1 flex flex-col', viewMode !== 'agent-terminal' && 'hidden')}>
+            {!selectedSession ? (
               <EmptyState title="No session selected">
                 Wake an agent on the left or send an instruction below to stream its full Claude Code / Codex / Gemini terminal output here.
               </EmptyState>
@@ -604,11 +650,17 @@ export function DevScreen({
                 hideComposer
                 className="min-h-0 flex-1"
               />
-            )
-          )}
+            )}
+          </div>
 
-          {viewMode === 'split' && (
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-2">
+          {/* 3. Split & Shell Views: share persistent shell Terminal so PTY sessions stay alive across tab switches */}
+          <div
+            className={cn(
+              'min-h-0 flex-1',
+              viewMode === 'split' ? 'grid grid-cols-1 gap-3 xl:grid-cols-2' : viewMode === 'shell' ? 'flex flex-col' : 'hidden'
+            )}
+          >
+            {viewMode === 'split' && (
               <div className="flex min-h-0 flex-col overflow-hidden">
                 {selectedSession ? (
                   <AgentTerminal
@@ -622,15 +674,11 @@ export function DevScreen({
                   <EmptyState title="No agent session selected">Select or wake an agent to view its terminal.</EmptyState>
                 )}
               </div>
-              <div className="flex min-h-0 flex-col overflow-hidden">
-                <Terminal cwd={selectedSession?.worktree ?? undefined} className="min-h-0 flex-1" />
-              </div>
+            )}
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <Terminal cwd={selectedSession?.worktree ?? undefined} className="min-h-0 flex-1" />
             </div>
-          )}
-
-          {viewMode === 'shell' && (
-            <Terminal cwd={selectedSession?.worktree ?? undefined} className="min-h-0 flex-1" />
-          )}
+          </div>
         </div>
 
         {/* Sticky Bottom Instruction & Control Dock */}
@@ -785,11 +833,12 @@ export function DevScreen({
             </button>
           </div>
 
-          {/* Drawer Sub-tabs: Evidence Ledger | Steps | Changes */}
-          <div className="glass-panel grid grid-cols-3 gap-1 rounded-lg p-0.5 text-xs">
+          {/* Drawer Sub-tabs: Evidence Ledger | Files | Steps | Changes */}
+          <div className="glass-panel grid grid-cols-4 gap-1 rounded-lg p-0.5 text-xs">
             {(
               [
                 { id: 'evidence', label: `Ledger (${job?.evidence.length ?? 0})` },
+                { id: 'files', label: `Files (${sessionFiles.length})` },
                 { id: 'steps', label: `Steps (${steps.length})` },
                 { id: 'changes', label: `Diffs (${patches.length})` },
               ] as const
@@ -799,7 +848,7 @@ export function DevScreen({
                 type="button"
                 onClick={() => setInspectorTab(t.id)}
                 className={cn(
-                  'rounded-md py-1 text-[11px] font-medium transition-colors',
+                  'truncate rounded-md px-1 py-1 text-[11px] font-medium transition-colors',
                   inspectorTab === t.id
                     ? 'bg-foreground text-background'
                     : 'text-muted-foreground hover:text-foreground'
@@ -811,6 +860,95 @@ export function DevScreen({
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-0.5">
+            {inspectorTab === 'files' && (
+              <div className="flex flex-col gap-2.5">
+                <div className="flex items-center justify-between">
+                  <SectionTitle aside={`${sessionFiles.length} file${sessionFiles.length === 1 ? '' : 's'}`}>
+                    Worktree Changes
+                  </SectionTitle>
+                  {selectedSession?.worktree && (
+                    <span className="truncate font-mono text-[10px] text-muted-foreground" title={selectedSession.worktree}>
+                      {selectedSession.worktree.split('/').slice(-2).join('/')}
+                    </span>
+                  )}
+                </div>
+
+                {loadingFiles && sessionFiles.length === 0 ? (
+                  <p className="py-4 text-xs text-muted-foreground">Scanning session worktree…</p>
+                ) : sessionFiles.length === 0 ? (
+                  <EmptyState title="No modified or untracked files">
+                    The worktree is clean. Any files written by the agent will appear here with click-to-view diffs.
+                  </EmptyState>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {sessionFiles.map((file) => {
+                      const isSelected = selectedFilePath === file.path;
+                      const statusColor =
+                        file.status === 'untracked'
+                          ? 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20'
+                          : file.status === 'added'
+                            ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+                            : file.status === 'deleted'
+                              ? 'text-rose-400 bg-rose-400/10 border-rose-400/20'
+                              : 'text-amber-400 bg-amber-400/10 border-amber-400/20';
+                      const statusBadge =
+                        file.status === 'untracked'
+                          ? '??'
+                          : file.status === 'added'
+                            ? 'A'
+                            : file.status === 'deleted'
+                              ? 'D'
+                              : file.status === 'renamed'
+                                ? 'R'
+                                : 'M';
+                      return (
+                        <div
+                          key={file.path}
+                          className="flex flex-col overflow-hidden rounded-lg border border-border/50 bg-background/40"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFilePath(isSelected ? null : file.path)}
+                            className={cn(
+                              'flex items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-foreground/[0.04]',
+                              isSelected && 'bg-foreground/[0.06] font-medium'
+                            )}
+                          >
+                            <span className="flex min-w-0 items-center gap-2 truncate font-mono text-[11px]">
+                              <span
+                                className={cn(
+                                  'shrink-0 rounded border px-1 py-0.2 font-mono text-[9px] font-semibold uppercase',
+                                  statusColor
+                                )}
+                              >
+                                {statusBadge}
+                              </span>
+                              <span className="truncate text-foreground" title={file.path}>
+                                {file.path}
+                              </span>
+                            </span>
+                            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                              {isSelected ? 'hide' : 'diff'}
+                            </span>
+                          </button>
+                          {isSelected && (
+                            <div className="border-t border-border/50 p-2">
+                              {file.diff ? (
+                                <DiffView patch={file.diff} />
+                              ) : (
+                                <p className="font-mono text-[11px] italic text-muted-foreground">
+                                  (empty or binary file)
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
             {inspectorTab === 'evidence' && (
               <>
                 {job && job.criteria.length > 0 && (
