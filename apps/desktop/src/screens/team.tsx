@@ -1,18 +1,25 @@
 import * as React from 'react';
 import {
   AlertCircle,
+  ArrowLeft,
+  Bookmark,
+  CheckCircle2,
   Cpu,
   Edit3,
+  ExternalLink,
+  FolderGit2,
   Layers,
+  Play,
   Plus,
   Send,
   ShieldCheck,
   Sparkles,
+  Target,
   Terminal as TerminalIcon,
   Workflow,
   X,
 } from 'lucide-react';
-import type { Identity, Session, Team } from '@runtime/types';
+import type { Identity, JobSummary, Session, Team } from '@runtime/types';
 import { Avatar, OwnerAvatar } from '@/components/app/avatar';
 import { isLive } from '@/components/app/shell';
 import { Tag } from '@/components/app/status';
@@ -25,6 +32,7 @@ export interface TeamScreenProps {
   identities: Identity[];
   sessions: Session[];
   teams?: Team[];
+  jobs?: JobSummary[];
   selectedAgentId?: string;
   ownerName?: string;
   ownerId?: string;
@@ -42,6 +50,8 @@ export interface TeamAuditResult {
   identifiedGaps: string[];
   recommendations: string[];
 }
+
+export type WorkspaceTab = 'workspace' | 'performance' | 'tasks' | 'evidence' | 'contract';
 
 const fmtTime = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
@@ -64,15 +74,25 @@ export function TeamScreen({
   identities,
   sessions,
   teams = [],
+  jobs = [],
   selectedAgentId,
   ownerName = 'Winston Zulu',
   ownerId = 'winston',
 }: TeamScreenProps) {
+  const { client } = useRuntime();
+
+  // Mode: 'chart' or 'workspace' (profile view)
+  const [viewMode, setViewMode] = React.useState<'chart' | 'workspace'>(() =>
+    selectedAgentId ? 'workspace' : 'chart'
+  );
 
   // Selection
   const [selectedId, setSelectedId] = React.useState<string | null>(
-    selectedAgentId ?? identities.find((i) => !i.isOwner)?.id ?? identities[0]?.id ?? null
+    selectedAgentId ?? identities.find((i) => !i.isOwner && i.id !== 'winston')?.id ?? identities[0]?.id ?? null
   );
+
+  // Workspace subtab
+  const [workspaceTab, setWorkspaceTab] = React.useState<WorkspaceTab>('workspace');
 
   // Executive Header Edit state
   const [executiveName, setExecutiveName] = React.useState<string>(() => {
@@ -84,9 +104,7 @@ export function TeamScreen({
   });
   const [executiveTitle, setExecutiveTitle] = React.useState<string>(() => {
     try {
-      return (
-        localStorage.getItem('myaos.executive.title') || 'Executive Human Lead & Founder'
-      );
+      return localStorage.getItem('myaos.executive.title') || 'Executive Human Lead & Founder';
     } catch {
       return 'Executive Human Lead & Founder';
     }
@@ -103,6 +121,14 @@ export function TeamScreen({
   const [auditResult, setAuditResult] = React.useState<TeamAuditResult | null>(null);
   const [isAuditing, setIsAuditing] = React.useState(false);
 
+  // Synchronize when selectedAgentId changes from routing
+  React.useEffect(() => {
+    if (selectedAgentId) {
+      setSelectedId(selectedAgentId);
+      setViewMode('workspace');
+    }
+  }, [selectedAgentId]);
+
   const selectedAgent = identities.find((i) => i.id === selectedId) ?? null;
   const liveAgentIds = new Set(sessions.filter(isLive).map((s) => s.agentId));
 
@@ -115,6 +141,34 @@ export function TeamScreen({
       /* ignore */
     }
     setIsEditingExecutive(false);
+  };
+
+  // Open full Agent Workspace profile
+  const handleOpenAgentWorkspace = (agentId: string) => {
+    setSelectedId(agentId);
+    setViewMode('workspace');
+    window.location.hash = href({ name: 'team', agentId });
+  };
+
+  // Return to Org Chart view
+  const handleReturnToChart = () => {
+    setViewMode('chart');
+    window.location.hash = href({ name: 'team' });
+  };
+
+  // Quick Terminal trigger
+  const handleOpenTerminal = async (agent: Identity) => {
+    if (client) {
+      try {
+        await client.wakeAgent(agent.id, {
+          fromActorId: ownerId,
+          prompt: 'Open interactive CLI session.',
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+    window.location.hash = href({ name: 'dev' });
   };
 
   // Group identities by lane & roles
@@ -182,7 +236,7 @@ export function TeamScreen({
     (i) => !strategicIds.has(i.id) && !qualityIds.has(i.id) && !engineeringIds.has(i.id) && !infraIds.has(i.id)
   );
 
-  // Run dynamic AI Team Architect Audit
+  // Dynamic AI Team Architect Audit
   const handleRunAudit = () => {
     setIsAuditing(true);
     setTimeout(() => {
@@ -193,11 +247,10 @@ export function TeamScreen({
       const strategicCount = strategicAgents.length;
       const rateLimitedCount = nonOwnerIdentities.filter((i) => i.statusState === 'rate_limited').length;
 
-      let score = 92;
+      let score = 94;
       const gaps: string[] = [];
       const recs: string[] = [];
 
-      // Epistemic verification check
       const hasIndependentVerifier = qualityAgents.some(
         (a) => a.id === 'kael' || a.id === 'antigravity' || (a.role && a.role.toLowerCase().includes('verifier'))
       );
@@ -207,10 +260,9 @@ export function TeamScreen({
         gaps.push('CRITICAL: No independent verifier designated. Rule #2 forbids builders from self-verifying.');
         recs.push('Spawn or assign Kael / Antigravity as dedicated independent verification stewards.');
       } else {
-        recs.push(`Independent verifier fleet active (${verifiersCount} verifier(s)). Self-verification gate enforced.`);
+        recs.push(`Independent verifier fleet active (${verifiersCount} verifiers). Implementers forbidden from self-verifying.`);
       }
 
-      // Documentation gap check
       const hasDocAgent = nonOwnerIdentities.some(
         (i) =>
           (i.role && i.role.toLowerCase().includes('doc')) ||
@@ -222,14 +274,12 @@ export function TeamScreen({
         recs.push('Consider spawning a dedicated Architecture Scribe to mirror substrate thread records.');
       }
 
-      // Rate limit check
       if (rateLimitedCount > 0) {
         score -= rateLimitedCount * 5;
         gaps.push(`${rateLimitedCount} agent(s) currently paused under provider token/session rate limits.`);
         recs.push('Coordinate cross-agent handoffs to Claude/Gemini/Codex alternate engines during rate resets.');
       }
 
-      // Ratio check
       if (buildersCount > 0 && verifiersCount > 0) {
         const ratio = buildersCount / verifiersCount;
         if (ratio > 5) {
@@ -264,11 +314,433 @@ export function TeamScreen({
         recommendations: recs,
       });
       setIsAuditing(false);
-    }, 450);
+    }, 400);
   };
 
+  // If in Agent Workspace Profile View
+  if (viewMode === 'workspace' && selectedAgent) {
+    const isAgentLive = liveAgentIds.has(selectedAgent.id) || selectedAgent.statusState === 'working';
+    const agentTasks = jobs.filter((j) => j.createdBy === selectedAgent.id);
+
+    return (
+      <div className="flex flex-col gap-5 py-2 pb-12 select-none animate-fade-in">
+        {/* Top Navigation & Agent Employee Header */}
+        <div className="glass-panel border-border/80 p-5 rounded-2xl shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="flex items-center gap-3.5">
+            <button
+              type="button"
+              onClick={handleReturnToChart}
+              className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'size-9 p-0 rounded-xl cursor-pointer')}
+              title="Return to Org Chart"
+            >
+              <ArrowLeft className="size-4" />
+            </button>
+
+            <div className="size-12 rounded-2xl bg-foreground/[0.06] border border-border flex items-center justify-center text-2xl shadow-2xs">
+              {selectedAgent.symbol || <Avatar who={selectedAgent} size={36} />}
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-bold text-foreground">{selectedAgent.name}</h1>
+                <span className="text-xs font-mono text-muted-foreground font-normal">({selectedAgent.id})</span>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase glass-panel">
+                  Lane: {selectedAgent.lane || (qualityIds.has(selectedAgent.id) ? 'verification' : 'engineering')}
+                </span>
+                <Tag tone={isAgentLive ? 'observed' : selectedAgent.statusState === 'rate_limited' ? 'risk' : 'quiet'}>
+                  {selectedAgent.statusState === 'rate_limited' ? 'Rate Limited' : isAgentLive ? 'LIVE' : 'Standby'}
+                </Tag>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+                {selectedAgent.role || 'Autonomous Team Member'}
+              </p>
+            </div>
+          </div>
+
+          {/* Telemetry Metrics & Primary Actions */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="glass-panel px-3 py-1.5 rounded-xl text-xs font-mono flex items-center gap-3">
+              <div>
+                <span className="text-[10px] uppercase text-muted-foreground block font-bold">Engine</span>
+                <span className="font-semibold text-foreground">{selectedAgent.runtime || 'Default ACP'}</span>
+              </div>
+              {selectedAgent.activeSessionId && (
+                <>
+                  <div className="w-px h-5 bg-border/60" />
+                  <div>
+                    <span className="text-[10px] uppercase text-muted-foreground block font-bold">Session</span>
+                    <span className="text-[11px] text-foreground font-mono">{selectedAgent.activeSessionId.slice(0, 8)}…</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setEditingAgent(selectedAgent);
+                setIsEditModalOpen(true);
+              }}
+              className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}
+            >
+              <Edit3 className="size-3.5" />
+              <span>Edit Role</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsWakeModalOpen(true)}
+              className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}
+            >
+              <Send className="size-3.5" />
+              <span>Wake / Prompt</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleOpenTerminal(selectedAgent)}
+              className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'cursor-pointer')}
+            >
+              <TerminalIcon className="size-3.5" />
+              <span>{isAgentLive ? 'Resume CLI Session' : 'Spawn Live CLI'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Workspace Tab Bar */}
+        <div className="flex border-b border-border/60 bg-foreground/[0.02] px-3 pt-1.5 gap-1.5 rounded-xl overflow-x-auto">
+          {[
+            { id: 'workspace', label: 'Employee Workspace & PTY', icon: FolderGit2 },
+            { id: 'performance', label: 'AI Performance & Summary', icon: Sparkles },
+            { id: 'tasks', label: `Assigned Tasks (${agentTasks.length})`, icon: Layers },
+            { id: 'evidence', label: 'Verified Evidence', icon: ShieldCheck },
+            { id: 'contract', label: 'AI Employee & Governance Contract', icon: Cpu },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setWorkspaceTab(tab.id as WorkspaceTab)}
+              className={cn(
+                'px-3.5 py-2 text-xs font-semibold rounded-t-lg transition flex items-center gap-2 border-b-2 cursor-pointer',
+                workspaceTab === tab.id
+                  ? 'bg-card text-foreground border-foreground shadow-2xs'
+                  : 'text-muted-foreground hover:text-foreground border-transparent'
+              )}
+            >
+              <tab.icon className="size-3.5" />
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* TAB 1: Employee Workspace & Live Terminal */}
+        {workspaceTab === 'workspace' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="glass-panel border-border/80 rounded-2xl p-4 flex flex-col h-[460px]">
+                <div className="flex items-center justify-between border-b border-border/60 pb-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className={cn('size-2 rounded-full', isAgentLive ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/40')} />
+                    <span className="text-xs font-bold text-foreground">
+                      {isAgentLive ? `Active Session (${selectedAgent.runtime || 'ACP'})` : 'Standby Console'}
+                    </span>
+                    <span className="text-[10px] font-mono text-muted-foreground bg-foreground/[0.05] px-2 py-0.5 rounded-md">
+                      @{selectedAgent.id}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenTerminal(selectedAgent)}
+                      className="px-2.5 py-1 glass-panel hover:bg-foreground/[0.08] text-foreground rounded-lg text-xs font-semibold transition cursor-pointer"
+                    >
+                      ⚡ Claude
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenTerminal(selectedAgent)}
+                      className="px-2.5 py-1 glass-panel hover:bg-foreground/[0.08] text-foreground rounded-lg text-xs font-semibold transition cursor-pointer"
+                    >
+                      ♊ Gemini
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenTerminal(selectedAgent)}
+                      className="px-2.5 py-1 glass-panel hover:bg-foreground/[0.08] text-foreground rounded-lg text-xs font-semibold transition cursor-pointer"
+                    >
+                      🪐 Antigravity
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-foreground/[0.02] rounded-xl border border-dashed border-border/60">
+                  <TerminalIcon className="size-8 text-muted-foreground/40 mb-2" />
+                  <h3 className="text-xs font-bold text-foreground">
+                    {isAgentLive ? `CLI Session Running for @${selectedAgent.id}` : `No Active Terminal Session for @${selectedAgent.id}`}
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground max-w-sm mt-1">
+                    Spawn Claude Code, Gemini CLI, or Antigravity in this agent&apos;s workspace to stream live output and dispatch tool calls.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void handleOpenTerminal(selectedAgent)}
+                    className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'mt-4 cursor-pointer gap-1.5')}
+                  >
+                    <Play className="size-3.5 fill-current" />
+                    <span>{isAgentLive ? 'View Live Terminal' : 'Launch Session in Dev Mode'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Codebase & Directory Telemetry */}
+            <div className="space-y-4">
+              <div className="glass-panel border-border/80 p-4.5 rounded-2xl shadow-xs space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-foreground">
+                  <FolderGit2 className="size-4 text-indigo-500" />
+                  <span>Target Codebase &amp; Working Directory</span>
+                </div>
+                <div className="p-3 bg-foreground/[0.03] border border-border/50 rounded-xl space-y-1">
+                  <div className="text-[10px] uppercase font-mono font-bold text-muted-foreground">Substrate Path</div>
+                  <div className="text-xs font-mono text-foreground break-all">.claude/worktrees/desktop-app-ai-teams-2fa62f</div>
+                </div>
+                <div className="p-3 bg-foreground/[0.03] border border-border/50 rounded-xl space-y-1">
+                  <div className="text-[10px] uppercase font-mono font-bold text-muted-foreground">Git Branch</div>
+                  <div className="text-xs font-mono text-emerald-600 dark:text-emerald-400">claude/desktop-app-ai-teams-2fa62f</div>
+                </div>
+              </div>
+
+              <div className="glass-panel border-border/80 p-4.5 rounded-2xl shadow-xs space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-foreground">
+                    <Bookmark className="size-4 text-amber-500" />
+                    <span>Agent Memory Substrate</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-muted-foreground">Substrate record</span>
+                </div>
+                <div className="p-3 bg-foreground/[0.03] border border-border/50 rounded-xl text-xs text-muted-foreground space-y-1">
+                  <p>In-adapter memory and transcript context are linked to ACP session:</p>
+                  <p className="font-mono text-foreground truncate">{selectedAgent.acpSessionId || 'Ready for session initialization'}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: AI Performance & Executive Summary */}
+        {workspaceTab === 'performance' && (
+          <div className="glass-panel border-border/80 p-6 rounded-2xl space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="size-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-sm">
+                  <Sparkles className="size-4.5" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">AI Performance Synthesis &amp; Substrate Audit</h2>
+                  <p className="text-xs text-muted-foreground">Autonomous evaluation based on tasks, events, and verified evidence</p>
+                </div>
+              </div>
+              <span className="px-3 py-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold font-mono text-xs rounded-full border border-amber-500/30">
+                {qualityIds.has(selectedAgent.id) ? 'VERIFIED INDEPENDENT STEWARD' : 'ACTIVE SUBSTRATE BUILDER'}
+              </span>
+            </div>
+
+            <div className="bg-foreground/[0.03] p-4 rounded-xl border border-border/50 space-y-1">
+              <div className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">Executive Overview</div>
+              <p className="text-xs text-foreground/90 leading-relaxed font-medium">
+                @{selectedAgent.id} is operating within the <strong>{selectedAgent.lane || 'engineering'}</strong> lane.
+                {qualityIds.has(selectedAgent.id)
+                  ? ' Designated as an independent verifier under Mandate Rule #2 (builders forbidden from self-verifying).'
+                  : ' Responsible for autonomous feature authoring and substrate fidelity.'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="glass-panel p-4 rounded-xl border border-border/60 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="size-4" />
+                  <span>Accomplishments</span>
+                </div>
+                <ul className="space-y-1.5 text-xs text-foreground/80 list-disc list-inside">
+                  <li>Active identity registered on runtime substrate.</li>
+                  <li>Role contract verified against system schema.</li>
+                  <li>Zero uncommitted drift mandate maintained.</li>
+                </ul>
+              </div>
+
+              <div className="glass-panel p-4 rounded-xl border border-border/60 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
+                  <AlertCircle className="size-4" />
+                  <span>Risks &amp; Blockers</span>
+                </div>
+                <ul className="space-y-1.5 text-xs text-foreground/80 list-disc list-inside">
+                  {selectedAgent.statusState === 'rate_limited' ? (
+                    <li className="text-needs-you">Currently paused under provider rate limits.</li>
+                  ) : (
+                    <li>No critical blockers detected on agent telemetry.</li>
+                  )}
+                  <li>Must preserve independent verification rule on completion.</li>
+                </ul>
+              </div>
+
+              <div className="glass-panel p-4 rounded-xl border border-border/60 space-y-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                  <Target className="size-4" />
+                  <span>Actionable Next Steps</span>
+                </div>
+                <ul className="space-y-1.5 text-xs text-foreground/80 list-disc list-inside">
+                  <li>Monitor session transcript output in dev mode.</li>
+                  <li>Verify regression test suites prior to status transition.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: Assigned Tasks */}
+        {workspaceTab === 'tasks' && (
+          <div className="glass-panel border-border/80 p-5 rounded-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-border/60">
+              <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                <Layers className="size-4 text-indigo-500" />
+                <span>Assigned Tasks &amp; Jobs ({agentTasks.length})</span>
+              </div>
+            </div>
+
+            {agentTasks.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic p-4">No jobs currently created by or assigned to @{selectedAgent.id}.</p>
+            ) : (
+              <div className="space-y-2">
+                {agentTasks.map((j) => (
+                  <div key={j.id} className="glass-panel p-3.5 rounded-xl border border-border/60 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-xs text-muted-foreground">#{j.number}</span>
+                      <div>
+                        <div className="text-xs font-bold text-foreground">{j.title}</div>
+                        <div className="text-[11px] text-muted-foreground truncate max-w-md">
+                          Stage: {j.stage} · {fmtTime(j.createdAt)} {j.priority ? `· Priority: ${j.priority}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Tag tone={j.stage === 'done' ? 'verified' : 'observed'}>{j.stage}</Tag>
+                      <a href={href({ name: 'job', jobId: j.id })} className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'text-xs')}>
+                        Open Job
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 4: Verified Evidence */}
+        {workspaceTab === 'evidence' && (
+          <div className="glass-panel border-border/80 p-5 rounded-2xl space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-border/60">
+              <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                <ShieldCheck className="size-4 text-emerald-500" />
+                <span>Verified Evidence &amp; Independent Attestations</span>
+              </div>
+            </div>
+            <div className="p-4 rounded-xl bg-foreground/[0.02] border border-border/50 text-xs text-muted-foreground space-y-2">
+              <p>
+                All evidence submitted by autonomous agents is append-only, hash-chained, and checked against the SQLite database records.
+              </p>
+              <div className="font-mono text-[11px] text-foreground bg-foreground/[0.04] p-3 rounded-lg">
+                Independent Verifier Rule: Implementers are strictly forbidden from self-verifying their own work.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 5: AI Employee & Governance Contract */}
+        {workspaceTab === 'contract' && (
+          <div className="glass-panel border-border/80 p-5 rounded-2xl space-y-5">
+            <div className="flex items-center justify-between pb-2 border-b border-border/60">
+              <div className="text-xs font-bold text-foreground flex items-center gap-2">
+                <Cpu className="size-4 text-amber-500" />
+                <span>AI Employee Role Contract &amp; Governance Mandates</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAgent(selectedAgent);
+                  setIsEditModalOpen(true);
+                }}
+                className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}
+              >
+                <Edit3 className="size-3.5" />
+                <span>Edit Contract</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Declared Capabilities</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {parseArrayField(selectedAgent.capabilities).map((cap, i) => (
+                    <span key={i} className="px-2.5 py-1 rounded-md bg-foreground/[0.05] border border-border/50 font-mono text-xs">
+                      {cap}
+                    </span>
+                  ))}
+                  {parseArrayField(selectedAgent.capabilities).length === 0 && (
+                    <span className="text-xs text-muted-foreground italic">None specified.</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Substrate Responsibilities</div>
+                <ul className="space-y-1.5 text-xs text-foreground/80 list-disc list-inside">
+                  <li>Execute tasks within assigned {selectedAgent.lane || 'functional'} lane.</li>
+                  <li>Maintain 100% substrate truthfulness and relational database consistency.</li>
+                  {qualityIds.has(selectedAgent.id) && (
+                    <li className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                      Independently re-run verification commands (cannot self-verify authored code).
+                    </li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modals in Workspace view */}
+        {isEditModalOpen && editingAgent && (
+          <EditRoleModal
+            isOpen={isEditModalOpen}
+            onClose={() => {
+              setIsEditModalOpen(false);
+              setEditingAgent(null);
+            }}
+            identity={editingAgent}
+            onSaved={() => {
+              setIsEditModalOpen(false);
+              setEditingAgent(null);
+            }}
+          />
+        )}
+
+        {isWakeModalOpen && selectedAgent && (
+          <WakeAgentModal
+            isOpen={isWakeModalOpen}
+            onClose={() => setIsWakeModalOpen(false)}
+            agent={selectedAgent}
+            ownerId={ownerId}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // Main Org Chart View
+  // -------------------------------------------------------------------------
   return (
-    <div className="flex flex-col gap-6 py-2 pb-12 select-none">
+    <div className="flex flex-col gap-6 py-2 pb-12 select-none animate-fade-in">
       {/* Top Banner & AI Architect Bar */}
       <header className="glass-panel flex flex-col md:flex-row justify-between items-start md:items-center gap-4 rounded-2xl p-5 shadow-xs">
         <div className="flex flex-col gap-1">
@@ -331,7 +803,7 @@ export function TeamScreen({
               <button
                 type="button"
                 onClick={() => setAuditResult(null)}
-                className="text-muted-foreground hover:text-foreground text-xs p-1"
+                className="text-muted-foreground hover:text-foreground text-xs p-1 cursor-pointer"
                 title="Dismiss"
               >
                 <X className="size-3.5" />
@@ -391,7 +863,7 @@ export function TeamScreen({
               <button
                 type="button"
                 onClick={() => setIsEditingExecutive(!isEditingExecutive)}
-                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition"
+                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition cursor-pointer"
                 title="Edit Executive Details"
               >
                 <Edit3 className="size-3.5" />
@@ -421,9 +893,9 @@ export function TeamScreen({
                 <button
                   type="button"
                   onClick={handleSaveExecutive}
-                  className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'w-full text-[11px]')}
+                  className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'w-full text-[11px] cursor-pointer')}
                 >
-                  Save Executive
+                  Done
                 </button>
               </div>
             ) : (
@@ -461,12 +933,10 @@ export function TeamScreen({
                   <div
                     key={agent.id}
                     onClick={() => setSelectedId(agent.id)}
-                    onDoubleClick={() => {
-                      window.location.hash = href({ name: 'dev' });
-                    }}
-                    title="Click to select inspector · double-click for dev terminal"
+                    onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
+                    title="Click to select · double-click to open workspace"
                     className={cn(
-                      'glass-panel w-72 p-4 rounded-2xl cursor-pointer transition-all duration-200 shadow-2xs hover:shadow-md border',
+                      'glass-panel w-72 p-4 rounded-2xl cursor-pointer transition-all duration-200 shadow-2xs hover:shadow-md border group relative',
                       isSelected
                         ? 'border-foreground/80 ring-2 ring-foreground/20'
                         : 'border-border/60 hover:border-foreground/40'
@@ -489,6 +959,32 @@ export function TeamScreen({
                     <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
                       {agent.role || 'Strategic planning, job delegation & substrate coordination'}
                     </p>
+
+                    {/* Quick action buttons on card */}
+                    <div className="flex items-center justify-end gap-1.5 mt-3 pt-2 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleOpenTerminal(agent);
+                        }}
+                        title="Terminal"
+                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
+                      >
+                        <TerminalIcon className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenAgentWorkspace(agent.id);
+                        }}
+                        title="Open Workspace"
+                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </button>
+                    </div>
                   </div>
                 );
               })
@@ -521,12 +1017,10 @@ export function TeamScreen({
                   <div
                     key={agent.id}
                     onClick={() => setSelectedId(agent.id)}
-                    onDoubleClick={() => {
-                      window.location.hash = href({ name: 'dev' });
-                    }}
-                    title="Click to select · double-click for dev terminal"
+                    onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
+                    title="Click to select · double-click to open workspace"
                     className={cn(
-                      'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border',
+                      'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border group',
                       isSelected
                         ? 'border-indigo-500 ring-2 ring-indigo-500/20'
                         : 'border-border/60 hover:border-foreground/40'
@@ -550,6 +1044,31 @@ export function TeamScreen({
                     </div>
                     <div className="text-xs text-muted-foreground mt-2 truncate">
                       {agent.role || 'Autonomous code & runtime implementation'}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-1.5 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleOpenTerminal(agent);
+                        }}
+                        title="Terminal"
+                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
+                      >
+                        <TerminalIcon className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenAgentWorkspace(agent.id);
+                        }}
+                        title="Open Workspace"
+                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </button>
                     </div>
                   </div>
                 );
@@ -578,12 +1097,10 @@ export function TeamScreen({
                   <div
                     key={agent.id}
                     onClick={() => setSelectedId(agent.id)}
-                    onDoubleClick={() => {
-                      window.location.hash = href({ name: 'dev' });
-                    }}
-                    title="Click to select · double-click for dev terminal"
+                    onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
+                    title="Click to select · double-click to open workspace"
                     className={cn(
-                      'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border',
+                      'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border group',
                       isSelected
                         ? 'border-emerald-500 ring-2 ring-emerald-500/20'
                         : 'border-border/60 hover:border-foreground/40'
@@ -604,6 +1121,31 @@ export function TeamScreen({
                     </div>
                     <div className="text-xs text-muted-foreground mt-2 truncate">
                       {agent.role || 'Independent verification, test harness & epistemic truth'}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-1.5 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleOpenTerminal(agent);
+                        }}
+                        title="Terminal"
+                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
+                      >
+                        <TerminalIcon className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenAgentWorkspace(agent.id);
+                        }}
+                        title="Open Workspace"
+                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </button>
                     </div>
                   </div>
                 );
@@ -636,12 +1178,10 @@ export function TeamScreen({
                   <div
                     key={agent.id}
                     onClick={() => setSelectedId(agent.id)}
-                    onDoubleClick={() => {
-                      window.location.hash = href({ name: 'dev' });
-                    }}
-                    title="Click to select · double-click for dev terminal"
+                    onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
+                    title="Click to select · double-click to open workspace"
                     className={cn(
-                      'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border',
+                      'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border group',
                       isSelected
                         ? 'border-amber-500 ring-2 ring-amber-500/20'
                         : 'border-border/60 hover:border-foreground/40'
@@ -660,6 +1200,31 @@ export function TeamScreen({
                     <div className="text-xs text-muted-foreground mt-2 truncate">
                       {agent.role || 'Substrate maintenance, git sync & runtime host'}
                     </div>
+
+                    <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-1.5 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleOpenTerminal(agent);
+                        }}
+                        title="Terminal"
+                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
+                      >
+                        <TerminalIcon className="size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenAgentWorkspace(agent.id);
+                        }}
+                        title="Open Workspace"
+                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -671,7 +1236,7 @@ export function TeamScreen({
         </div>
       </div>
 
-      {/* Selected Agent Details Pane */}
+      {/* Selected Agent Details Pane (v1 parity + quick actions) */}
       {selectedAgent && (
         <div className="glass-panel border-border/80 p-6 rounded-2xl shadow-sm space-y-4">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -683,9 +1248,9 @@ export function TeamScreen({
                 <h2 className="text-base font-bold text-foreground flex items-center gap-2">
                   <span>{selectedAgent.name}</span>
                   <span className="text-xs font-mono text-muted-foreground font-normal">({selectedAgent.id})</span>
-                  <Tag tone={qualityIds.has(selectedAgent.id) ? 'verified' : 'quiet'}>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase glass-panel">
                     Lane: {selectedAgent.lane || (qualityIds.has(selectedAgent.id) ? 'verification' : 'engineering')}
-                  </Tag>
+                  </span>
                   {selectedAgent.statusState === 'rate_limited' && (
                     <Tag tone="risk">Paused: rate limited</Tag>
                   )}
@@ -697,13 +1262,14 @@ export function TeamScreen({
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              <a
-                href={href({ name: 'dev' })}
-                className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}
+              <button
+                type="button"
+                onClick={() => handleOpenAgentWorkspace(selectedAgent.id)}
+                className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
               >
-                <TerminalIcon className="size-3.5" />
-                <span>Dev Sessions</span>
-              </a>
+                <ExternalLink className="size-3.5" />
+                <span>Open Agent Workspace</span>
+              </button>
 
               <button
                 type="button"
@@ -711,7 +1277,7 @@ export function TeamScreen({
                   setEditingAgent(selectedAgent);
                   setIsEditModalOpen(true);
                 }}
-                className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}
+                className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
               >
                 <Edit3 className="size-3.5" />
                 <span>Edit Role</span>
@@ -719,8 +1285,17 @@ export function TeamScreen({
 
               <button
                 type="button"
+                onClick={() => void handleOpenTerminal(selectedAgent)}
+                className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
+              >
+                <TerminalIcon className="size-3.5" />
+                <span>Terminal</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setIsWakeModalOpen(true)}
-                className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'cursor-pointer')}
+                className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
               >
                 <Send className="size-3.5" />
                 <span>Wake / Prompt</span>
@@ -887,7 +1462,6 @@ function SpawnAgentModal({
     let slug = clean.replace(/[^a-z0-9]+/g, '_').slice(0, 16).replace(/^_+|_+$/g, '');
     if (!slug) slug = `agent_${Date.now().toString(36)}`;
 
-    // If duplicate id, append suffix
     let finalId = slug;
     let count = 1;
     while (existingIdentities.some((i) => i.id === finalId)) {
@@ -940,7 +1514,6 @@ function SpawnAgentModal({
 
       let createdIdentity: Identity;
 
-      // Try spawnAgent endpoint first (which supports auto-wake)
       try {
         const spawnRes = await client.spawnAgent({
           id: id.trim().toLowerCase(),
@@ -965,7 +1538,6 @@ function SpawnAgentModal({
           }
         }
       } catch {
-        // Fallback to createIdentity
         createdIdentity = await client.createIdentity({
           id: id.trim().toLowerCase(),
           name: name.trim(),
@@ -1014,7 +1586,7 @@ function SpawnAgentModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06]"
+            className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] cursor-pointer"
           >
             <X className="size-4" />
           </button>
@@ -1259,7 +1831,7 @@ function EditRoleModal({ isOpen, onClose, identity, onSaved }: EditRoleModalProp
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06]"
+            className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] cursor-pointer"
           >
             <X className="size-4" />
           </button>
@@ -1424,7 +1996,7 @@ function WakeAgentModal({ isOpen, onClose, agent, ownerId }: WakeAgentModalProps
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-muted-foreground hover:text-foreground"
+            className="p-1 rounded-lg text-muted-foreground hover:text-foreground cursor-pointer"
           >
             <X className="size-4" />
           </button>

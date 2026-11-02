@@ -182,6 +182,7 @@ function Screen({
           identities={identities}
           sessions={sessions}
           teams={teams}
+          jobs={jobs}
           selectedAgentId={route.agentId}
           ownerName={ownerName}
           ownerId={ownerId}
