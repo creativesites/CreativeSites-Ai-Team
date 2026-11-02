@@ -3843,59 +3843,65 @@ export class Repo {
         this.write(() => {
           // 1. Projects
           for (const p of legacyProjects) {
-            const pId = String(p.id);
-            const pTitle = String(p.title || p.name || pId);
-            const pDesc = p.description ? String(p.description) : null;
-            const pRepo = p.repo ? String(p.repo) : null;
-            const pTargetDate = p.target_date ? String(p.target_date) : null;
-            const pStatus = p.status ? String(p.status) : 'active';
-            const pCreated = p.created_at ? String(p.created_at) : now();
-            const pUpdated = p.updated_at ? String(p.updated_at) : now();
+            try {
+              const pId = String(p.id);
+              const pTitle = String(p.title || p.name || pId);
+              const pDesc = p.description ? String(p.description) : null;
+              const pRepo = p.repo ? String(p.repo) : null;
+              const pTargetDate = p.target_date ? String(p.target_date) : null;
+              const pStatus = p.status ? String(p.status) : 'active';
+              const pCreated = p.created_at ? String(p.created_at) : now();
+              const pUpdated = p.updated_at ? String(p.updated_at) : now();
 
-            const existing = this.one('SELECT id FROM projects WHERE id = ? OR name = ?', pId, pTitle);
-            if (existing) {
-              this.db.prepare(
-                `UPDATE projects SET
-                   target_date = COALESCE(?, target_date),
-                   status = COALESCE(status, ?),
-                   repo = COALESCE(repo, root_path, ?),
-                   updated_at = ?
-                 WHERE id = ?`
-              ).run(pTargetDate, pStatus, pRepo, pUpdated, existing.id as string);
-            } else {
-              this.db.prepare(
-                `INSERT INTO projects (id, name, slug, description, root_path, repo, status, target_date, team_id, settings, archived, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creativesites', '{}', 0, ?, ?)`
-              ).run(
-                pId,
-                pTitle,
-                slugify(pTitle),
-                pDesc,
-                pRepo,
-                pRepo,
-                pStatus,
-                pTargetDate,
-                pCreated,
-                pUpdated
-              );
+              const existing = this.one('SELECT id FROM projects WHERE id = ? OR name = ?', pId, pTitle);
+              if (existing) {
+                this.db.prepare(
+                  `UPDATE projects SET
+                     target_date = COALESCE(?, target_date),
+                     status = COALESCE(status, ?),
+                     repo = COALESCE(repo, root_path, ?),
+                     updated_at = ?
+                   WHERE id = ?`
+                ).run(pTargetDate, pStatus, pRepo, pUpdated, existing.id as string);
+              } else {
+                this.db.prepare(
+                  `INSERT OR IGNORE INTO projects (id, name, slug, description, root_path, repo, status, target_date, team_id, settings, archived, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creativesites', '{}', 0, ?, ?)`
+                ).run(
+                  pId,
+                  pTitle,
+                  slugify(pTitle),
+                  pDesc,
+                  pRepo,
+                  pRepo,
+                  pStatus,
+                  pTargetDate,
+                  pCreated,
+                  pUpdated
+                );
+              }
+            } catch {
+              // continue with remaining projects
             }
           }
 
           // 2. Milestones
           for (const m of legacyMilestones) {
-            this.db.prepare(
-              `INSERT OR IGNORE INTO milestones (id, project_id, title, description, status, due_at, completed_at, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-            ).run(
-              String(m.id),
-              m.project_id ? String(m.project_id) : null,
-              String(m.title),
-              m.description ? String(m.description) : null,
-              m.status ? String(m.status) : 'pending',
-              m.due_at ? String(m.due_at) : null,
-              m.completed_at ? String(m.completed_at) : null,
-              m.created_at ? String(m.created_at) : now()
-            );
+            try {
+              this.db.prepare(
+                `INSERT OR IGNORE INTO milestones (id, project_id, title, description, status, due_at, completed_at, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+              ).run(
+                String(m.id),
+                m.project_id ? String(m.project_id) : null,
+                String(m.title),
+                m.description ? String(m.description) : null,
+                m.status ? String(m.status) : 'pending',
+                m.due_at ? String(m.due_at) : null,
+                m.completed_at ? String(m.completed_at) : null,
+                m.created_at ? String(m.created_at) : now()
+              );
+            } catch {}
           }
 
           // 3. Tasks -> project_tasks

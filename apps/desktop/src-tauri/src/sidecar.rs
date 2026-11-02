@@ -200,23 +200,37 @@ pub fn stop(sidecar: &Sidecar) {
 mod tests {
     use super::*;
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn test_runtime_dir_resolution() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let prev = std::env::var_os("MYAOS_RUNTIME_DIR");
+        std::env::remove_var("MYAOS_RUNTIME_DIR");
         let dir = runtime_dir();
         assert!(
             dir.join("src").join("main.ts").exists(),
             "Expected runtime src/main.ts to exist at {}",
             dir.display()
         );
+        if let Some(val) = prev {
+            std::env::set_var("MYAOS_RUNTIME_DIR", val);
+        }
     }
 
     #[test]
     fn test_runtime_dir_env_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let prev = std::env::var_os("MYAOS_RUNTIME_DIR");
         let custom = std::env::temp_dir().join("custom-runtime");
         std::env::set_var("MYAOS_RUNTIME_DIR", &custom);
         let resolved = runtime_dir();
         assert_eq!(resolved, custom);
-        std::env::remove_var("MYAOS_RUNTIME_DIR");
+        if let Some(val) = prev {
+            std::env::set_var("MYAOS_RUNTIME_DIR", val);
+        } else {
+            std::env::remove_var("MYAOS_RUNTIME_DIR");
+        }
     }
 
     #[test]
