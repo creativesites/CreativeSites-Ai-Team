@@ -193,7 +193,7 @@ Enable auto-mirror/ingest with `POST /v1/settings {"bridge":{"enabled":true,"inb
 | POST | `/v1/design-boards/:id/runs` | Starts an agent session on the board; `202` with the `DesignRun`. Body is `StartDesignRunInput`: `kind` (`new`, `from-code`, `iterate`), `prompt` (required), `device` (`phone`, `tablet`, `desktop`, `custom`), `variants` (`new`, 1 to 4), `scope` (`from-code`: screens or paths, empty means the whole app), `frameIds` (`iterate`, at least one), `action` (`update` or `fork`, `iterate`), `pinnedElement` (`iterate`), `agentId`, `adapterId`, `actorId`. `from-code` needs a board linked to a project (400 otherwise). |
 | GET | `/v1/design-boards/:id/runs` | Runs on the board: `sessionId`, `kind`, `prompt`, `state`, `error`, `framesTouched`. |
 | POST | `/v1/design-boards/:id/runs/:sessionId/cancel` | `{actorId?}`. Refused (400) unless the session is a run on this board. |
-| POST | `/v1/design-boards/:id/frames` | Creates a frame by hand. Its HTML file goes to `<project root>/.myaos/designs/<board>/` (or the first workspace root when the board has no project), not to the agent folder. |
+| POST | `/v1/design-boards/:id/frames` | Creates a frame by hand. Its HTML file goes to the board folder `~/.myaos/designs/<board>/`, like agent-built frames. |
 | PATCH/DELETE | `/v1/design-frames/:id` | PATCH with `htmlContent` also rewrites the frame's file. |
 | POST | `/v1/design-frames/:id/approve` | `{actorId, note?, targetFiles?, dispatchBuildTask?, assigneeId?}`. Records OBSERVED artifact evidence for this exact frame version. |
 | POST | `/v1/design-boards/:id/generate`, `/extract` | **501**. Template generation and extraction were removed. Use a run instead. |
