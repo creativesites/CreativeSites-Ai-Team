@@ -11,6 +11,7 @@ import {
   ExternalLink,
   GitCommit,
   GitBranch,
+  GitCompare,
   FolderTree,
   Play,
   Copy,
@@ -37,6 +38,7 @@ import type {
   CreateRepoInput,
   CreateRoomInput,
   DirectoryListing,
+  GitBranchItem,
   GitCommitItem,
   GitDiffSummary,
   GitWorktreeItem,
@@ -817,30 +819,79 @@ function GitInspectorTab({
   rootState?: WorkspaceState | null;
 }) {
   const { client } = useRuntime();
+  const [branches, setBranches] = React.useState<GitBranchItem[]>([]);
+  const [selectedBranch, setSelectedBranch] = React.useState<string>(rootState?.branch || '');
+  const [diffMode, setDiffMode] = React.useState<'working' | 'compare'>('working');
+  const [commitLimit, setCommitLimit] = React.useState<number>(20);
   const [commits, setCommits] = React.useState<GitCommitItem[]>([]);
   const [diffSummary, setDiffSummary] = React.useState<GitDiffSummary | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
   const [copiedHash, setCopiedHash] = React.useState<string | null>(null);
   const [showUnifiedDiff, setShowUnifiedDiff] = React.useState(false);
 
-  const fetchGitData = React.useCallback(async () => {
+  // 1. Fetch available branches
+  const fetchBranches = React.useCallback(async () => {
     if (!client) return;
-    setLoading(true);
     try {
-      const [c, d] = await Promise.all([
-        client.projectCommits(projectId, 15).catch(() => []),
-        client.projectDiff(projectId).catch(() => ({ diff: '', files: [] })),
-      ]);
-      setCommits(c);
-      setDiffSummary(d);
-    } finally {
-      setLoading(false);
+      const b = await client.projectBranches(projectId);
+      setBranches(b);
+      // Auto-select current branch if not yet set
+      setSelectedBranch((prev) => {
+        if (prev && b.some((branch) => branch.name === prev)) return prev;
+        const current = b.find((branch) => branch.isCurrent);
+        return current?.name || rootState?.branch || b[0]?.name || '';
+      });
+    } catch {
+      setBranches([]);
     }
-  }, [client, projectId]);
+  }, [client, projectId, rootState?.branch]);
+
+  // 2. Fetch commits & diff for selected branch and diff mode
+  const fetchBranchGitData = React.useCallback(
+    async (branch: string, mode: 'working' | 'compare', limit: number, isInitial = false) => {
+      if (!client) return;
+      if (isInitial) setLoading(true);
+      else setRefreshing(true);
+
+      try {
+        const [c, d] = await Promise.all([
+          client.projectCommits(projectId, limit, branch || undefined).catch(() => []),
+          client
+            .projectDiff(
+              projectId,
+              branch || undefined,
+              mode === 'compare' ? 'main' : undefined,
+              mode
+            )
+            .catch(() => ({ diff: '', files: [], truncated: false })),
+        ]);
+        setCommits(c);
+        setDiffSummary(d);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [client, projectId]
+  );
 
   React.useEffect(() => {
-    fetchGitData();
-  }, [fetchGitData]);
+    fetchBranches();
+  }, [fetchBranches]);
+
+  React.useEffect(() => {
+    if (selectedBranch || branches.length > 0) {
+      fetchBranchGitData(selectedBranch, diffMode, commitLimit, loading);
+    }
+  }, [fetchBranchGitData, selectedBranch, diffMode, commitLimit]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await fetchBranches();
+    await fetchBranchGitData(selectedBranch, diffMode, commitLimit, false);
+    setRefreshing(false);
+  };
 
   const copyHash = (hash: string) => {
     navigator.clipboard.writeText(hash);
@@ -848,51 +899,148 @@ function GitInspectorTab({
     setTimeout(() => setCopiedHash(null), 1500);
   };
 
+  const localBranches = branches.filter((b) => !b.isRemote);
+  const remoteBranches = branches.filter((b) => b.isRemote);
+  const currentBranchItem = branches.find((b) => b.name === selectedBranch);
+  const isCurrentCheckedOut = currentBranchItem?.isCurrent ?? (selectedBranch === rootState?.branch);
+  const changedFileCount = diffSummary?.files?.length ?? 0;
+  const hasChangedFiles = changedFileCount > 0;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-6 text-xs text-muted-foreground">
-        <RefreshCw className="mr-2 size-3.5 animate-spin" />
-        Inspecting Git commits & working diff…
+      <div className="flex items-center justify-center p-8 text-xs text-muted-foreground">
+        <RefreshCw className="mr-2 size-4 animate-spin text-primary" />
+        Inspecting Git branches, commits & diffs…
       </div>
     );
   }
 
-  const hasDirtyFiles = (diffSummary?.files?.length ?? 0) > 0;
-
   return (
     <div className="flex flex-col gap-4">
-      {/* Top Working Tree Status Banner */}
+      {/* Top Controls: Branch Selector, Comparison Mode & Actions */}
       <div className="glass-panel flex flex-wrap items-center justify-between gap-3 rounded-lg p-3 text-xs">
-        <div className="flex items-center gap-2">
-          <GitBranch className="size-4 text-muted-foreground" />
-          <span className="font-medium">Branch:</span>
-          <span className="font-mono text-foreground">{rootState?.branch ?? 'unknown'}</span>
-          <span className="text-muted-foreground">·</span>
-          {hasDirtyFiles ? (
-            <span className="text-amber-400 font-medium">
-              {diffSummary!.files.length} changed file{diffSummary!.files.length === 1 ? '' : 's'}
+        {/* Branch Selector */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <GitBranch className="size-3.5 text-primary" />
+            <span className="font-semibold text-foreground">Branch:</span>
+          </div>
+
+          <div className="relative">
+            <select
+              value={selectedBranch}
+              onChange={(e) => setSelectedBranch(e.target.value)}
+              aria-label="Select git branch"
+              className="appearance-none rounded border border-border/60 bg-background/80 py-1 pl-2.5 pr-8 font-mono text-xs text-foreground shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {branches.length === 0 ? (
+                <option value={selectedBranch || 'HEAD'}>{selectedBranch || 'HEAD'}</option>
+              ) : (
+                <>
+                  {localBranches.length > 0 && (
+                    <optgroup label="Local Branches">
+                      {localBranches.map((b) => (
+                        <option key={b.name} value={b.name}>
+                          {b.name} {b.isCurrent ? '(current)' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {remoteBranches.length > 0 && (
+                    <optgroup label="Remote Branches">
+                      {remoteBranches.map((b) => (
+                        <option key={b.name} value={b.name}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </>
+              )}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          </div>
+
+          {isCurrentCheckedOut && (
+            <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
+              Checked Out
             </span>
-          ) : (
-            <span className="text-emerald-400 font-medium">Working tree is clean</span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={fetchGitData}
-          className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'gap-1')}
-        >
-          <RefreshCw className="size-3" />
-          Refresh
-        </button>
+
+        {/* Diff Mode Switcher & Commit Limit & Refresh */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Mode Switcher */}
+          <div className="flex items-center rounded-md border border-border/40 bg-background/50 p-0.5 text-[11px]">
+            <button
+              type="button"
+              onClick={() => setDiffMode('working')}
+              className={cn(
+                'rounded px-2.5 py-1 font-medium transition-colors',
+                diffMode === 'working'
+                  ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              Working Changes
+            </button>
+            <button
+              type="button"
+              onClick={() => setDiffMode('compare')}
+              className={cn(
+                'rounded px-2.5 py-1 font-medium transition-colors flex items-center gap-1',
+                diffMode === 'compare'
+                  ? 'bg-primary text-primary-foreground font-semibold shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <GitCompare className="size-3" />
+              Compare vs main
+            </button>
+          </div>
+
+          {/* Refresh Button */}
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'gap-1')}
+          >
+            <RefreshCw className={cn('size-3', refreshing && 'animate-spin')} />
+            Refresh
+          </button>
+        </div>
       </div>
 
-      {/* Working Tree Changes / Diff View */}
-      {hasDirtyFiles && (
-        <div className="glass-panel flex flex-col gap-2.5 rounded-lg p-3 text-xs">
-          <div className="flex items-center justify-between">
+      {/* Diff View Section */}
+      <div className="glass-panel flex flex-col gap-2.5 rounded-lg p-3 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
             <span className="font-semibold text-muted-foreground uppercase tracking-wider">
-              Uncommitted Changes ({diffSummary!.files.length})
+              {diffMode === 'working'
+                ? isCurrentCheckedOut
+                  ? 'Uncommitted Working Tree Changes'
+                  : `Working Tree vs ${selectedBranch}`
+                : `Branch Diff: ${selectedBranch} vs main`}
             </span>
+            <span className="text-muted-foreground">·</span>
+            {hasChangedFiles ? (
+              <span className="font-medium text-amber-400">
+                {changedFileCount} file{changedFileCount === 1 ? '' : 's'} changed
+              </span>
+            ) : (
+              <span className="font-medium text-emerald-400">
+                {diffMode === 'working' ? 'Working tree is clean' : 'No differences with main'}
+              </span>
+            )}
+            {diffSummary?.truncated && (
+              <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400 border border-amber-500/20">
+                Truncated (256 KB)
+              </span>
+            )}
+          </div>
+
+          {hasChangedFiles && (
             <button
               type="button"
               onClick={() => setShowUnifiedDiff(!showUnifiedDiff)}
@@ -900,9 +1048,12 @@ function GitInspectorTab({
             >
               {showUnifiedDiff ? 'Hide diff' : 'Show unified diff'}
             </button>
-          </div>
+          )}
+        </div>
 
-          <div className="flex flex-wrap gap-1.5">
+        {/* Changed Files Pill List */}
+        {hasChangedFiles ? (
+          <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto">
             {diffSummary!.files.map((f) => (
               <div
                 key={f.path}
@@ -913,7 +1064,8 @@ function GitInspectorTab({
                     'font-bold',
                     f.status === 'M' && 'text-amber-400',
                     (f.status === 'A' || f.status === '??') && 'text-emerald-400',
-                    f.status === 'D' && 'text-rose-400'
+                    f.status === 'D' && 'text-rose-400',
+                    f.status.startsWith('R') && 'text-cyan-400'
                   )}
                 >
                   {f.status}
@@ -922,41 +1074,71 @@ function GitInspectorTab({
               </div>
             ))}
           </div>
+        ) : (
+          <p className="text-[11px] text-muted-foreground">
+            {diffMode === 'working'
+              ? 'All files match the selected branch. No uncommitted modifications.'
+              : `Branch "${selectedBranch}" is synchronized with main branch.`}
+          </p>
+        )}
 
-          {showUnifiedDiff && diffSummary?.diff && (
-            <div className="mt-2 max-h-72 overflow-y-auto rounded bg-black/60 p-3 font-mono text-[11px] text-foreground leading-relaxed">
-              {diffSummary.diff.split('\n').map((line, idx) => {
-                let colorClass = 'text-muted-foreground';
-                if (line.startsWith('+') && !line.startsWith('+++')) {
-                  colorClass = 'text-emerald-400 bg-emerald-500/10 block px-1 -mx-1';
-                } else if (line.startsWith('-') && !line.startsWith('---')) {
-                  colorClass = 'text-rose-400 bg-rose-500/10 block px-1 -mx-1';
-                } else if (line.startsWith('@@')) {
-                  colorClass = 'text-cyan-400 font-semibold block px-1 -mx-1';
-                }
-                return (
-                  <div key={idx} className={colorClass}>
-                    {line || ' '}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+        {/* Unified Diff Box */}
+        {showUnifiedDiff && diffSummary?.diff && (
+          <div className="mt-2 max-h-80 overflow-y-auto rounded bg-black/60 p-3 font-mono text-[11px] text-foreground leading-relaxed">
+            {diffSummary.diff.split('\n').map((line, idx) => {
+              let colorClass = 'text-muted-foreground';
+              if (line.startsWith('+') && !line.startsWith('+++')) {
+                colorClass = 'text-emerald-400 bg-emerald-500/10 block px-1 -mx-1';
+              } else if (line.startsWith('-') && !line.startsWith('---')) {
+                colorClass = 'text-rose-400 bg-rose-500/10 block px-1 -mx-1';
+              } else if (line.startsWith('@@')) {
+                colorClass = 'text-cyan-400 font-semibold block px-1 -mx-1';
+              }
+              return (
+                <div key={idx} className={colorClass}>
+                  {line || ' '}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-      {/* Commits List */}
+      {/* Commits List Section */}
       <div className="flex flex-col gap-2">
-        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          Recent Git Commits ({commits.length})
-        </span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Commits on {selectedBranch || 'current branch'} ({commits.length})
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span>Show:</span>
+            {[15, 30, 50].map((limit) => (
+              <button
+                key={limit}
+                type="button"
+                onClick={() => setCommitLimit(limit)}
+                className={cn(
+                  'rounded px-1.5 py-0.5 font-mono text-[10px]',
+                  commitLimit === limit
+                    ? 'bg-foreground/20 text-foreground font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {limit}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {commits.length > 0 ? (
           <div className="flex flex-col gap-1.5">
             {commits.map((commit) => (
               <div
                 key={commit.hash}
-                className="glass-panel flex flex-wrap items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs"
+                className="glass-panel flex flex-wrap items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs hover:border-border/80 transition-colors"
               >
                 <div className="flex min-w-0 flex-1 items-center gap-2.5">
                   <GitCommit className="size-3.5 text-muted-foreground shrink-0" />
@@ -973,11 +1155,13 @@ function GitInspectorTab({
                       <Copy className="size-2.5 opacity-50" />
                     )}
                   </button>
-                  <span className="font-medium text-foreground truncate">{commit.subject}</span>
+                  <span className="font-medium text-foreground truncate" title={commit.subject}>
+                    {commit.subject}
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground shrink-0">
-                  <span>{commit.author}</span>
+                  <span className="font-medium text-foreground/80">{commit.author}</span>
                   <span>·</span>
                   <span>{commit.date ? new Date(commit.date).toLocaleDateString() : ''}</span>
                 </div>
@@ -985,7 +1169,7 @@ function GitInspectorTab({
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground">No commits recorded in this repository yet.</p>
+          <p className="text-xs text-muted-foreground">No commits recorded on this branch yet.</p>
         )}
       </div>
     </div>

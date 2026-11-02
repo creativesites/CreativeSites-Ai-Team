@@ -111,6 +111,20 @@ test('a project can be attached from a folder, with a real git state', async () 
   assert.equal(typeof status.repos[0].state.branch, 'string');
   assert.equal(status.repos[0].state.dirty, false);
 
+  const branches = await ok('GET', `/v1/projects/${created.project.id}/branches`);
+  assert.ok(Array.isArray(branches));
+  assert.ok(branches.length > 0);
+  assert.equal(branches[0].isCurrent, true);
+
+  const commits = await ok('GET', `/v1/projects/${created.project.id}/commits?branch=${encodeURIComponent(branches[0].name)}`);
+  assert.ok(Array.isArray(commits));
+  assert.equal(commits.length, 1);
+  assert.equal(commits[0].subject, 'init');
+
+  const diff = await ok('GET', `/v1/projects/${created.project.id}/diff?branch=${encodeURIComponent(branches[0].name)}&mode=working`);
+  assert.ok(Array.isArray(diff.files));
+  assert.equal(diff.files.length, 0);
+
   const room = await ok('POST', '/v1/rooms', { name: 'myavana-chatbot', projectId: created.project.id });
   assert.equal(room.projectId, created.project.id);
   assert.equal(room.kind, 'project');

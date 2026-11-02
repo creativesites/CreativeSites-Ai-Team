@@ -24,6 +24,13 @@ export interface WorkspaceState {
   error: string | null;
 }
 
+export interface GitBranchItem {
+  name: string;
+  ref: string;
+  isCurrent: boolean;
+  isRemote: boolean;
+}
+
 export interface GitCommitItem {
   hash: string;
   shortHash: string;
@@ -35,6 +42,7 @@ export interface GitCommitItem {
 export interface GitDiffSummary {
   diff: string;
   files: { path: string; status: string }[];
+  truncated?: boolean;
 }
 
 export interface ProjectFileItem {

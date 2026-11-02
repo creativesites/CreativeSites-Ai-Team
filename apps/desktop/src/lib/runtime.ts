@@ -48,6 +48,7 @@ import type {
   Evidence,
   ExtractDesignInput,
   GenerateDesignInput,
+  GitBranchItem,
   GitCommitItem,
   GitDiffSummary,
   GitWorktreeItem,
@@ -225,10 +226,40 @@ export class RuntimeClient {
       'GET',
       `/v1/projects/${encodeURIComponent(id)}/status`
     );
-  projectCommits = (projectId: string, limit = 15) =>
-    this.request<GitCommitItem[]>('GET', `/v1/projects/${encodeURIComponent(projectId)}/commits?limit=${limit}`);
-  projectDiff = (projectId: string) =>
-    this.request<GitDiffSummary>('GET', `/v1/projects/${encodeURIComponent(projectId)}/diff`);
+  projectBranches = (projectId: string, root?: string) =>
+    this.request<GitBranchItem[]>(
+      'GET',
+      `/v1/projects/${encodeURIComponent(projectId)}/branches${root ? `?root=${encodeURIComponent(root)}` : ''}`
+    );
+  projectCommits = (projectId: string, limit = 15, branch?: string, root?: string) => {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', String(limit));
+    if (branch) params.set('branch', branch);
+    if (root) params.set('root', root);
+    const qs = params.toString();
+    return this.request<GitCommitItem[]>(
+      'GET',
+      `/v1/projects/${encodeURIComponent(projectId)}/commits${qs ? `?${qs}` : ''}`
+    );
+  };
+  projectDiff = (
+    projectId: string,
+    branch?: string,
+    base?: string,
+    mode?: 'working' | 'compare',
+    root?: string
+  ) => {
+    const params = new URLSearchParams();
+    if (branch) params.set('branch', branch);
+    if (base) params.set('base', base);
+    if (mode) params.set('mode', mode);
+    if (root) params.set('root', root);
+    const qs = params.toString();
+    return this.request<GitDiffSummary>(
+      'GET',
+      `/v1/projects/${encodeURIComponent(projectId)}/diff${qs ? `?${qs}` : ''}`
+    );
+  };
   projectFiles = (projectId: string, subPath = '', limit = 150, root?: string) =>
     this.request<ProjectFileItem[]>(
       'GET',

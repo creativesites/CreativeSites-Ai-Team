@@ -417,15 +417,25 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('GET', '/v1/projects/:id', (ctx) => ({ status: 200, body: repo.getProject(ctx.params.id!) })),
     route('POST', '/v1/projects/:id', (ctx) => ({ status: 200, body: repo.updateProject(ctx.params.id!, ctx.body as T.UpdateProjectInput) })),
     route('GET', '/v1/projects/:id/status', (ctx) => ({ status: 200, body: projectStatus(ctx.params.id!) })),
+    route('GET', '/v1/projects/:id/branches', (ctx) => {
+      const project = repo.getProject(ctx.params.id!);
+      const root = ctx.query.get('root') || project.rootPath || project.repos[0]?.path;
+      return { status: 200, body: root ? workspaces.gitBranches(root) : [] };
+    }),
     route('GET', '/v1/projects/:id/commits', (ctx) => {
       const project = repo.getProject(ctx.params.id!);
-      const root = project.rootPath || project.repos[0]?.path;
-      return { status: 200, body: root ? workspaces.gitCommits(root, Number(ctx.query.get('limit') ?? 15)) : [] };
+      const root = ctx.query.get('root') || project.rootPath || project.repos[0]?.path;
+      const limit = Number(ctx.query.get('limit') ?? 15);
+      const branch = ctx.query.get('branch') || undefined;
+      return { status: 200, body: root ? workspaces.gitCommits(root, limit, branch) : [] };
     }),
     route('GET', '/v1/projects/:id/diff', (ctx) => {
       const project = repo.getProject(ctx.params.id!);
-      const root = project.rootPath || project.repos[0]?.path;
-      return { status: 200, body: root ? workspaces.gitDiff(root) : { diff: '', files: [] } };
+      const root = ctx.query.get('root') || project.rootPath || project.repos[0]?.path;
+      const branch = ctx.query.get('branch') || undefined;
+      const base = ctx.query.get('base') || undefined;
+      const mode = (ctx.query.get('mode') as 'working' | 'compare') || undefined;
+      return { status: 200, body: root ? workspaces.gitDiff(root, { branch, base, mode }) : { diff: '', files: [], truncated: false } };
     }),
     route('GET', '/v1/projects/:id/files', (ctx) => {
       const project = repo.getProject(ctx.params.id!);

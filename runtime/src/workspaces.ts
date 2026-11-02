@@ -2,7 +2,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { WorkspaceState } from './api/types.ts';
+import type { GitBranchItem, GitCommitItem, GitDiffSummary, WorkspaceState } from './api/types.ts';
 
 // Git/workspace helpers. The runtime runs git itself, so the result is Observed
 // state; a failure is returned as unknown, never as "clean".
@@ -208,19 +208,61 @@ export function removeWorktree(repoPath: string, worktreePath: string): void {
   }
 }
 
-export interface GitCommitItem {
-  hash: string;
-  shortHash: string;
-  subject: string;
-  author: string;
-  date: string;
-}
+export type { GitBranchItem, GitCommitItem, GitDiffSummary };
 
-export function gitCommits(dir: string, limit = 15): GitCommitItem[] {
+export function gitBranches(dir: string): GitBranchItem[] {
   const resolved = path.resolve(expand(dir));
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) return [];
   try {
-    const raw = git(resolved, ['log', `-n`, String(limit), '--format=%H|%h|%s|%an|%cI']);
+    const raw = git(resolved, ['branch', '-a', '--format=%(HEAD)|%(refname)|%(refname:short)']);
+    if (!raw) return [];
+    const lines = raw.split('\n').filter(Boolean);
+    const branches: GitBranchItem[] = [];
+    const seenNames = new Set<string>();
+
+    for (const line of lines) {
+      const parts = line.split('|');
+      const isCurrent = parts[0]?.trim() === '*';
+      const ref = parts[1]?.trim() || '';
+      const shortName = parts[2]?.trim() || '';
+
+      if (!shortName || shortName.endsWith('/HEAD') || ref.includes('HEAD')) {
+        continue;
+      }
+
+      if (!seenNames.has(shortName)) {
+        seenNames.add(shortName);
+        branches.push({
+          name: shortName,
+          ref,
+          isCurrent,
+          isRemote: ref.startsWith('refs/remotes/'),
+        });
+      }
+    }
+
+    branches.sort((a, b) => {
+      if (a.isCurrent) return -1;
+      if (b.isCurrent) return 1;
+      if (a.isRemote !== b.isRemote) return a.isRemote ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return branches;
+  } catch {
+    return [];
+  }
+}
+
+export function gitCommits(dir: string, limit = 15, branch?: string): GitCommitItem[] {
+  const resolved = path.resolve(expand(dir));
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) return [];
+  try {
+    const args = ['log', '-n', String(limit), '--format=%H|%h|%s|%an|%cI'];
+    if (branch && branch.trim()) {
+      args.push(branch.trim());
+    }
+    const raw = git(resolved, args);
     if (!raw) return [];
     return raw
       .split('\n')
@@ -240,22 +282,157 @@ export function gitCommits(dir: string, limit = 15): GitCommitItem[] {
   }
 }
 
-export function gitDiff(dir: string): { diff: string; files: { path: string; status: string }[] } {
+const MAX_DIFF_BYTES = 256 * 1024;
+
+export function gitDiff(
+  dir: string,
+  options?: { branch?: string; base?: string; mode?: 'working' | 'compare' }
+): GitDiffSummary {
   const resolved = path.resolve(expand(dir));
-  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) return { diff: '', files: [] };
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    return { diff: '', files: [], truncated: false };
+  }
+
+  const mode = options?.mode || 'working';
+  const branch = options?.branch?.trim();
+  const base = options?.base?.trim() || 'main';
+
   try {
-    const diff = git(resolved, ['diff', 'HEAD']);
-    const statusRaw = git(resolved, ['status', '--porcelain=v1']);
-    const files = statusRaw
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => ({
-        status: line.slice(0, 2).trim(),
-        path: line.slice(3).trim(),
-      }));
-    return { diff, files };
+    let files: { path: string; status: string }[] = [];
+    let diff = '';
+    let truncated = false;
+
+    if (mode === 'compare') {
+      const targetBranch = branch || 'HEAD';
+      const range = `${base}...${targetBranch}`;
+
+      // Get list of changed files
+      try {
+        const rawFiles = execFileSync('git', ['-C', resolved, 'diff', '--name-status', range], {
+          encoding: 'utf8',
+          timeout: 10_000,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          maxBuffer: 16 * 1024 * 1024,
+        }).trim();
+
+        files = rawFiles
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => {
+            const parts = line.split('\t');
+            return {
+              status: parts[0]?.trim() || 'M',
+              path: parts[parts.length - 1]?.trim() || '',
+            };
+          });
+      } catch {
+        files = [];
+      }
+
+      // Get unified diff text with truncation safety
+      try {
+        const rawDiff = execFileSync('git', ['-C', resolved, 'diff', range], {
+          encoding: 'utf8',
+          timeout: 15_000,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          maxBuffer: 16 * 1024 * 1024,
+        }).trim();
+
+        if (rawDiff.length > MAX_DIFF_BYTES) {
+          diff = rawDiff.slice(0, MAX_DIFF_BYTES) + '\n\n... (Diff truncated at 256 KB. Inspect individual files or use Git CLI for full details)';
+          truncated = true;
+        } else {
+          diff = rawDiff;
+        }
+      } catch (err) {
+        diff = `(Unable to retrieve full unified diff: ${(err as Error).message})`;
+      }
+    } else {
+      // mode === 'working'
+      let currentBranch: string | null = null;
+      try {
+        currentBranch = git(resolved, ['rev-parse', '--abbrev-ref', 'HEAD']);
+      } catch {
+        currentBranch = null;
+      }
+
+      const isCurrent = !branch || branch === 'HEAD' || (currentBranch && branch === currentBranch);
+
+      if (isCurrent) {
+        // Working directory uncommitted changes vs HEAD
+        const statusRaw = git(resolved, ['status', '--porcelain=v1']);
+        files = statusRaw
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => ({
+            status: line.slice(0, 2).trim(),
+            path: line.slice(3).trim(),
+          }));
+
+        try {
+          const rawDiff = execFileSync('git', ['-C', resolved, 'diff', 'HEAD'], {
+            encoding: 'utf8',
+            timeout: 10_000,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            maxBuffer: 16 * 1024 * 1024,
+          }).trim();
+
+          if (rawDiff.length > MAX_DIFF_BYTES) {
+            diff = rawDiff.slice(0, MAX_DIFF_BYTES) + '\n\n... (Diff truncated at 256 KB)';
+            truncated = true;
+          } else {
+            diff = rawDiff;
+          }
+        } catch {
+          diff = '';
+        }
+      } else {
+        // Working directory files vs specified branch
+        try {
+          const rawFiles = execFileSync('git', ['-C', resolved, 'diff', '--name-status', branch], {
+            encoding: 'utf8',
+            timeout: 10_000,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            maxBuffer: 16 * 1024 * 1024,
+          }).trim();
+
+          files = rawFiles
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => {
+              const parts = line.split('\t');
+              return {
+                status: parts[0]?.trim() || 'M',
+                path: parts[parts.length - 1]?.trim() || '',
+              };
+            });
+        } catch {
+          files = [];
+        }
+
+        try {
+          const rawDiff = execFileSync('git', ['-C', resolved, 'diff', branch], {
+            encoding: 'utf8',
+            timeout: 15_000,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            maxBuffer: 16 * 1024 * 1024,
+          }).trim();
+
+          if (rawDiff.length > MAX_DIFF_BYTES) {
+            diff = rawDiff.slice(0, MAX_DIFF_BYTES) + '\n\n... (Diff truncated at 256 KB)';
+            truncated = true;
+          } else {
+            diff = rawDiff;
+          }
+        } catch (err) {
+          diff = `(Unable to retrieve diff against ${branch}: ${(err as Error).message})`;
+        }
+      }
+    }
+
+    return { diff, files, truncated };
   } catch {
-    return { diff: '', files: [] };
+    return { diff: '', files: [], truncated: false };
   }
 }
 
