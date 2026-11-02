@@ -1,7 +1,10 @@
 import * as React from 'react';
 import {
   AlertCircle,
+  CheckCircle2,
+  FileText,
   Plus,
+  RefreshCw,
   Terminal,
   Trash2,
 } from 'lucide-react';
@@ -916,12 +919,16 @@ function TeamBridgeSection({
   isOffline: boolean;
   onUpdateSettings: (patch: Settings) => Promise<void>;
 }) {
+  const { client } = useRuntime();
   const bridgeSetting = settings.bridge as { enabled?: boolean; inbox?: boolean } | undefined;
   const isEnabled = bridgeSetting?.enabled ?? bridgeStatus?.enabled ?? false;
   const [toggling, setToggling] = React.useState(false);
+  const [syncing, setSyncing] = React.useState(false);
+  const [feedback, setFeedback] = React.useState<{ text: string; error?: boolean } | null>(null);
 
   const toggleBridge = async () => {
     setToggling(true);
+    setFeedback(null);
     try {
       if (isEnabled) {
         await onUpdateSettings({ bridge: { enabled: false } });
@@ -933,10 +940,61 @@ function TeamBridgeSection({
     }
   };
 
+  const handleSyncAll = async () => {
+    if (!client || isOffline) return;
+    setSyncing(true);
+    setFeedback(null);
+    try {
+      const res = await client.bridgeSync();
+      setFeedback({
+        text: `Sync complete: ${res.verdictsExported} verdict(s) to proposals, ${res.jobsExported} shipped job(s) exported, ${res.ingested} note(s) ingested.`,
+      });
+      setTimeout(() => setFeedback(null), 6000);
+    } catch (e) {
+      setFeedback({ text: e instanceof Error ? e.message : String(e), error: true });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleExportVerdicts = async () => {
+    if (!client || isOffline) return;
+    setSyncing(true);
+    setFeedback(null);
+    try {
+      const res = await client.bridgeExportAllCouncils();
+      setFeedback({
+        text: `Exported ${res.exported} Council verdict(s) to community/proposals/.`,
+      });
+      setTimeout(() => setFeedback(null), 5000);
+    } catch (e) {
+      setFeedback({ text: e instanceof Error ? e.message : String(e), error: true });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleExportShipped = async () => {
+    if (!client || isOffline) return;
+    setSyncing(true);
+    setFeedback(null);
+    try {
+      const res = await client.bridgeExportShipped();
+      setFeedback({
+        text: `Exported ${res.exported} shipped job(s) to community/threads/desktop/ and community/proposals/.`,
+      });
+      setTimeout(() => setFeedback(null), 5000);
+    } catch (e) {
+      setFeedback({ text: e instanceof Error ? e.message : String(e), error: true });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <section aria-label="Team bridge" className="bg-card flex flex-col gap-4 rounded-xl p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <SectionTitle aside="Outbound mirroring to legacy agents">Team Bridge</SectionTitle>
+        <SectionTitle aside="Outbound mirroring & community git sync">Team Bridge & Git Sync</SectionTitle>
         <button
           type="button"
           disabled={toggling || isOffline}
@@ -948,10 +1006,61 @@ function TeamBridgeSection({
       </div>
 
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Mirrors job dossiers into markdown threads (<span className="font-mono">community/threads/desktop/JOB-*.md</span>)
-        and notifications into agent inboxes (<span className="font-mono">community/inboxes/</span>). This allows
-        existing CLI/tmux coworkers to follow live jobs without reading the runtime database.
+        Mirrors job dossiers into markdown threads (<span className="font-mono">community/threads/desktop/JOB-*.md</span>),
+        exports Council verdicts and shipped jobs to proposals (<span className="font-mono">community/proposals/</span>),
+        and drops notifications into agent inboxes (<span className="font-mono">community/inboxes/</span>).
       </p>
+
+      {/* Manual Sync Controls */}
+      <div className="glass-panel flex flex-col gap-3 rounded-lg p-3.5 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-semibold text-foreground">Manual Git Sync & Export Controls</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={syncing || isOffline || !client}
+              onClick={handleExportVerdicts}
+              className={buttonVariants({ variant: 'glass', size: 'xs' })}
+              title="Export all completed Council verdicts to community/proposals/"
+            >
+              <FileText className="size-3 mr-1" />
+              Export Council Verdicts
+            </button>
+            <button
+              type="button"
+              disabled={syncing || isOffline || !client}
+              onClick={handleExportShipped}
+              className={buttonVariants({ variant: 'glass', size: 'xs' })}
+              title="Export all completed/shipped jobs to community/threads/desktop/ and community/proposals/"
+            >
+              <FileText className="size-3 mr-1" />
+              Export Shipped Jobs
+            </button>
+            <button
+              type="button"
+              disabled={syncing || isOffline || !client}
+              onClick={handleSyncAll}
+              className={buttonVariants({ variant: 'default', size: 'xs' })}
+              title="Full bidirectional sync: export verdicts, export shipped jobs, mirror active jobs, and ingest team inbox replies"
+            >
+              <RefreshCw className={cn('size-3 mr-1', syncing && 'animate-spin')} />
+              {syncing ? 'Syncing…' : 'Sync All'}
+            </button>
+          </div>
+        </div>
+
+        {feedback && (
+          <div
+            className={cn(
+              'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px]',
+              feedback.error ? 'bg-risk/10 text-risk' : 'bg-verified/10 text-verified'
+            )}
+          >
+            {feedback.error ? <AlertCircle className="size-3.5 shrink-0" /> : <CheckCircle2 className="size-3.5 shrink-0" />}
+            <span>{feedback.text}</span>
+          </div>
+        )}
+      </div>
 
       <div className="glass-panel grid grid-cols-1 gap-2.5 rounded-lg p-3 text-xs sm:grid-cols-2">
         <div className="flex flex-col gap-0.5">
@@ -961,15 +1070,31 @@ function TeamBridgeSection({
           </span>
         </div>
         <div className="flex flex-col gap-0.5">
+          <span className="text-muted-foreground text-[11px]">Last Synced</span>
+          <span className="font-mono text-muted-foreground">
+            {bridgeStatus?.lastSyncAt ? new Date(bridgeStatus.lastSyncAt).toLocaleString() : 'Never synced'}
+          </span>
+        </div>
+        <div className="flex flex-col gap-0.5">
           <span className="text-muted-foreground text-[11px]">Last Mirrored</span>
           <span className="font-mono text-muted-foreground">
             {bridgeStatus?.lastMirrorAt ? new Date(bridgeStatus.lastMirrorAt).toLocaleString() : 'Never mirrored'}
           </span>
         </div>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-muted-foreground text-[11px]">Ingested from Inboxes / Replies</span>
+          <span className="font-medium">{bridgeStatus?.ingested ?? 0} notes / replies</span>
+        </div>
         <div className="flex flex-col gap-0.5 sm:col-span-2">
           <span className="text-muted-foreground text-[11px]">Threads Directory</span>
           <span className="font-mono text-muted-foreground">
             {bridgeStatus?.threadsDir ?? 'community/threads/desktop'}
+          </span>
+        </div>
+        <div className="flex flex-col gap-0.5 sm:col-span-2">
+          <span className="text-muted-foreground text-[11px]">Proposals Directory</span>
+          <span className="font-mono text-muted-foreground">
+            {bridgeStatus?.proposalsDir ?? 'community/proposals'}
           </span>
         </div>
         {bridgeStatus?.lastError && (

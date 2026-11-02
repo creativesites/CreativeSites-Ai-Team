@@ -1,7 +1,10 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import http from 'node:http';
+import path from 'node:path';
 import type { Health, RuntimeEvent } from './types.ts';
 import type * as T from './types.ts';
+import { runShell } from '../exec.ts';
 import { probeAdapters } from '../adapters.ts';
 import {
   ConflictError,
@@ -130,6 +133,72 @@ function asOptionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+async function listSessionWorktreeFiles(worktreePath: string): Promise<T.WorktreeFile[]> {
+  if (!worktreePath || !fs.existsSync(worktreePath)) return [];
+  const statusRes = await runShell('git status --porcelain=v1 -uall', worktreePath, 15_000);
+  if (statusRes.exitCode !== 0) return [];
+  const lines = statusRes.stdout.split('\n').filter((l) => l.trim().length > 0);
+  const files: T.WorktreeFile[] = [];
+
+  for (const line of lines) {
+    if (line.length < 4) continue;
+    const code = line.slice(0, 2);
+    let filePath = line.slice(3).trim();
+    if (filePath.startsWith('"') && filePath.endsWith('"')) {
+      filePath = filePath.slice(1, -1);
+    }
+    if (filePath.includes(' -> ')) {
+      filePath = filePath.split(' -> ')[1]!.trim();
+    }
+
+    let status: T.WorktreeFile['status'] = 'modified';
+    const staged = code[0] !== ' ' && code[0] !== '?';
+
+    if (code === '??') {
+      status = 'untracked';
+    } else if (code.includes('A')) {
+      status = 'added';
+    } else if (code.includes('D')) {
+      status = 'deleted';
+    } else if (code.includes('R')) {
+      status = 'renamed';
+    } else {
+      status = 'modified';
+    }
+
+    let diff = '';
+    const safePath = `'${filePath.replace(/'/g, "'\\''")}'`;
+    try {
+      if (status === 'untracked') {
+        const fullPath = path.join(worktreePath, filePath);
+        if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+          const res = await runShell(`git diff --no-index --no-color -- /dev/null ${safePath}`, worktreePath, 10_000);
+          diff = res.stdout;
+        }
+      } else {
+        const headDiff = await runShell(`git diff HEAD --no-color --no-ext-diff -- ${safePath}`, worktreePath, 10_000);
+        if (headDiff.stdout.trim()) {
+          diff = headDiff.stdout;
+        } else {
+          const cachedDiff = await runShell(`git diff --cached --no-color --no-ext-diff -- ${safePath}`, worktreePath, 10_000);
+          diff = cachedDiff.stdout || (await runShell(`git diff --no-color --no-ext-diff -- ${safePath}`, worktreePath, 10_000)).stdout;
+        }
+      }
+    } catch {
+      diff = '';
+    }
+
+    files.push({
+      path: filePath,
+      status,
+      staged,
+      diff,
+    });
+  }
+
+  return files;
+}
+
 export function createServer(opts: ServerOptions): RuntimeServer {
   const { repo, token } = opts;
   const origins = new Set([...BASE_ORIGINS, ...(opts.allowedOrigins ?? [])]);
@@ -174,6 +243,11 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('GET', '/v1/settings', () => ({ status: 200, body: repo.getSettings() })),
     route('POST', '/v1/settings', (ctx) => ({ status: 200, body: repo.updateSettings(ctx.body as T.Settings) })),
 
+    route('GET', '/v1/search', (ctx) => ({
+      status: 200,
+      body: repo.search({ q: ctx.query.get('q') ?? '', perKind: Number(ctx.query.get('limit') ?? 8) }),
+    })),
+
     route('GET', '/v1/events', (ctx) => events(ctx)),
     route('GET', '/v1/events/recent', (ctx) => ({
       status: 200,
@@ -189,6 +263,11 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('GET', '/v1/bridge/status', () => ({ status: 200, body: opts.bridge.status() })),
     route('POST', '/v1/bridge/mirror/:jobId', (ctx) => ({ status: 200, body: opts.bridge.mirrorJob(ctx.params.jobId!) })),
     route('POST', '/v1/bridge/ingest', () => ({ status: 200, body: opts.bridge.ingestNow() })),
+    route('POST', '/v1/bridge/sync', () => ({ status: 200, body: opts.bridge.syncAll() })),
+    route('POST', '/v1/bridge/export/councils/:councilId', (ctx) => ({ status: 200, body: opts.bridge.exportCouncilVerdict(ctx.params.councilId!) })),
+    route('POST', '/v1/bridge/export/councils', () => ({ status: 200, body: opts.bridge.exportAllVerdicts() })),
+    route('POST', '/v1/bridge/export/shipped/:jobId', (ctx) => ({ status: 200, body: opts.bridge.exportShippedJob(ctx.params.jobId!) })),
+    route('POST', '/v1/bridge/export/shipped', () => ({ status: 200, body: opts.bridge.exportShippedJobs() })),
     route('POST', '/v1/adapters/:id', (ctx) => {
       repo.upsertAdapterOverride(ctx.params.id!, ctx.body as never);
       return { status: 200, body: adapterList(false) };
@@ -553,6 +632,11 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('POST', '/v1/sessions/:id/prompt', async (ctx) => {
       await opts.sessions.prompt(ctx.params.id!, asString(ctx.body.text, 'text'));
       return { status: 202, body: { ok: true } };
+    }),
+    route('GET', '/v1/sessions/:id/files', async (ctx) => {
+      const session = repo.getSession(ctx.params.id!);
+      const files = session.worktree ? await listSessionWorktreeFiles(session.worktree) : [];
+      return { status: 200, body: files };
     }),
     route('GET', '/v1/sessions/:id/transcript', (ctx) => ({
       status: 200,

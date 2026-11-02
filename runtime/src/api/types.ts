@@ -321,6 +321,19 @@ export interface Session {
   lastEventAt?: string | null;
   model?: string | null;
   turnCount?: number;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    costCents: number;
+  } | null;
+}
+
+export interface WorktreeFile {
+  path: string;
+  status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
+  staged: boolean;
+  diff: string;
 }
 
 export interface TranscriptEntry {
@@ -636,11 +649,22 @@ export interface BridgeStatus {
   enabled: boolean;
   teamRepo: string | null;
   threadsDir: string | null;
+  proposalsDir: string | null;
   inboxDir: string | null;
   lastMirrorAt: string | null;
   lastIngestAt: string | null;
+  lastSyncAt: string | null;
   ingested: number;
   lastError: string | null;
+}
+
+export interface BridgeSyncResult {
+  ok: boolean;
+  syncedAt: string;
+  verdictsExported: number;
+  jobsExported: number;
+  ingested: number;
+  paths: string[];
 }
 
 export interface Artifact {
@@ -664,6 +688,19 @@ export interface Summary {
   openJobs: number;
   pendingApprovals: number;
   liveSessions: number;
+}
+
+export type SearchKind = 'job' | 'room' | 'message' | 'identity' | 'session' | 'evidence';
+
+/** One match from GET /v1/search. `roomId` and `jobId` say where to jump when the hit is opened. */
+export interface SearchHit {
+  kind: SearchKind;
+  id: string;
+  title: string;
+  detail: string | null;
+  roomId: string | null;
+  jobId: string | null;
+  at: string | null;
 }
 
 export interface RuntimeEvent {

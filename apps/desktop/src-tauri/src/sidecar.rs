@@ -46,12 +46,45 @@ fn info_path() -> Option<PathBuf> {
     env_path("MYAOS_RUNTIME_FILE").or_else(|| myaos_home().map(|h| h.join("runtime.json")))
 }
 
-/// The runtime's source folder. `$MYAOS_RUNTIME_DIR` wins; otherwise the
-/// `runtime/` folder of the repository this app was built from. Packaging the
-/// runtime inside the app bundle is Phase 4.
+/// The runtime's source folder. `$MYAOS_RUNTIME_DIR` wins; otherwise checks
+/// the macOS app bundle Resources directory (for standalone packaged builds),
+/// and falls back to the development repository folder.
 fn runtime_dir() -> PathBuf {
-    env_path("MYAOS_RUNTIME_DIR")
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../runtime"))
+    if let Some(p) = env_path("MYAOS_RUNTIME_DIR") {
+        return p;
+    }
+
+    // 1. Check macOS app bundle Resources directory
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let bundle_resources = exe_dir.join("../Resources");
+            let candidates = [
+                bundle_resources.join("runtime"),
+                bundle_resources.clone(),
+                bundle_resources.join("_up_/_up_/_up_/runtime"),
+            ];
+            for candidate in candidates {
+                if candidate.join("src").join("main.ts").exists() {
+                    return candidate;
+                }
+            }
+        }
+    }
+
+    // 2. Fallback to repository manifest relative path (dev mode)
+    let dev_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../runtime");
+    if dev_dir.join("src").join("main.ts").exists() {
+        return dev_dir;
+    }
+
+    // 3. Fallback to current working directory relatives
+    for candidate in [PathBuf::from("runtime"), PathBuf::from("../runtime")] {
+        if candidate.join("src").join("main.ts").exists() {
+            return candidate;
+        }
+    }
+
+    dev_dir
 }
 
 /// Apps opened from Finder get a bare PATH, so look where Node is usually installed.
@@ -160,5 +193,35 @@ pub fn stop(sidecar: &Sidecar) {
             let _ = child.kill();
             let _ = child.wait();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_runtime_dir_resolution() {
+        let dir = runtime_dir();
+        assert!(
+            dir.join("src").join("main.ts").exists(),
+            "Expected runtime src/main.ts to exist at {}",
+            dir.display()
+        );
+    }
+
+    #[test]
+    fn test_runtime_dir_env_override() {
+        let custom = std::env::temp_dir().join("custom-runtime");
+        std::env::set_var("MYAOS_RUNTIME_DIR", &custom);
+        let resolved = runtime_dir();
+        assert_eq!(resolved, custom);
+        std::env::remove_var("MYAOS_RUNTIME_DIR");
+    }
+
+    #[test]
+    fn test_find_node() {
+        let node = find_node();
+        assert!(node.is_some(), "Node binary should be detectable on system");
     }
 }

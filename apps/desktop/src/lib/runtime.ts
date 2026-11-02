@@ -6,6 +6,7 @@ import type {
   Approval,
   ApprovalPolicy,
   BridgeStatus,
+  BridgeSyncResult,
   Budget,
   Council,
   CouncilCard,
@@ -49,6 +50,7 @@ import type {
   RoomMember,
   RunCouncilInput,
   RuntimeEvent,
+  SearchHit,
   Session,
   Settings,
   ShipJobInput,
@@ -68,6 +70,7 @@ import type {
   WakeAgentInput,
   WakeAgentResult,
   WorkspaceState,
+  WorktreeFile,
 } from '@runtime/types';
 
 // The desktop's only way to the data: the runtime's local API. The desktop
@@ -163,6 +166,7 @@ export class RuntimeClient {
   job = (jobId: string) => this.request<JobDetail>('GET', `/v1/jobs/${encodeURIComponent(jobId)}`);
   createJob = (input: CreateJobInput) => this.request<JobDetail>('POST', '/v1/jobs', input);
   sessions = () => this.request<Session[]>('GET', '/v1/sessions');
+  search = (q: string, limit = 8) => this.request<SearchHit[]>('GET', `/v1/search?q=${encodeURIComponent(q)}&limit=${limit}`);
   adapters = () => this.request<AdapterInfo[]>('GET', '/v1/adapters');
 
   // ---- settings / teams / projects / workspaces
@@ -287,6 +291,8 @@ export class RuntimeClient {
     this.request<{ ok: boolean }>('POST', `/v1/sessions/${encodeURIComponent(id)}/prompt`, { text });
   transcript = (id: string, since = 0) =>
     this.request<TranscriptEntry[]>('GET', `/v1/sessions/${encodeURIComponent(id)}/transcript?since=${since}`);
+  sessionFiles = (id: string) =>
+    this.request<WorktreeFile[]>('GET', `/v1/sessions/${encodeURIComponent(id)}/files`);
   sessionTerminal = (id: string, since = 0) =>
     this.request<{
       sessionId: string;
@@ -478,6 +484,12 @@ export class RuntimeClient {
   // ---- bridge
   bridgeStatus = () => this.request<BridgeStatus>('GET', '/v1/bridge/status');
   mirrorJob = (jobId: string) => this.request<{ path: string }>('POST', `/v1/bridge/mirror/${encodeURIComponent(jobId)}`);
+  bridgeIngest = () => this.request<{ imported: number; notes: number; replies: number; errors: string[] }>('POST', '/v1/bridge/ingest');
+  bridgeSync = () => this.request<BridgeSyncResult>('POST', '/v1/bridge/sync');
+  bridgeExportCouncil = (councilId: string) => this.request<{ path: string }>('POST', `/v1/bridge/export/councils/${encodeURIComponent(councilId)}`);
+  bridgeExportAllCouncils = () => this.request<{ exported: number; paths: string[] }>('POST', '/v1/bridge/export/councils');
+  bridgeExportShippedJob = (jobId: string) => this.request<{ threadPath: string; proposalPath: string }>('POST', `/v1/bridge/export/shipped/${encodeURIComponent(jobId)}`);
+  bridgeExportShipped = () => this.request<{ exported: number; paths: string[] }>('POST', '/v1/bridge/export/shipped');
 
   /**
    * Follows the event stream until `signal` aborts, resuming after the last

@@ -454,7 +454,7 @@ export class SessionManager {
       args: adapter.args,
       cwd: worktreePath,
       worktree: worktreePath,
-      env: { ...this.env, ...(adapter.env ?? {}) },
+      env: { ...process.env, ...this.env, ...(adapter.env ?? {}) },
       handlers: {
         onUpdate: (_acpSessionId, update) => {
           if (!live.closed) this.handleUpdate(session.id, update);
@@ -557,7 +557,7 @@ export class SessionManager {
       args: adapter.args,
       cwd: worktreePath,
       worktree: worktreePath,
-      env: { ...this.env, ...(adapter.env ?? {}) },
+      env: { ...process.env, ...this.env, ...(adapter.env ?? {}) },
       handlers: {
         onUpdate: (_acpSessionId, update) => {
           if (!resumedLive.closed) this.handleUpdate(sessionId, update);

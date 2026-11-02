@@ -133,3 +133,93 @@ test('the mirror is manual-callable and stays out of the way when disabled', asy
   const jobDetail = await call('GET', `/v1/jobs/${job.json.id}`);
   assert.equal(jobDetail.json.title, 'Second job');
 });
+
+test('council verdicts and shipped jobs export to community/proposals and threads with manual sync', async () => {
+  // Re-enable bridge
+  await call('POST', '/v1/settings', { bridge: { enabled: true, inbox: true } });
+
+  // 1. Create a council and generate a verdict
+  const jobRes = await call('POST', '/v1/jobs', {
+    roomId,
+    title: 'Architecture Decision',
+    brief: 'Choose the storage engine.',
+    createdBy: 'winston',
+  });
+  const councilJobId = jobRes.json.id as string;
+  const councilRes = await call('POST', `/v1/jobs/${councilJobId}/councils`, {
+    mode: 'quick',
+    title: 'Storage Engine Selection',
+    decision: 'Pick SQLite or PostgreSQL',
+    brief: 'Decide our substrate.',
+    options: [
+      { id: 'sqlite', label: 'SQLite Substrate' },
+      { id: 'postgres', label: 'PostgreSQL Server' },
+    ],
+    seats: [
+      { seat: 'atlas', name: 'Atlas', weight: 2 },
+      { seat: 'kael', name: 'Kael', weight: 2 },
+    ],
+  });
+  const councilId = councilRes.json.id as string;
+
+  // Add cards and compute verdict
+  const card1 = await call('POST', `/v1/councils/${councilId}/cards`, {
+    seat: 'atlas',
+    pillar: 9,
+    confidence: 9,
+    scores: { sqlite: 9, postgres: 4 },
+    argument: 'SQLite fits our local-first mandate.',
+  });
+  assert.equal(card1.status, 201, JSON.stringify(card1.json));
+  const card2 = await call('POST', `/v1/councils/${councilId}/cards`, {
+    seat: 'kael',
+    pillar: 8,
+    confidence: 8,
+    scores: { sqlite: 8, postgres: 5 },
+    argument: 'Zero operational overhead with SQLite.',
+  });
+  assert.equal(card2.status, 201, JSON.stringify(card2.json));
+  const verdictRes = await call('POST', `/v1/councils/${councilId}/verdict`);
+  assert.equal(verdictRes.status, 201, JSON.stringify(verdictRes.json));
+
+  // Export council verdict manually
+  const exportedVerdict = await call('POST', `/v1/bridge/export/councils/${councilId}`);
+  assert.equal(exportedVerdict.status, 200);
+  assert.ok(fs.existsSync(exportedVerdict.json.path));
+
+  const proposalsDir = path.join(teamRepo, 'community', 'proposals');
+  assert.ok(fs.existsSync(proposalsDir));
+  const proposalFiles = fs.readdirSync(proposalsDir);
+  assert.ok(proposalFiles.some((f) => f.includes('COUNCIL-JOB-') && f.includes('storage-engine')));
+
+  const verdictContent = fs.readFileSync(exportedVerdict.json.path, 'utf8');
+  assert.match(verdictContent, /proposal_id: council_/);
+  assert.match(verdictContent, /Council Verdict: Storage Engine Selection/);
+  assert.match(verdictContent, /SQLite Substrate/);
+  assert.match(verdictContent, /Option Scorecard/);
+
+  // 2. Export shipped job
+  // Mark job as shipped
+  const shipRes = await call('POST', `/v1/bridge/export/shipped/${councilJobId}`);
+  assert.equal(shipRes.status, 200);
+  assert.ok(fs.existsSync(shipRes.json.threadPath));
+  assert.ok(fs.existsSync(shipRes.json.proposalPath));
+
+  const shippedProposal = fs.readFileSync(shipRes.json.proposalPath, 'utf8');
+  assert.match(shippedProposal, /Shipped: JOB-/);
+  assert.match(shippedProposal, /Architecture Decision/);
+
+  // 3. Test full manual sync endpoint
+  const syncRes = await call('POST', '/v1/bridge/sync');
+  assert.equal(syncRes.status, 200);
+  assert.equal(syncRes.json.ok, true);
+  assert.ok(syncRes.json.syncedAt);
+  assert.ok(syncRes.json.verdictsExported >= 1);
+  assert.ok(syncRes.json.paths.length >= 1);
+
+  // Check updated status
+  const statusRes = await call('GET', '/v1/bridge/status');
+  assert.equal(statusRes.status, 200);
+  assert.ok(statusRes.json.proposalsDir);
+  assert.ok(statusRes.json.lastSyncAt);
+});
