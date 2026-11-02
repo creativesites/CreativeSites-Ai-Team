@@ -309,7 +309,7 @@ pub async fn myaos_call_gemini_orchestrator(
     let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent";
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(120))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
@@ -317,7 +317,7 @@ pub async fn myaos_call_gemini_orchestrator(
         "contents": contents,
         "generationConfig": {
             "temperature": 0.3,
-            "maxOutputTokens": 8192,
+            "maxOutputTokens": 32768,
             "thinkingConfig": {
                 "thinkingBudget": 1024
             }

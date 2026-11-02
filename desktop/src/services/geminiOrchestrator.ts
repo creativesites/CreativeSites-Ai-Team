@@ -792,15 +792,36 @@ CRITICAL DESIGN SPECIFICATIONS:
      * Filter buttons that highlight and filter list items
      * Copy-to-clipboard button with visual "Copied!" feedback
      * Dark/Light mode theme toggle that alters root background/text classes
-4. Design Type: "${options.designType}"
+4. Interactive Canvas Inspector (REQUIRED):
+   - Include this exact script right before </body> so clicked elements can be selected from the parent app:
+   \`\`\`html
+   <script>
+     window.addEventListener('click', (e) => {
+       e.stopPropagation();
+       const target = e.target.closest('button, a, div, section, h1, h2, h3, p, span, input') || e.target;
+       const tag = target.tagName.toLowerCase();
+       const id = target.id ? '#' + target.id : '';
+       const classes = target.className && typeof target.className === 'string' ? '.' + target.className.split(' ').filter(c => c && !c.startsWith('inspect-')).slice(0, 3).join('.') : '';
+       const text = (target.innerText || target.value || '').slice(0, 40).trim();
+       window.parent.postMessage({
+         type: 'CANVAS_ELEMENT_SELECTED',
+         selector: tag + id + classes,
+         tag: tag,
+         text: text,
+         classes: target.className
+       }, '*');
+     }, true);
+   </script>
+   \`\`\`
+5. Design Type: "${options.designType}"
    - landing_page: High-impact hero section with glassy badges, product screenshot mockup, feature grid, social proof / testimonials, pricing cards, and footer.
    - mobile_app: Mobile screen layout with iOS status bar, rounded cards, navigation tab bar at bottom, smooth scrolling container.
    - dashboard: Executive analytics cockpit with metric cards (+% badges), interactive charts (SVG or Canvas), recent activity table with status pills, and search/filter bar.
    - component: Isolated UI widget / card with state switchers, badges, sliders, and micro-interactions.
    - email: Responsive email template (fluid container, email header, hero message, call-to-action button, receipt/bullet points, footer).
    - ecommerce: Product gallery, pricing, size/color variant chips, add-to-bag button, slide-over bag summary.
-5. Target Viewport: "${options.viewport}" (design must be fully responsive).
-6. Return Format:
+6. Target Viewport: "${options.viewport}" (design must be fully responsive).
+7. Return Format:
    Return your response containing the complete HTML code enclosed in:
    \`\`\`html
    <!DOCTYPE html>
@@ -880,6 +901,31 @@ PROMPT: "${options.prompt}"`;
         html = rawText.slice(docIndex).trim();
       }
     }
+  }
+
+  // Ensure the click-to-pin inspector script is present even if the model omitted it
+  if (html && !html.includes('CANVAS_ELEMENT_SELECTED')) {
+    const inspectorScript = `
+<script>
+  window.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const target = e.target.closest('button, a, div, section, h1, h2, h3, p, span, input') || e.target;
+    const tag = target.tagName.toLowerCase();
+    const id = target.id ? '#' + target.id : '';
+    const classes = target.className && typeof target.className === 'string' ? '.' + target.className.split(' ').filter(c => c && !c.startsWith('inspect-')).slice(0, 3).join('.') : '';
+    const text = (target.innerText || target.value || '').slice(0, 40).trim();
+    window.parent.postMessage({
+      type: 'CANVAS_ELEMENT_SELECTED',
+      selector: tag + id + classes,
+      tag: tag,
+      text: text,
+      classes: target.className
+    }, '*');
+  }, true);
+</script>`;
+    html = html.includes('</body>')
+      ? html.replace('</body>', `${inspectorScript}\n</body>`)
+      : `${html}\n${inspectorScript}`;
   }
 
   // Extract title

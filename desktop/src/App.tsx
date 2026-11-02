@@ -376,11 +376,12 @@ export function App() {
   };
 
   // Normal Mode Job Creators & Action Handlers
-  const handleStartNormalJob = (userPrompt: string, coworkerIdPreference?: string) => {
+  const handleStartNormalJob = (userPrompt: string, coworkerIdPreference?: string, displayTitle?: string) => {
     const assignedCoworker = coworkerIdPreference || 'vela';
+    const titleSource = displayTitle || userPrompt;
     const newJob: Job = {
       id: `job_${Date.now()}`,
-      title: userPrompt.length > 50 ? `${userPrompt.slice(0, 50)}...` : userPrompt,
+      title: titleSource.length > 50 ? `${titleSource.slice(0, 50)}...` : titleSource,
       userPrompt,
       status: 'working',
       progressPercentage: 35,
@@ -567,7 +568,11 @@ export function App() {
                 <DesignStudioNormalView
                   currentWorkspace={currentWorkspace}
                   onBuildWithMyaOS={(title, html) => {
-                    handleStartNormalJob(`Implement verified React component for design '${title}'`, 'astra');
+                    handleStartNormalJob(
+                      `Implement a verified React component for design '${title}'. Here is the approved HTML/Tailwind prototype to translate faithfully into the app's component structure:\n\n\`\`\`html\n${html}\n\`\`\``,
+                      'astra',
+                      `Build design '${title}' with MyaOS`
+                    );
                   }}
                 />
               )}
