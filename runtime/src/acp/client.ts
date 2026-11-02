@@ -168,14 +168,38 @@ export class AcpClient {
     return result.sessionId;
   }
 
-  async prompt(text: string, timeoutMs = 30 * 60_000): Promise<{ stopReason: string | null }> {
+  /** True when the adapter advertised `agentCapabilities.loadSession` during initialize. */
+  get canLoadSession(): boolean {
+    const caps = (this.initializeResult?.agentCapabilities ?? {}) as { loadSession?: boolean };
+    return caps.loadSession === true;
+  }
+
+  /**
+   * Resumes an existing ACP session via `session/load`. The adapter replays the prior
+   * conversation as `session/update` notifications before it responds; callers that do
+   * not want that replay in their transcript must suppress updates while this runs.
+   */
+  async loadSession(acpSessionId: string, timeoutMs = 60_000): Promise<string> {
+    if (!this.canLoadSession) throw new AcpError(-32601, 'adapter does not advertise session/load');
+    const result = (await this.request(
+      'session/load',
+      { sessionId: acpSessionId, cwd: this.opts.worktree, mcpServers: [] },
+      timeoutMs
+    )) as { sessionId?: string } | undefined;
+    const resolvedId = result?.sessionId || acpSessionId;
+    this.sessionId = resolvedId;
+    return resolvedId;
+  }
+
+  async prompt(text: string, timeoutMs = 30 * 60_000): Promise<{ stopReason: string | null; usage?: Record<string, unknown> }> {
     if (!this.sessionId) throw new AcpError(-32003, 'No ACP session');
     const result = (await this.request(
       'session/prompt',
       { sessionId: this.sessionId, prompt: [{ type: 'text', text }] },
       timeoutMs
-    )) as { stopReason?: string };
-    return { stopReason: result?.stopReason ?? null };
+    )) as { stopReason?: string; usage?: Record<string, unknown>; _meta?: Record<string, unknown> } | undefined;
+    const usage = result?.usage ?? (result?._meta?.usage as Record<string, unknown> | undefined);
+    return { stopReason: result?.stopReason ?? null, usage };
   }
 
   async cancel(): Promise<void> {

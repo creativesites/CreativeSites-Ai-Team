@@ -158,7 +158,33 @@ export function coalesceTranscriptEntries(entries: TranscriptEntry[]): {
  * Uses Tauri's native `portable-pty` (`pty.rs`) when running inside the Tauri shell,
  * and falls back to the runtime's `/v1/terminals` PTY endpoint in a standard browser.
  */
-export function Terminal({ cwd, className }: TerminalProps) {
+interface ShellTabInfo {
+  id: string;
+  title: string;
+  status: 'starting' | 'running' | 'exited' | 'error';
+  exitCode: number | null;
+  resolvedCwd: string;
+}
+
+interface SingleTerminalViewProps {
+  cwd?: string | null;
+  isActive: boolean;
+  onStatusChange: (status: 'starting' | 'running' | 'exited' | 'error', exitCode: number | null) => void;
+  onCwdChange: (cwd: string) => void;
+  actionRef: React.MutableRefObject<{
+    sendInput: (data: string) => void;
+    clear: () => void;
+    restart: () => void;
+  } | null>;
+}
+
+function SingleTerminalView({
+  cwd,
+  isActive,
+  onStatusChange,
+  onCwdChange,
+  actionRef,
+}: SingleTerminalViewProps) {
   const { client } = useRuntime();
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const xtermRef = React.useRef<XTerm | null>(null);
@@ -166,10 +192,7 @@ export function Terminal({ cwd, className }: TerminalProps) {
   const tauriSessionIdRef = React.useRef<string | null>(null);
   const runtimeTermIdRef = React.useRef<string | null>(null);
 
-  const [status, setStatus] = React.useState<'starting' | 'running' | 'exited' | 'error'>('starting');
-  const [resolvedCwd, setResolvedCwd] = React.useState<string>(cwd ?? '~');
   const [error, setError] = React.useState<string | null>(null);
-  const [exitCode, setExitCode] = React.useState<number | null>(null);
   const [restartNonce, setRestartNonce] = React.useState(0);
 
   const sendShellInput = React.useCallback(
@@ -187,6 +210,36 @@ export function Terminal({ cwd, className }: TerminalProps) {
     [client]
   );
 
+  const clear = React.useCallback(() => {
+    xtermRef.current?.clear();
+  }, []);
+
+  const restart = React.useCallback(() => {
+    setRestartNonce((n) => n + 1);
+  }, []);
+
+  if (isActive) {
+    actionRef.current = {
+      sendInput: sendShellInput,
+      clear,
+      restart,
+    };
+  }
+
+  React.useEffect(() => {
+    if (isActive && fitRef.current && xtermRef.current) {
+      const handle = requestAnimationFrame(() => {
+        try {
+          fitRef.current?.fit();
+          xtermRef.current?.focus();
+        } catch {
+          /* ignore layout race */
+        }
+      });
+      return () => cancelAnimationFrame(handle);
+    }
+  }, [isActive]);
+
   React.useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -197,10 +250,9 @@ export function Terminal({ cwd, className }: TerminalProps) {
     let unlistenExit: UnlistenFn | null = null;
     const pendingOutputQueue: string[] = [];
 
-    setStatus('starting');
+    onStatusChange('starting', null);
     setError(null);
-    setExitCode(null);
-    setResolvedCwd(cwd ?? '~');
+    onCwdChange(cwd ?? '~');
 
     const term = new XTerm({
       cursorBlink: true,
@@ -277,8 +329,7 @@ export function Terminal({ cwd, className }: TerminalProps) {
           unlistenExit = await listen<TauriTerminalExitPayload>('terminal_exit', (event) => {
             if (disposed) return;
             if (event.payload.session_id === tauriSessionIdRef.current) {
-              setExitCode(event.payload.exit_code);
-              setStatus('exited');
+              onStatusChange('exited', event.payload.exit_code);
               term.writeln(
                 `\r\n\x1b[90m[process exited${
                   event.payload.exit_code !== null ? ` with code ${event.payload.exit_code}` : ''
@@ -301,13 +352,13 @@ export function Terminal({ cwd, className }: TerminalProps) {
           }
 
           tauriSessionIdRef.current = info.session_id;
-          setResolvedCwd(info.cwd || cwd || '~');
-          setStatus('running');
+          onCwdChange(info.cwd || cwd || '~');
+          onStatusChange('running', null);
           while (pendingOutputQueue.length > 0) {
             const chunk = pendingOutputQueue.shift();
             if (chunk) term.write(chunk);
           }
-          term.focus();
+          if (isActive) term.focus();
           return;
         } catch {
           // Fall through to runtime PTY if native spawn fails
@@ -320,7 +371,7 @@ export function Terminal({ cwd, className }: TerminalProps) {
 
       // 2. Runtime-backed PTY shell (works in both Browser and Tauri)
       if (!client) {
-        setStatus('error');
+        onStatusChange('error', null);
         setError('Waiting for the MyaOS runtime connection.');
         return;
       }
@@ -332,9 +383,9 @@ export function Terminal({ cwd, className }: TerminalProps) {
           return;
         }
         runtimeTermIdRef.current = created.id;
-        setResolvedCwd(created.cwd || cwd || '~');
-        setStatus('running');
-        term.focus();
+        onCwdChange(created.cwd || cwd || '~');
+        onStatusChange('running', null);
+        if (isActive) term.focus();
         await client.streamTerminal(
           created.id,
           (ev) => {
@@ -342,11 +393,10 @@ export function Terminal({ cwd, className }: TerminalProps) {
             if (ev.type === 'data' && ev.data) {
               term.write(ev.data);
             } else if (ev.type === 'exit') {
-              setExitCode(ev.exitCode ?? 0);
-              setStatus('exited');
+              onStatusChange('exited', ev.exitCode ?? 0);
             } else if (ev.type === 'error' && ev.message) {
               setError(ev.message);
-              setStatus('error');
+              onStatusChange('error', null);
             }
           },
           abort.signal
@@ -355,7 +405,7 @@ export function Terminal({ cwd, className }: TerminalProps) {
         if (disposed || abort.signal.aborted) return;
         const msg = e instanceof Error ? e.message : String(e);
         setError(msg);
-        setStatus('error');
+        onStatusChange('error', null);
         term.writeln(`\r\n\x1b[31mFailed to spawn shell: ${msg}\x1b[0m`);
       }
     })();
@@ -384,65 +434,189 @@ export function Terminal({ cwd, className }: TerminalProps) {
   }, [cwd, restartNonce, client]);
 
   return (
+    <div className={cn('min-h-[340px] flex-1 flex flex-col overflow-hidden', !isActive && 'hidden')}>
+      {error && (
+        <div className="border-b border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
+          {error}
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        onClick={() => xtermRef.current?.focus()}
+        className="flex-1 overflow-hidden p-2"
+      />
+    </div>
+  );
+}
+
+/**
+ * Interactive Multi-Tab PTY shell terminal backed by `xterm.js`.
+ * Supports opening multiple persistent tabs (`zsh #1`, `zsh #2`, `+ New Tab`)
+ * per workspace/worktree, keeping PTY sessions alive across tab switches.
+ */
+export function Terminal({ cwd, className }: TerminalProps) {
+  const [tabs, setTabs] = React.useState<ShellTabInfo[]>([
+    { id: 'tab-1', title: 'zsh #1', status: 'starting', exitCode: null, resolvedCwd: cwd ?? '~' },
+  ]);
+  const [activeTabId, setActiveTabId] = React.useState('tab-1');
+  const nextTabNumRef = React.useRef(2);
+  const activeActionRef = React.useRef<{
+    sendInput: (data: string) => void;
+    clear: () => void;
+    restart: () => void;
+  } | null>(null);
+
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+
+  const addNewTab = React.useCallback(() => {
+    const num = nextTabNumRef.current++;
+    const newId = `tab-${Date.now()}-${num}`;
+    const newTab: ShellTabInfo = {
+      id: newId,
+      title: `zsh #${num}`,
+      status: 'starting',
+      exitCode: null,
+      resolvedCwd: cwd ?? '~',
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newId);
+  }, [cwd]);
+
+  const closeTab = React.useCallback(
+    (tabId: string) => {
+      setTabs((prev) => {
+        if (prev.length <= 1) return prev;
+        const next = prev.filter((t) => t.id !== tabId);
+        if (activeTabId === tabId) {
+          const closedIdx = prev.findIndex((t) => t.id === tabId);
+          const nextActive = next[Math.min(closedIdx, next.length - 1)];
+          if (nextActive) setActiveTabId(nextActive.id);
+        }
+        return next;
+      });
+    },
+    [activeTabId]
+  );
+
+  const updateTabStatus = React.useCallback(
+    (tabId: string, status: 'starting' | 'running' | 'exited' | 'error', exitCode: number | null) => {
+      setTabs((prev) =>
+        prev.map((t) => (t.id === tabId ? { ...t, status, exitCode } : t))
+      );
+    },
+    []
+  );
+
+  const updateTabCwd = React.useCallback((tabId: string, newCwd: string) => {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === tabId ? { ...t, resolvedCwd: newCwd } : t))
+    );
+  }, []);
+
+  return (
     <div className={cn('flex flex-1 flex-col overflow-hidden rounded-xl border border-border/60 bg-[#0f1012]', className)}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 bg-[#14161a] px-3 py-1.5 text-xs">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            aria-hidden="true"
-            className={cn(
-              'size-2 shrink-0 rounded-full',
-              status === 'running'
-                ? 'bg-emerald-400'
-                : status === 'starting'
-                  ? 'animate-pulse bg-amber-400'
-                  : 'bg-zinc-500'
-            )}
-          />
-          <span className="truncate font-mono text-[11px] text-zinc-300" title={resolvedCwd}>
-            zsh · {resolvedCwd}
-          </span>
+        {/* Multi-Tab Buttons */}
+        <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
+          {tabs.map((tab) => {
+            const isTabActive = tab.id === activeTabId;
+            return (
+              <div
+                key={tab.id}
+                onClick={() => setActiveTabId(tab.id)}
+                className={cn(
+                  'group flex items-center gap-1.5 rounded px-2 py-0.5 font-mono text-[11px] cursor-pointer transition-colors',
+                  isTabActive
+                    ? 'bg-white/10 text-zinc-100 font-medium shadow-sm'
+                    : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
+                )}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'size-1.5 shrink-0 rounded-full',
+                    tab.status === 'running'
+                      ? 'bg-emerald-400'
+                      : tab.status === 'starting'
+                        ? 'animate-pulse bg-amber-400'
+                        : 'bg-zinc-500'
+                  )}
+                />
+                <span>{tab.title}</span>
+                {tabs.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                    title={`Close ${tab.title}`}
+                    className="ml-0.5 rounded px-1 text-[10px] text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            onClick={addNewTab}
+            title="Open new shell tab"
+            className="flex items-center gap-1 rounded bg-white/5 px-2 py-0.5 font-mono text-[11px] text-zinc-300 hover:bg-white/10 hover:text-white"
+          >
+            <span className="text-xs font-bold leading-none">+</span>
+            <span>New Tab</span>
+          </button>
+          {activeTab && (
+            <span className="ml-2 truncate font-mono text-[10px] text-zinc-500" title={activeTab.resolvedCwd}>
+              · {activeTab.resolvedCwd}
+            </span>
+          )}
         </div>
+
+        {/* Tab Actions */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {status === 'running' && (
+          {activeTab?.status === 'running' && (
             <>
               <button
                 type="button"
-                onClick={() => sendShellInput('git status -s\n')}
+                onClick={() => activeActionRef.current?.sendInput('git status -s\n')}
                 className="rounded bg-white/5 px-2 py-0.5 font-mono text-[10px] text-zinc-300 hover:bg-white/10"
               >
                 git status
               </button>
               <button
                 type="button"
-                onClick={() => sendShellInput('git log -n 5 --oneline\n')}
+                onClick={() => activeActionRef.current?.sendInput('git log -n 5 --oneline\n')}
                 className="rounded bg-white/5 px-2 py-0.5 font-mono text-[10px] text-zinc-300 hover:bg-white/10"
               >
                 git log
               </button>
               <button
                 type="button"
-                onClick={() => sendShellInput('ls -la\n')}
+                onClick={() => activeActionRef.current?.sendInput('ls -la\n')}
                 className="rounded bg-white/5 px-2 py-0.5 font-mono text-[10px] text-zinc-300 hover:bg-white/10"
               >
                 ls -la
               </button>
             </>
           )}
-          {status === 'exited' && (
+          {activeTab?.status === 'exited' && (
             <span className="font-mono text-[11px] text-zinc-400">
-              exited{exitCode !== null ? ` (${exitCode})` : ''}
+              exited{activeTab.exitCode !== null ? ` (${activeTab.exitCode})` : ''}
             </span>
           )}
           <button
             type="button"
-            onClick={() => xtermRef.current?.clear()}
+            onClick={() => activeActionRef.current?.clear()}
             className="rounded px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-white/10"
           >
             Clear
           </button>
           <button
             type="button"
-            onClick={() => setRestartNonce((n) => n + 1)}
+            onClick={() => activeActionRef.current?.restart()}
             className="rounded px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-white/10"
           >
             Restart shell
@@ -450,17 +624,16 @@ export function Terminal({ cwd, className }: TerminalProps) {
         </div>
       </div>
 
-      {error && (
-        <div className="border-b border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
-          {error}
-        </div>
-      )}
-
-      <div
-        ref={containerRef}
-        onClick={() => xtermRef.current?.focus()}
-        className="min-h-[340px] flex-1 overflow-hidden p-2"
-      />
+      {tabs.map((tab) => (
+        <SingleTerminalView
+          key={tab.id}
+          cwd={cwd}
+          isActive={tab.id === activeTabId}
+          onStatusChange={(status, exitCode) => updateTabStatus(tab.id, status, exitCode)}
+          onCwdChange={(newCwd) => updateTabCwd(tab.id, newCwd)}
+          actionRef={activeActionRef}
+        />
+      ))}
     </div>
   );
 }

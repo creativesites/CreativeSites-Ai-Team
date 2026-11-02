@@ -53,7 +53,15 @@ interface LiveSession {
   assistantText: string;
   cancelled: boolean;
   closed: boolean;
+  /** Set while the adapter replays a loaded session; the replay is already in the transcript. */
+  replaying: boolean;
+  /** Set on a continuation: the prior ACP session to load, plus a summary for the fallback path. */
+  resume: { acpSessionId: string | null; priorSummary: string } | null;
 }
+
+const RESUME_SUMMARY_LIMIT = 6000;
+const RESUME_PREAMBLE =
+  'Earlier in this session the adapter could not reload the previous conversation, so here is a summary of it. Continue from it:';
 
 const RUNTIME_TO_ADAPTER: Record<string, string> = {
   'claude code': 'claude',
@@ -218,6 +226,27 @@ function coalesceTranscriptEntries(entries: T.TranscriptEntry[]): T.TranscriptEn
   }
 
   return result;
+}
+
+/**
+ * Condenses a session's prior transcript into plain text for the resume fallback, used when the
+ * adapter cannot `session/load` the earlier conversation. Keeps the most recent exchanges when the
+ * transcript is longer than `limit` characters.
+ */
+export function buildResumeSummary(entries: T.TranscriptEntry[], limit = RESUME_SUMMARY_LIMIT): string {
+  const lines: string[] = [];
+  for (const entry of coalesceTranscriptEntries(entries)) {
+    const p = (entry.payload && typeof entry.payload === 'object' ? entry.payload : {}) as Record<string, unknown>;
+    const text = String(p.text ?? '').trim();
+    if (!text) continue;
+    if (entry.kind === 'prompt' || entry.kind === 'user_message') {
+      lines.push(`User: ${stripCoordinationBoilerplate(text)}`);
+    } else if (entry.kind === 'message' || entry.kind === 'agent_message_chunk') {
+      lines.push(`Agent: ${text}`);
+    }
+  }
+  const joined = lines.join('\n\n');
+  return joined.length > limit ? `…${joined.slice(-limit)}` : joined;
 }
 
 /**
@@ -466,6 +495,8 @@ export class SessionManager {
       assistantText: '',
       cancelled: false,
       closed: false,
+      replaying: false,
+      resume: null,
     };
     this.live.set(session.id, live);
 
@@ -486,6 +517,22 @@ export class SessionManager {
       this.repo.appendTranscript(sessionId, { kind: 'prompt', role: 'user', payload: { text: cleanText } });
       this.repo.updateSession(sessionId, { state: 'running' });
       const result = await live.client.prompt(text);
+      if (result && typeof result === 'object' && 'usage' in result && result.usage) {
+        const u = result.usage as Record<string, unknown>;
+        const inputTokens = Number(u.inputTokens ?? u.input_tokens ?? 0) || 0;
+        const outputTokens = Number(u.outputTokens ?? u.output_tokens ?? 0) || 0;
+        const costCents = Number(u.costCents ?? u.cost_cents ?? 0) || 0;
+        if (inputTokens || outputTokens || costCents) {
+          this.repo.recordUsage({
+            jobId: live.jobId,
+            sessionId: live.sessionId,
+            inputTokens,
+            outputTokens,
+            costCents,
+            source: 'acp',
+          });
+        }
+      }
       this.repo.appendTranscript(sessionId, { kind: 'turn', role: 'system', payload: result });
       this.repo.updateSession(sessionId, { state: 'idle' });
       return;
@@ -500,6 +547,8 @@ export class SessionManager {
     const adapter = this.resolveAdapter(existing.adapterId ?? agent.adapterId ?? agent.runtime);
     const worktreePath = existing.worktree ?? process.cwd() ?? os.homedir();
     const acpPrompt = this.buildPrompt(job, room, task, agent, cleanText);
+    // Summarise before appending this turn's prompt, so the summary covers only earlier turns.
+    const priorSummary = buildResumeSummary(this.repo.listTranscript(sessionId, 0, 10000));
     this.repo.appendTranscript(sessionId, { kind: 'prompt', role: 'user', title: 'Wake / follow-up prompt', payload: { text: cleanText } });
     this.repo.updateSession(sessionId, { state: 'starting', error: null });
 
@@ -549,6 +598,8 @@ export class SessionManager {
       assistantText: '',
       cancelled: false,
       closed: false,
+      replaying: false,
+      resume: { acpSessionId: existing.acpSessionId ?? null, priorSummary },
     };
     this.live.set(sessionId, resumedLive);
     const run = this.run(resumedLive, acpPrompt);
@@ -622,7 +673,8 @@ export class SessionManager {
       client.spawnProcess();
       this.repo.updateSession(live.sessionId, { state: 'starting', pid: client.pid });
       const init = await client.initialize();
-      const acpSessionId = await client.newSession();
+      const opened = await this.openAcpSession(live, init, prompt);
+      const acpSessionId = opened.acpSessionId;
       live.acpSessionId = acpSessionId;
       const agentInfo = (init.agentInfo ?? {}) as { name?: string };
       this.repo.updateSession(live.sessionId, {
@@ -632,14 +684,32 @@ export class SessionManager {
         model: agentInfo.name ?? null,
       });
 
-      const result = await client.prompt(prompt);
+      const result = await client.prompt(opened.prompt);
       if (live.closed) return;
+
+      if (result.usage) {
+        const u = result.usage as Record<string, unknown>;
+        const inputTokens = Number(u.inputTokens ?? u.input_tokens ?? u.tokensIn ?? 0) || 0;
+        const outputTokens = Number(u.outputTokens ?? u.output_tokens ?? u.tokensOut ?? 0) || 0;
+        const costCents = Number(u.costCents ?? u.cost_cents ?? (typeof u.cost === 'object' && u.cost ? (u.cost as any).amount : 0)) || 0;
+        if (inputTokens || outputTokens || costCents) {
+          this.repo.recordUsage({
+            jobId: live.jobId,
+            sessionId: live.sessionId,
+            model: (u.model as string) ?? null,
+            inputTokens,
+            outputTokens,
+            costCents,
+            source: 'acp',
+          });
+        }
+      }
 
       this.repo.appendTranscript(live.sessionId, {
         kind: 'turn_end',
         role: 'system',
         title: `Turn finished (${result.stopReason ?? 'end_turn'})`,
-        payload: { stopReason: result.stopReason },
+        payload: { stopReason: result.stopReason, usage: result.usage ?? null },
       });
 
       let checkPassed = false;
@@ -723,9 +793,41 @@ export class SessionManager {
     }
   }
 
+  private async openAcpSession(
+    live: LiveSession,
+    _init: Record<string, unknown>,
+    prompt: string
+  ): Promise<{ acpSessionId: string; prompt: string }> {
+    if (live.resume?.acpSessionId && live.client.canLoadSession) {
+      try {
+        live.replaying = true;
+        const id = await live.client.loadSession(live.resume.acpSessionId);
+        this.repo.appendTranscript(live.sessionId, {
+          kind: 'session_load',
+          role: 'system',
+          title: `Resumed ACP session ${id}`,
+          payload: { acpSessionId: id },
+        });
+        return { acpSessionId: id, prompt };
+      } catch {
+        /* fallback to new session */
+      } finally {
+        live.replaying = false;
+      }
+    }
+    const acpSessionId = await live.client.newSession();
+    if (live.resume?.priorSummary) {
+      return {
+        acpSessionId,
+        prompt: `${RESUME_PREAMBLE}\n\n${live.resume.priorSummary}\n\n${prompt}`,
+      };
+    }
+    return { acpSessionId, prompt };
+  }
+
   private handleUpdate(sessionId: string, update: Record<string, unknown>): void {
     const live = this.live.get(sessionId);
-    if (!live || live.closed || !update) return;
+    if (!live || live.closed || !update || live.replaying) return;
     const kind = String(update.sessionUpdate ?? update.type ?? 'unknown');
     if (kind === 'agent_message_chunk' || kind === 'user_message_chunk' || kind === 'agent_thought_chunk') {
       const content = (update.content ?? {}) as { type?: string; text?: string };
@@ -764,11 +866,21 @@ export class SessionManager {
       });
       return;
     }
-    if (kind === 'usage_update') {
-      const inputTokens = Number(update.inputTokens ?? update.tokensIn ?? 0) || 0;
-      const outputTokens = Number(update.outputTokens ?? update.tokensOut ?? 0) || 0;
-      if (inputTokens || outputTokens) {
-        this.repo.recordUsage({ jobId: live.jobId, sessionId: live.sessionId, model: null, inputTokens, outputTokens, costCents: 0, source: 'acp' });
+    if (kind === 'usage_update' || kind === 'usage' || Boolean(update.usage)) {
+      const u = (update.usage && typeof update.usage === 'object' ? update.usage : update) as Record<string, unknown>;
+      const inputTokens = Number(u.inputTokens ?? u.input_tokens ?? u.tokensIn ?? 0) || 0;
+      const outputTokens = Number(u.outputTokens ?? u.output_tokens ?? u.tokensOut ?? 0) || 0;
+      const costCents = Number(u.costCents ?? u.cost_cents ?? (typeof u.cost === 'object' && u.cost ? (u.cost as any).amount : 0)) || 0;
+      if (inputTokens || outputTokens || costCents) {
+        this.repo.recordUsage({
+          jobId: live.jobId,
+          sessionId: live.sessionId,
+          model: (u.model as string) ?? null,
+          inputTokens,
+          outputTokens,
+          costCents,
+          source: 'acp',
+        });
       }
     }
     this.repo.appendTranscript(sessionId, {
@@ -888,7 +1000,7 @@ export class SessionManager {
 
   private buildPrompt(job: T.JobDetail | null, room: T.Room | null, task: T.Task | null, agent: T.Identity, override?: string): string {
     if (override?.trim()) {
-      if (/^(echo ok|write outside|sleep|create a file|edit\.txt|exit 3|simulate rate limit|emit directive:)/i.test(override.trim())) {
+      if (/^(echo ok|write outside|sleep|create a file|edit\.txt|exit 3|simulate rate limit|emit directive:|report usage)/i.test(override.trim())) {
         return override.trim();
       }
     }

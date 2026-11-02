@@ -18,6 +18,10 @@ const str = (v: unknown): string | null => (v == null ? null : String(v));
 const num = (v: unknown): number => Number(v ?? 0);
 const bool = (v: unknown): boolean => Number(v ?? 0) === 1;
 const jsonText = (v: unknown) => JSON.stringify(v ?? null);
+const snippet = (text: string, max = 140) => {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+};
 
 function parseJson<T>(v: unknown, fallback: T): T {
   try {
@@ -256,6 +260,142 @@ export class Repo {
 
   latestEventSeq(): number {
     return Number(this.scalar('SELECT MAX(seq) FROM events') ?? 0);
+  }
+
+  // ---------------------------------------------------------------- search
+
+  /**
+   * Finds records whose text contains `q`, ignoring case. Each kind is capped at
+   * `perKind` hits, newest first, so one busy kind cannot hide the others.
+   */
+  search(input: { q?: string; perKind?: number } = {}): T.SearchHit[] {
+    const q = (input.q ?? '').trim();
+    if (!q) return [];
+    if (q.length > 200) throw new InputError('q must be 200 characters or fewer');
+    const perKind = Math.min(positiveInt(input.perKind, 'limit', 8) || 8, 25);
+    const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const number = /^#?(\d+)$/.exec(q);
+    const hits: T.SearchHit[] = [];
+
+    for (const r of this.all(
+      `SELECT id, number, title, stage, room_id, updated_at FROM jobs
+       WHERE title LIKE ? ESCAPE '\\' OR brief LIKE ? ESCAPE '\\' OR plan LIKE ? ESCAPE '\\' OR number = ?
+       ORDER BY updated_at DESC LIMIT ?`,
+      pattern,
+      pattern,
+      pattern,
+      number ? Number(number[1]) : -1,
+      perKind
+    )) {
+      hits.push({
+        kind: 'job',
+        id: String(r.id),
+        title: String(r.title),
+        detail: `#${num(r.number)} · ${String(r.stage)}`,
+        roomId: str(r.room_id),
+        jobId: String(r.id),
+        at: str(r.updated_at),
+      });
+    }
+
+    for (const r of this.all(
+      `SELECT id, name, created_at FROM rooms WHERE archived = 0 AND name LIKE ? ESCAPE '\\' ORDER BY name LIMIT ?`,
+      pattern,
+      perKind
+    )) {
+      hits.push({ kind: 'room', id: String(r.id), title: String(r.name), detail: null, roomId: String(r.id), jobId: null, at: str(r.created_at) });
+    }
+
+    for (const r of this.all(
+      `SELECT m.id, m.room_id, m.job_id, m.body, m.created_at, r.name AS room_name
+       FROM messages m JOIN rooms r ON r.id = m.room_id
+       WHERE m.body LIKE ? ESCAPE '\\' ORDER BY m.created_at DESC LIMIT ?`,
+      pattern,
+      perKind
+    )) {
+      hits.push({
+        kind: 'message',
+        id: String(r.id),
+        title: snippet(String(r.body)),
+        detail: String(r.room_name),
+        roomId: String(r.room_id),
+        jobId: str(r.job_id),
+        at: String(r.created_at),
+      });
+    }
+
+    for (const r of this.all(
+      `SELECT id, name, role, runtime, created_at FROM identities
+       WHERE archived = 0 AND (name LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\' OR role LIKE ? ESCAPE '\\' OR runtime LIKE ? ESCAPE '\\')
+       ORDER BY name LIMIT ?`,
+      pattern,
+      pattern,
+      pattern,
+      pattern,
+      perKind
+    )) {
+      hits.push({
+        kind: 'identity',
+        id: String(r.id),
+        title: String(r.name),
+        detail: str(r.role) ?? str(r.runtime),
+        roomId: null,
+        jobId: null,
+        at: str(r.created_at),
+      });
+    }
+
+    for (const r of this.all(
+      `SELECT s.id, s.agent_id, s.state, s.job_id, s.room_id, s.runtime_command, s.started_at, s.acp_session_id
+       FROM sessions s
+       WHERE s.id LIKE ? ESCAPE '\\'
+          OR s.agent_id LIKE ? ESCAPE '\\'
+          OR s.acp_session_id LIKE ? ESCAPE '\\'
+          OR s.runtime_command LIKE ? ESCAPE '\\'
+          OR s.id IN (
+            SELECT session_id FROM transcript_entries
+            WHERE payload LIKE ? ESCAPE '\\'
+          )
+       ORDER BY s.started_at DESC LIMIT ?`,
+      pattern,
+      pattern,
+      pattern,
+      pattern,
+      pattern,
+      perKind
+    )) {
+      hits.push({
+        kind: 'session',
+        id: String(r.id),
+        title: `${String(r.agent_id)} session`,
+        detail: `${String(r.state)} · ${String(r.runtime_command)}`,
+        roomId: str(r.room_id),
+        jobId: str(r.job_id),
+        at: String(r.started_at),
+      });
+    }
+
+    for (const r of this.all(
+      `SELECT id, job_id, kind, summary, command, commit_sha, created_at FROM evidence
+       WHERE summary LIKE ? ESCAPE '\\' OR command LIKE ? ESCAPE '\\' OR commit_sha LIKE ? ESCAPE '\\'
+       ORDER BY created_at DESC LIMIT ?`,
+      pattern,
+      pattern,
+      pattern,
+      perKind
+    )) {
+      hits.push({
+        kind: 'evidence',
+        id: String(r.id),
+        title: snippet(String(r.summary)),
+        detail: String(r.kind),
+        roomId: null,
+        jobId: str(r.job_id),
+        at: String(r.created_at),
+      });
+    }
+
+    return hits;
   }
 
   // ---------------------------------------------------------------- identities
@@ -1473,11 +1613,47 @@ export class Repo {
   // ---------------------------------------------------------------- sessions / transcript
 
   listSessions(): T.Session[] {
-    return this.all('SELECT * FROM sessions ORDER BY started_at DESC').map(toSession);
+    return this.all(`
+      SELECT s.*,
+        u.input_tokens AS usage_input_tokens,
+        u.output_tokens AS usage_output_tokens,
+        u.cost_cents AS usage_cost_cents,
+        u.has_usage
+      FROM sessions s
+      LEFT JOIN (
+        SELECT session_id,
+          SUM(input_tokens) AS input_tokens,
+          SUM(output_tokens) AS output_tokens,
+          SUM(cost_cents) AS cost_cents,
+          1 AS has_usage
+        FROM usage
+        WHERE session_id IS NOT NULL
+        GROUP BY session_id
+      ) u ON u.session_id = s.id
+      ORDER BY s.started_at DESC
+    `).map(toSession);
   }
 
   getSession(id: string): T.Session {
-    const row = this.one('SELECT * FROM sessions WHERE id = ?', id);
+    const row = this.one(`
+      SELECT s.*,
+        u.input_tokens AS usage_input_tokens,
+        u.output_tokens AS usage_output_tokens,
+        u.cost_cents AS usage_cost_cents,
+        u.has_usage
+      FROM sessions s
+      LEFT JOIN (
+        SELECT session_id,
+          SUM(input_tokens) AS input_tokens,
+          SUM(output_tokens) AS output_tokens,
+          SUM(cost_cents) AS cost_cents,
+          1 AS has_usage
+        FROM usage
+        WHERE session_id IS NOT NULL
+        GROUP BY session_id
+      ) u ON u.session_id = s.id
+      WHERE s.id = ?
+    `, id);
     if (!row) throw new NotFoundError(`session ${id} not found`);
     return toSession(row);
   }
@@ -2835,31 +3011,46 @@ const toBudget = (r: Row): T.Budget => ({
   updatedAt: String(r.updated_at),
 });
 
-const toSession = (r: Row): T.Session => ({
-  id: String(r.id),
-  agentId: String(r.agent_id),
-  taskId: str(r.task_id),
-  jobId: str(r.job_id),
-  roomId: str(r.room_id),
-  runtimeCommand: String(r.runtime_command),
-  pid: r.pid == null ? null : num(r.pid),
-  worktree: str(r.worktree),
-  state: r.state as T.SessionState,
-  lastSeenAt: str(r.last_seen_at),
-  startedAt: String(r.started_at),
-  endedAt: str(r.ended_at),
-  acpSessionId: str(r.acp_session_id),
-  adapterId: str(r.adapter_id),
-  mode: (str(r.mode) ?? 'build') as T.Session['mode'],
-  baseSha: str(r.base_sha),
-  baseBranch: str(r.base_branch),
-  exitCode: r.exit_code == null ? null : num(r.exit_code),
-  error: str(r.error),
-  cancelRequestedAt: str(r.cancel_requested_at),
-  lastEventAt: str(r.last_event_at),
-  model: str(r.model),
-  turnCount: num(r.turn_count),
-});
+const toSession = (r: Row): T.Session => {
+  const hasUsage = r.has_usage != null ? Boolean(r.has_usage) : (r.usage_input_tokens != null || r.usage_output_tokens != null || r.usage_cost_cents != null);
+  const inputTokens = r.usage_input_tokens != null ? num(r.usage_input_tokens) : 0;
+  const outputTokens = r.usage_output_tokens != null ? num(r.usage_output_tokens) : 0;
+  const costCents = r.usage_cost_cents != null ? num(r.usage_cost_cents) : 0;
+  const usage = hasUsage && (inputTokens > 0 || outputTokens > 0 || costCents > 0)
+    ? {
+        inputTokens,
+        outputTokens,
+        totalTokens: inputTokens + outputTokens,
+        costCents,
+      }
+    : null;
+  return {
+    id: String(r.id),
+    agentId: String(r.agent_id),
+    taskId: str(r.task_id),
+    jobId: str(r.job_id),
+    roomId: str(r.room_id),
+    runtimeCommand: String(r.runtime_command),
+    pid: r.pid == null ? null : num(r.pid),
+    worktree: str(r.worktree),
+    state: r.state as T.SessionState,
+    lastSeenAt: str(r.last_seen_at),
+    startedAt: String(r.started_at),
+    endedAt: str(r.ended_at),
+    acpSessionId: str(r.acp_session_id),
+    adapterId: str(r.adapter_id),
+    mode: (str(r.mode) ?? 'build') as T.Session['mode'],
+    baseSha: str(r.base_sha),
+    baseBranch: str(r.base_branch),
+    exitCode: r.exit_code == null ? null : num(r.exit_code),
+    error: str(r.error),
+    cancelRequestedAt: str(r.cancel_requested_at),
+    lastEventAt: str(r.last_event_at),
+    model: str(r.model),
+    turnCount: num(r.turn_count),
+    usage,
+  };
+};
 
 const toTranscript = (r: Row): T.TranscriptEntry => ({
   id: num(r.id),

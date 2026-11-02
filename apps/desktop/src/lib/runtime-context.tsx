@@ -1,11 +1,16 @@
 import * as React from 'react';
 import { discoverRuntime, RuntimeClient, type ConnectionState } from '@/lib/runtime';
+import type { RuntimeEvent } from '@runtime/types';
+
+type EventListener = (event: RuntimeEvent) => void;
 
 interface RuntimeContextValue {
   state: ConnectionState;
   client: RuntimeClient | null;
   /** Bumps on every runtime event, so views refetch what they show. */
   revision: number;
+  /** Calls `listener` with each runtime event as it arrives. Returns the unsubscribe function. */
+  subscribe: (listener: EventListener) => () => void;
   retry: () => void;
 }
 
@@ -16,6 +21,13 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
   const [client, setClient] = React.useState<RuntimeClient | null>(null);
   const [revision, setRevision] = React.useState(0);
   const [attempt, setAttempt] = React.useState(0);
+  const listeners = React.useRef(new Set<EventListener>());
+  const subscribe = React.useCallback((listener: EventListener) => {
+    listeners.current.add(listener);
+    return () => {
+      listeners.current.delete(listener);
+    };
+  }, []);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -29,7 +41,10 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         setClient(c);
         setState({ status: 'connected', connection, health });
-        void c.followEvents(() => setRevision((r) => r + 1), abort.signal);
+        void c.followEvents((event) => {
+          for (const listener of listeners.current) listener(event);
+          setRevision((r) => r + 1);
+        }, abort.signal);
       } catch (e) {
         if (cancelled) return;
         setClient(null);
@@ -81,8 +96,8 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
   }, [state.status]);
 
   const value = React.useMemo(
-    () => ({ state, client, revision, retry: () => setAttempt((a) => a + 1) }),
-    [state, client, revision]
+    () => ({ state, client, revision, subscribe, retry: () => setAttempt((a) => a + 1) }),
+    [state, client, revision, subscribe]
   );
   return <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>;
 }

@@ -157,3 +157,94 @@ test('a permission request becomes an approval and the client blocks the outside
   }, 20_000);
   assert.ok(blocked.length > 0);
 });
+
+test('multi-turn follow-up prompt, worktree files endpoint and live usage telemetry', async () => {
+  // 1. Start a session that creates a file
+  const started = await call('POST', `/v1/jobs/${jobId}/sessions`, {
+    agentId: 'atlas',
+    adapterId: 'fake',
+    prompt: 'create a file',
+  });
+  assert.equal(started.status, 202);
+  const sessionId = started.json.id as string;
+
+  // Wait for the session to complete turn 1 and become idle
+  const idleSession = await waitFor(async () => {
+    const res = await call('GET', `/v1/sessions/${sessionId}`);
+    return res.json?.state === 'idle' ? res.json : null;
+  });
+  assert.ok(idleSession.acpSessionId);
+
+  // Write a file in the session worktree to verify GET /v1/sessions/:id/files detects untracked/modified files with diffs
+  fs.writeFileSync(path.join(idleSession.worktree, 'worktree-change.txt'), 'new worktree content\n');
+
+  // 2. Test GET /v1/sessions/:id/files: should list worktree-change.txt with diff
+  const filesRes = await call('GET', `/v1/sessions/${sessionId}/files`);
+  assert.equal(filesRes.status, 200);
+  assert.ok(Array.isArray(filesRes.json));
+  const createdFile = filesRes.json.find((f: any) => f.path.includes('worktree-change.txt'));
+  assert.ok(createdFile, `files endpoint should return worktree-change.txt: ${JSON.stringify(filesRes.json)}`);
+  assert.ok(createdFile.diff, 'file entry includes a diff');
+
+  // 3. Test multi-turn follow-up instruction to an idle session
+  const followUp = await call('POST', `/v1/sessions/${sessionId}/prompt`, {
+    text: 'report usage',
+  });
+  assert.equal(followUp.status, 202);
+
+  // Wait for the continuation turn to finish
+  const continuedSession = await waitFor(async () => {
+    const res = await call('GET', `/v1/sessions/${sessionId}`);
+    return res.json?.state === 'idle' && res.json?.turnCount > 1 ? res.json : null;
+  });
+  assert.ok(continuedSession.turnCount >= 2);
+
+  // 4. Verify token and cost telemetry is recorded on the session
+  assert.ok(continuedSession.usage, 'session has live usage telemetry');
+  assert.ok(continuedSession.usage.inputTokens > 0);
+  assert.ok(continuedSession.usage.outputTokens > 0);
+  assert.ok(continuedSession.usage.totalTokens === continuedSession.usage.inputTokens + continuedSession.usage.outputTokens);
+});
+
+test('multi-turn session resumes existing acpSessionId via session/load when supported by adapter', async () => {
+  process.env.FAKE_LOAD_SESSION = '1';
+  try {
+    const started = await call('POST', `/v1/jobs/${jobId}/sessions`, {
+      agentId: 'kael',
+      adapterId: 'fake',
+      prompt: 'echo ok',
+    });
+    assert.equal(started.status, 202);
+    const sessionId = started.json.id as string;
+
+    const initialSession = await waitFor(async () => {
+      const res = await call('GET', `/v1/sessions/${sessionId}`);
+      return res.json?.state === 'idle' ? res.json : null;
+    });
+    const capturedAcpSessionId = initialSession.acpSessionId;
+    assert.ok(capturedAcpSessionId);
+
+    // Follow-up prompt to idle session with adapter advertising loadSession: true
+    const followUp = await call('POST', `/v1/sessions/${sessionId}/prompt`, {
+      text: 'echo ok',
+    });
+    assert.equal(followUp.status, 202);
+
+    const resumedSession = await waitFor(async () => {
+      const res = await call('GET', `/v1/sessions/${sessionId}`);
+      return res.json?.state === 'idle' && res.json?.turnCount > initialSession.turnCount ? res.json : null;
+    });
+    // ACP session ID must be preserved
+    assert.equal(resumedSession.acpSessionId, capturedAcpSessionId);
+
+    // Verify transcript received the resumed session confirmation
+    const tRes = await call('GET', `/v1/sessions/${sessionId}/transcript`);
+    const entries = tRes.json as any[];
+    const resumedEntry = entries.find(
+      (e) => e.kind === 'session_load' || e.payload?.acpSessionId === capturedAcpSessionId
+    );
+    assert.ok(resumedEntry, 'transcript contains session/load confirmation');
+  } finally {
+    delete process.env.FAKE_LOAD_SESSION;
+  }
+});

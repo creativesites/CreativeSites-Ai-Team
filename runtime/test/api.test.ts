@@ -123,6 +123,44 @@ test('the event stream replays past events and pushes new ones', async () => {
   controller.abort();
 });
 
+test('search finds jobs, rooms, messages, identities, sessions and evidence', async () => {
+  const job = (await call('GET', '/v1/jobs')).json.find((j: { title: string }) => j.title === 'Fix early logout');
+  await call('POST', `/v1/jobs/${job.id}/evidence`, {
+    kind: 'test',
+    class: 'OBSERVED',
+    summary: 'Auth tests pass locally',
+    command: 'npm run test:auth',
+    commitSha: 'a1b2c3d4e5',
+    recordedBy: 'sage',
+  });
+  const session = await call('POST', '/v1/sessions', { agentId: 'sage', runtimeCommand: 'claude-code --acp', jobId: job.id });
+  assert.equal(session.status, 201);
+  await call('POST', `/v1/sessions/${session.json.id}/transcript`, {
+    kind: 'prompt',
+    payload: { text: 'investigate JWT expiration logic' },
+  });
+
+  const kinds = async (q: string) => (await call('GET', `/v1/search?q=${encodeURIComponent(q)}`)).json.map((h: { kind: string }) => h.kind);
+  assert.deepEqual(await kinds('early logout'), ['job']);
+  assert.deepEqual(await kinds('MYAVANA'), ['room'], 'matching ignores case');
+  assert.deepEqual(await kinds('hello'), ['message']);
+  assert.deepEqual(await kinds('sage'), ['identity', 'session'], 'identities and sessions match by agent');
+  assert.deepEqual(await kinds('auth tests'), ['evidence']);
+  assert.deepEqual(await kinds('test:auth'), ['evidence'], 'evidence matches command');
+  assert.deepEqual(await kinds('a1b2c3d4e5'), ['evidence'], 'evidence matches commitSha');
+  assert.deepEqual(await kinds('JWT expiration'), ['session'], 'sessions match transcript prompt text');
+  assert.deepEqual(await kinds('#1'), ['job'], 'a job number finds the job');
+
+  const [hit] = (await call('GET', '/v1/search?q=hello')).json;
+  assert.equal(hit.detail, 'myavana-chatbot', 'a message says which room it is in');
+  assert.equal(hit.roomId, (await call('GET', '/v1/rooms')).json.find((r: { name: string }) => r.name === 'myavana-chatbot').id);
+
+  assert.deepEqual((await call('GET', '/v1/search?q=%25')).json, [], 'wildcards are literal, not matches-everything');
+  assert.deepEqual((await call('GET', '/v1/search?q=')).json, [], 'a blank query finds nothing');
+  assert.equal((await call('GET', `/v1/search?q=${'x'.repeat(201)}`)).status, 400);
+  assert.equal((await call('GET', '/v1/search?q=hello&limit=abc')).status, 400);
+});
+
 test('migrations are idempotent', () => {
   const db = openStore(path.join(dir, 'second.db'));
   assert.equal(schemaVersion(db), MIGRATIONS.at(-1)!.version);

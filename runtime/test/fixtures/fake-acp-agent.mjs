@@ -52,7 +52,7 @@ function toolCall(toolCallId, title, status, rawInput) {
 }
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const sessionId = 'fake-session-1';
+let sessionId = 'fake-session-1';
 
 async function runTerminal(command, args) {
   const created = await request('terminal/create', { sessionId, command, args, cwd });
@@ -76,7 +76,23 @@ async function handlePrompt(message) {
   currentPrompt = { id: message.id, cancelled: false };
   agentText('working');
   try {
-    if (/sleep/i.test(promptText)) {
+    if (/report usage/i.test(promptText)) {
+      update({
+        sessionUpdate: 'usage_update',
+        inputTokens: 120,
+        outputTokens: 45,
+        costCents: 3,
+      });
+      agentText('reported usage update');
+      respond(message.id, { stopReason: 'end_turn', usage: { inputTokens: 120, outputTokens: 45, costCents: 3 } });
+      return;
+    }
+    // If prompt was prepended with a prior session summary, inspect the trailing active turn
+    const activeText = promptText.includes('Earlier in this session')
+      ? promptText.slice(promptText.lastIndexOf('\n\n')).trim() || promptText
+      : promptText;
+
+    if (/sleep/i.test(activeText)) {
       toolCall('t-sleep', 'Run sleep 20', 'pending', { command: 'sleep 20' });
       const created = await request('terminal/create', { sessionId, command: 'sleep', args: ['20'], cwd });
       const terminalId = created.result?.terminalId;
@@ -88,7 +104,7 @@ async function handlePrompt(message) {
       return;
     }
 
-    if (/create a file/i.test(promptText)) {
+    if (/create a file/i.test(activeText)) {
       toolCall('t-create', 'Write created.txt', 'pending', { file_path: join(cwd, 'created.txt') });
       const result = await request('fs/write_text_file', {
         sessionId,
@@ -101,7 +117,7 @@ async function handlePrompt(message) {
       return;
     }
 
-    if (/edit\.txt/i.test(promptText)) {
+    if (/edit\.txt/i.test(activeText)) {
       toolCall('t-edit', 'Edit edit.txt', 'pending', { file_path: join(cwd, 'edit.txt') });
       const read = await request('fs/read_text_file', { sessionId, path: join(cwd, 'edit.txt') });
       const content = read.result?.content ?? '';
@@ -112,7 +128,7 @@ async function handlePrompt(message) {
       return;
     }
 
-    if (/exit 3|exit code/i.test(promptText)) {
+    if (/exit 3|exit code/i.test(activeText)) {
       toolCall('t-exit3', 'Run sh -c exit 3', 'pending', { command: "sh -c 'exit 3'" });
       const terminal = await runTerminal('sh', ['-c', 'exit 3']);
       toolCall('t-exit3', 'Run sh -c exit 3', terminal.exitCode === 0 ? 'failed' : 'completed');
@@ -121,14 +137,14 @@ async function handlePrompt(message) {
       return;
     }
 
-    if (/simulate rate limit/i.test(promptText)) {
+    if (/simulate rate limit/i.test(activeText)) {
       process.stderr.write('Claude AI usage limit reached. Your session limit resets in 45m.\n');
       respondError(message.id, -32000, 'Session limit reached · resets in 45m');
       return;
     }
 
-    if (/emit directive:/i.test(promptText)) {
-      const m = promptText.match(/emit directive:\s*([^\n]+)/i);
+    if (/emit directive:/i.test(activeText)) {
+      const m = activeText.match(/emit directive:\s*([^\n]+)/i);
       if (m) {
         agentText(`\nExecuting requested action:\n${m[1].trim()}\n`);
       }
@@ -136,7 +152,7 @@ async function handlePrompt(message) {
       return;
     }
 
-    if (/echo ok/i.test(promptText)) {
+    if (/echo ok/i.test(activeText)) {
       toolCall('t-echo', 'Run echo ok', 'pending', { command: 'echo ok' });
       const terminal = await runTerminal('echo', ['ok']);
       toolCall('t-echo', 'Run echo ok', 'completed');
@@ -145,7 +161,7 @@ async function handlePrompt(message) {
       return;
     }
 
-    if (/outside/i.test(promptText)) {
+    if (/outside/i.test(activeText)) {
       const permission = await request('session/request_permission', {
         sessionId,
         toolCall: {
@@ -204,12 +220,17 @@ rl.on('line', (line) => {
     case 'initialize':
       respond(message.id, {
         protocolVersion: 1,
-        agentCapabilities: { loadSession: false },
+        agentCapabilities: { loadSession: process.env.FAKE_LOAD_SESSION === '1' },
         agentInfo: { name: 'fake-acp-agent', title: 'Fake ACP agent (harness self-test)', version: '0.1.0' },
         authMethods: [],
       });
       break;
     case 'session/new':
+      respond(message.id, { sessionId });
+      break;
+    case 'session/load':
+      sessionId = message.params?.sessionId ?? sessionId;
+      agentText(`resumed session: ${sessionId}`);
       respond(message.id, { sessionId });
       break;
     case 'session/prompt':
