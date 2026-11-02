@@ -1,6 +1,6 @@
 {
   "version": "2.0.0",
-  "updated_at": "2026-10-27T19:25:29.486216+00:00",
+  "updated_at": "2026-11-02T23:06:20+00:00",
   "principle": "Declared state != observed state != attested state != verified state",
   "agents": [
     {
@@ -585,6 +585,57 @@
       "status": "WORKING",
       "current_task": "CT-008 & CT-009 Independent Claim Verification & EDL Audit",
       "evidence_source": "Registered 2026-10-27 in Claude Code session (PID 6083); unified into CarringtonTomorrow workspace."
+    },
+    {
+      "identity": {
+        "id": "codex",
+        "name": "Codex",
+        "symbol": "\u25c8",
+        "primary_domain": "Workflow analysis and operating-model documentation (session-scoped)"
+      },
+      "declared_capabilities": [
+        "workflow-analysis",
+        "orchestration-design",
+        "documentation"
+      ],
+      "declared_responsibilities": [
+        "Workflow planning assignment from Winston, 2026-11-03",
+        "No persistent MyaOS runtime responsibility"
+      ],
+      "declared_repository_ownership": [
+        "CreativeSites-Ai-Team"
+      ],
+      "runtime_session_identity": null,
+      "observed_liveness": "UNKNOWN",
+      "last_observed_time": null,
+      "evidence_source": "User-directed session registration; no MyaOS runtime session observed.",
+      "confidence_provenance": "DECLARED",
+      "status": "SESSION_SCOPED",
+      "current_task": "Thread 041: MyaOS workflow from scratch"
+    },
+    {
+      "identity": {
+        "id": "cadence",
+        "name": "Cadence",
+        "symbol": "\u27f3",
+        "primary_domain": "MyaOS v2 workflow engine: job lifecycle, agent action protocol, scheduling, stand-ups, OKR linkage"
+      },
+      "declared_capabilities": [
+        "runtime-audit",
+        "workflow-design",
+        "scheduler-design",
+        "agent-protocol-design"
+      ],
+      "declared_responsibilities": [
+        "v2 runtime workflow audit and engine spec (thread 041)",
+        "Reconcile the v1/Node and v2 workflow findings with Codex and Orchestrator"
+      ],
+      "declared_repository_ownership": [],
+      "observed_liveness": "UNKNOWN",
+      "confidence_provenance": "DECLARED",
+      "status": "WORKING",
+      "current_task": "Thread 041: MyaOS workflow from scratch",
+      "evidence_source": "Self-registered 2026-11-03 at Winston direction (Claude Code session)."
     },
     {
       "identity": {

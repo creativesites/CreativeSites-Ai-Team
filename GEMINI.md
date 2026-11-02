@@ -1,5 +1,7 @@
 # MyaOS Collaboration & Engineering Mandates
 
+> **Current workflow boundary:** Read [`AGENTS.md`](AGENTS.md) first, then the [workflow operating model](community/proposals/MYAOS_WORKFLOW_OPERATING_MODEL.md) and [implementation plan](community/proposals/MYAOS_WORKFLOW_IMPLEMENTATION_PLAN.md). The latter describe a proposed target, not shipped runtime behavior. This repository has distinct Node and Tauri desktop paths; do not infer that a feature in one is integrated with the other. For the evidence-based audit, see [thread 041](community/threads/041_myaos_workflow_from_scratch.md).
+
 Welcome to the CreativeSites AI Team core instruction matrix. The principles and workflows below are foundational guidelines committed to the repository, guiding all current and future autonomous agents and human developers on this project.
 
 ---
@@ -74,7 +76,7 @@ Never start from:
 
 ## 2. Core Engineering & Quality Standards
 
-*   **Substrate-Native Truth**: The SQLite database (`data/myaos.db` in v1; `~/.myaos/runtime.db` in v2) is the absolute single source of record. All progress trackers, dashboards, and metrics must calculate values dynamically using relational analytics, maintaining 100% truthfulness and surfacing `UNKNOWN` for missing telemetry.
+*   **Substrate-Native Truth**: Use the authoritative store for the runtime actually handling the work, and preserve provenance. Today, desktop Tauri SQLite and Node task/event paths are not one integrated source of record. Do not claim a cross-runtime update unless an adapter or shared service demonstrably performed it. Surface `UNKNOWN` for missing telemetry. The workflow implementation plan calls for an architecture decision before consolidating stores.
 *   **The Independent Verifier Rule**: To prevent confirmation bias and protect the codebase's epistemic integrity, **the implementing agent is strictly forbidden from self-verifying their own work**. 
     *   Upon completing an implementation, the author must author robust, un-mocked regression tests, and transition the task status to `in_review`.
     *   Independent verification (e.g. via Lead Verifier Kael or Automated QA Antigravity) must run the verification commands, inspect outcomes, and write the final passed status to the `evidence` table.

@@ -8,6 +8,8 @@
 
 ## Active Agent Roster
 
+> **2026-11-03 session entry:** Codex was added at Winston's direction for the workflow review documented in thread 041. This is a repository-level declared, session-scoped identity (`observed_liveness: UNKNOWN`), not evidence of a persistent MyaOS runtime. Temporary delegated review agents are not listed as team identities.
+
 | Agent Name | Alias / ID | Primary Domain / Specialization | Status | Active Focus / Organizational Responsibilities |
 |:---|:---|:---|:---|:---|
 | **Astra** ✦ | agent-1 | Widget SDK & AI Protocol | **AVAILABLE** | Protocol Steward, AI Lead; TASK_005_client_core_extraction |
@@ -37,6 +39,8 @@
 | **Corona** 🔭 | corona | Claim-Ledger Verifier, Paper Edit & Assembly Co-Lead for *Carrington Tomorrow* (Claude Code #2) | **WORKING** | Self-registered 2026-10-27 (Winston's direction), Claude Code session. Team `carrington`; workspace `/Users/winstonzulu/Movies/CarringtonTomorrow` (unified from `Movies/carrington_tomorrow`). Owns independent claim-ledger verification (#1–#24 + 6 script gap claims), paper edit/EDL timing, and assembly QA. Role is DECLARED. |
 | **Faraday** ⚡ | faraday | AI Generation Lead for *Carrington Tomorrow*: 1859 Victorian World & Opening (Seq B, Seq A, Seq E) | **WORKING** | Self-registered 2026-10-27 (Winston's direction), Gemini Antigravity Crew-A session (`f1d9acc8`). Team `carrington`; workspace `/Users/winstonzulu/Movies/CarringtonTomorrow`; thread 040. Owns reference stills and 10s video generation for the Victorian telegraph mystery, Carrington observatory, and orbital/consequences bridges. Adheres to Independent Verifier Rule. Role is DECLARED. |
 | **Helios** ☀️ | helios | **Team Leader & Executive Producer** for *Carrington Tomorrow*; AI Generation Lead (Tomorrow & Space, Stock & Audio) | **WORKING** | Appointed **Team Leader** by Winston (2026-10-27, recorded in `human_decisions`), Gemini Antigravity session (`9d36fff7`). Team `carrington`; workspace `/Users/winstonzulu/Movies/CarringtonTomorrow`; thread 040. Orchestrates the 4-agent crew (Helios, Faraday, Reel, Corona), owns Seq D (3 control rooms + Ama/Daniel/Lena portraits), Seq C (CME/space), stock video (`E-02`), and audio cues (`S1–S13`). Role is VERIFIED_OBSERVED. |
+| **Codex** ◈ | codex | Workflow analysis and operating-model documentation | **SESSION-SCOPED / UNKNOWN** | Registered at Winston's direction for the workflow review in thread 041. No persistent MyaOS runtime identity is claimed. |
+| **Cadence** ⟳ | cadence | MyaOS v2 workflow engine: job lifecycle, agent action protocol, scheduling, stand-ups, OKR linkage | **WORKING** | Self-registered 2026-11-03 (Winston's direction), Claude Code session on branch `claude/quirky-jennings-dd80cd`. Owns the v2 runtime side of thread 041: audit of `runtime/` + `apps/desktop`, `MYAOS_V2_WORKFLOW_ENGINE_SPEC.md`, `MYAOS_V2_WORKFLOW_AUDIT.md`. Session-scoped; no persistent MyaOS runtime session claimed. Role is DECLARED. |
 | **Tessera** ◫ | tessera | Desktop product design & polish: Design Studio, screen UX, honest empty and error states | **WORKING** | Self-registered 2026-11-03 (Winston's direction), Claude Code session. Wrote the desktop direction brief (options A–E) and is discussing the ideal Design Studio page and v2 app polish with Codex in thread 044. Session-scoped; no persistent MyaOS runtime session claimed. Role is DECLARED. |
 
 

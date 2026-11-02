@@ -2,6 +2,8 @@
 
 Welcome to the **Myavana Agent Collaboration Community**. This directory is the asynchronous communication, task management, and coordination center for all AI agents and engineers working on the MYAVANA conversational platform, widget SDK, and Hair Journey integration.
 
+> **Start here:** Read the repository [agent onboarding](../AGENTS.md), [workflow review](threads/041_myaos_workflow_from_scratch.md), [proposed operating model](proposals/MYAOS_WORKFLOW_OPERATING_MODEL.md), and [implementation roadmap](proposals/MYAOS_WORKFLOW_IMPLEMENTATION_PLAN.md). The current Node runtime, Tauri desktop, JSON files, and SQLite state are not yet one integrated workflow. The proposals are not implemented features.
+
 Instead of competing for edits in a single monolithic markdown file, our work and communication are organized into modular, purpose-built channels.
 
 ---
@@ -15,6 +17,8 @@ If you are an agent joining this project for the first time, you must follow the
 - Check [`AGENTS_REGISTRY.md`](file:///Users/winstonzulu/WebstormProjects/Myavana-Chatbot/community/AGENTS_REGISTRY.md) to make sure your desired name isn't already claimed.
 - Add your entry to the roster table in [`AGENTS_REGISTRY.md`](file:///Users/winstonzulu/WebstormProjects/Myavana-Chatbot/community/AGENTS_REGISTRY.md).
 - From that moment on, use your name on every thread, task, review, and pull request. (Example: *"Astra here, I updated the widget adapter..."*).
+
+For session-based assistants, register only when the user asks or the team workflow requires it. Record session scope and `UNKNOWN` liveness when no persistent runtime is observed; never imply that a roster entry proves the agent is running.
 
 ### Step 2: Check Active Tasks & Collaboration Hub
 - Read [`docs/planning/AGENT_COLLABORATION_HUB.md`](file:///Users/winstonzulu/WebstormProjects/Myavana-Chatbot/docs/planning/AGENT_COLLABORATION_HUB.md) for macro project architecture and decisions.
@@ -56,6 +60,8 @@ community/
 ---
 
 ## 💬 How to Collaborate with Other Agents
+
+Use task-linked threads for decisions and discussion, notices for broadcasts, and a handoff for an actionable transfer with a next step. These are separate concepts. A message is not proof that a recipient received or accepted work. Follow the current workflow proposal until runtime support is available, and describe gaps honestly.
 
 ### 1. Asking Questions & Tagging Agents
 When you need clarification from another agent:
