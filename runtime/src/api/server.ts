@@ -24,12 +24,13 @@ import {
   syncBoardFramesFromDisk,
   writeFrameFileToDisk,
 } from '../design-studio.ts';
-import type { Bridge } from '../bridge.ts';
 import { DesignRunner } from '../design-agent.ts';
+import type { Bridge } from '../bridge.ts';
 import type { Orchestrator } from '../orchestrator.ts';
 import type { TerminalManager } from '../terminal-manager.ts';
 import { getRosterPayload } from '../council-roster.ts';
 import { findFolderSession, listFolderSessions } from '../council-watch.ts';
+import { resolveCommunityDir, syncCommunity } from '../community-sync.ts';
 import {
   buildSessionPayloadFromCouncil,
   startLiveCouncil,
@@ -975,12 +976,27 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       status: 200,
       body: repo.listInboxMessages(ctx.query.get('identity') || 'Winston', Number(ctx.query.get('limit') ?? 50)),
     })),
+    route('POST', '/v1/communication/sync', () => {
+      const stats = syncCommunity(repo);
+      return { status: 200, body: stats };
+    }),
+    route('GET', '/v1/communication/sync', () => {
+      const commDir = resolveCommunityDir();
+      return {
+        status: 200,
+        body: {
+          communityRoot: commDir ?? 'not_found',
+          ok: Boolean(commDir),
+        },
+      };
+    }),
     route('POST', '/v1/communication/inbox', (ctx) => {
       const input = ctx.body as unknown as T.SendInboxMessageInput;
       const created = repo.sendInboxMessage(input);
       try {
-        if (opts.bridge?.status().inboxDir) {
-          const inboxDir = path.join(opts.bridge.status().inboxDir!, input.to.trim().toLowerCase());
+        const commDir = resolveCommunityDir();
+        if (commDir) {
+          const inboxDir = path.join(commDir, 'inboxes', input.to.trim().toLowerCase());
           fs.mkdirSync(inboxDir, { recursive: true });
           const stamp = new Date().toISOString().replace(/[:.]/g, '-');
           const file = path.join(inboxDir, `${stamp}_${input.from}_note.md`);
@@ -991,22 +1007,53 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       }
       return { status: 201, body: created };
     }),
-    route('GET', '/v1/communication/threads', () => ({
-      status: 200,
-      body: repo.listThreads(),
-    })),
-    route('POST', '/v1/communication/threads', (ctx) => ({
-      status: 201,
-      body: repo.createThread(ctx.body as unknown as T.CreateThreadInput),
-    })),
+    route('GET', '/v1/communication/threads', (ctx) => {
+      if (ctx.query.get('sync') === '1') {
+        syncCommunity(repo);
+      }
+      return {
+        status: 200,
+        body: repo.listThreads(),
+      };
+    }),
+    route('POST', '/v1/communication/threads', (ctx) => {
+      const input = ctx.body as unknown as T.CreateThreadInput;
+      const created = repo.createThread(input);
+      try {
+        const commDir = resolveCommunityDir();
+        if (commDir) {
+          const threadsDir = path.join(commDir, 'threads');
+          fs.mkdirSync(threadsDir, { recursive: true });
+          const datePrefix = new Date().toISOString().slice(0, 10);
+          const slug = created.id.replace(/^th_/, '');
+          const filePath = path.join(threadsDir, `${slug}.md`);
+          const header = `# Thread: ${created.title}\n\n- **Thread ID**: ${created.id}\n- **Author**: @${input.author}\n- **Target Audience / Assignees**: ${(input.targetIdentities || []).map((t) => `@${t}`).join(', ') || '@all'}\n- **Status**: OPEN\n- **Created Date**: ${datePrefix}\n\n---\n\n${input.initialMessage}\n`;
+          fs.writeFileSync(filePath, header, 'utf8');
+        }
+      } catch {
+        /* best effort */
+      }
+      return { status: 201, body: created };
+    }),
     route('GET', '/v1/communication/threads/:id/messages', (ctx) => ({
       status: 200,
       body: repo.getThreadMessages(ctx.params.id!),
     })),
-    route('POST', '/v1/communication/threads/:id/replies', (ctx) => ({
-      status: 201,
-      body: repo.postThreadReply(ctx.params.id!, ctx.body as unknown as T.PostThreadReplyInput),
-    })),
+    route('POST', '/v1/communication/threads/:id/replies', (ctx) => {
+      const input = ctx.body as unknown as T.PostThreadReplyInput;
+      const reply = repo.postThreadReply(ctx.params.id!, input);
+      try {
+        const thread = repo.getThread(ctx.params.id!);
+        if (thread.originalFilePath && fs.existsSync(thread.originalFilePath)) {
+          const stamp = new Date().toISOString();
+          const replyBlock = `\n\n### Reply from @${reply.from} (${stamp})\n\n${reply.body}\n`;
+          fs.appendFileSync(thread.originalFilePath, replyBlock, 'utf8');
+        }
+      } catch {
+        /* best effort */
+      }
+      return { status: 201, body: reply };
+    }),
     route('GET', '/v1/communication/announcements', (ctx) => ({
       status: 200,
       body: repo.listAnnouncements(Number(ctx.query.get('limit') ?? 20)),

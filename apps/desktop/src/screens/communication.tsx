@@ -2,12 +2,14 @@ import * as React from 'react';
 import {
   Calendar,
   ChevronRight,
+  FileText,
   Hash,
   Inbox,
   MessageSquare,
   Plus,
   Radio,
   RefreshCw,
+  Search,
   Send,
   Share2,
   Sparkles,
@@ -58,17 +60,86 @@ export function CommunicationScreen({
   const { client } = useRuntime();
   const [activeTab, setActiveTab] = React.useState<CommunicationSubpage>(initialTab);
 
-  // Only coworkers in the registry: no built-in names that may not exist.
-  const agentRoster = React.useMemo(
-    () =>
-      identities.map((i) => ({
+  // Comprehensive agent roster: registered identities + community mailbox agents
+  const agentRoster = React.useMemo(() => {
+    const known = new Map<string, { id: string; name: string; role: string; symbol: string }>();
+
+    // Winston first
+    known.set(_ownerId.toLowerCase(), {
+      id: _ownerId,
+      name: ownerName,
+      role: 'Owner & Human Authority',
+      symbol: '👑',
+    });
+
+    for (const i of identities) {
+      if (i.id.toLowerCase() === _ownerId.toLowerCase()) continue;
+      known.set(i.id.toLowerCase(), {
         id: i.id,
         name: i.name,
         role: i.role ?? 'Coworker',
-        symbol: i.symbol ?? (i.isOwner ? '👑' : '🤖'),
-      })),
-    [identities]
-  );
+        symbol: i.symbol ?? '🤖',
+      });
+    }
+
+    const communityAgents = [
+      { id: 'astra', name: 'Astra', role: 'Widget SDK & AI Protocol', symbol: '⚡' },
+      { id: 'atlas', name: 'Atlas', role: 'Platform & Cloud Run', symbol: '⏣' },
+      { id: 'antigravity', name: 'Antigravity', role: 'Browser QA & Production Testing', symbol: '🪐' },
+      { id: 'cadence', name: 'Cadence', role: 'V2 Workflow & Runtime Architect', symbol: '🎼' },
+      { id: 'codex', name: 'Codex', role: 'Workflow Analyst', symbol: '📘' },
+      { id: 'daedalus', name: 'Daedalus', role: 'MeetingMind Systems Architect', symbol: '⚙️' },
+      { id: 'forge', name: 'Forge', role: 'Android & Kotlin Engineer', symbol: '🛠️' },
+      { id: 'gantry', name: 'Gantry', role: 'Build & Release Packaging', symbol: '📦' },
+      { id: 'helios', name: 'Helios', role: 'Carrington Tomorrow Lead', symbol: '☀️' },
+      { id: 'faraday', name: 'Faraday', role: 'AI Generation Specialist', symbol: '🧲' },
+      { id: 'reel', name: 'Reel', role: 'Showrunner & Video Production', symbol: '🎬' },
+      { id: 'corona', name: 'Corona', role: 'Visual Effects Specialist', symbol: '✨' },
+      { id: 'hermes', name: 'Hermes', role: 'Cloudflare & Gateways', symbol: '🪽' },
+      { id: 'iris', name: 'Iris', role: 'Orchestration & Coordination', symbol: '👁️' },
+      { id: 'kael', name: 'Kael', role: 'QA & Lead Verifier', symbol: '🔍' },
+      { id: 'ledger', name: 'Ledger', role: 'Issue Intake & Context Keeper', symbol: '📜' },
+      { id: 'lyra', name: 'Lyra', role: 'Mobile & React Native', symbol: '📱' },
+      { id: 'meridian', name: 'Meridian', role: 'Organizational Infrastructure', symbol: '🧭' },
+      { id: 'mira', name: 'Mira', role: 'Challenge Reviewer & Planner', symbol: '✺' },
+      { id: 'nexus', name: 'Nexus', role: 'Orchestration Platform', symbol: '🌐' },
+      { id: 'orchestrator', name: 'Orchestrator', role: 'Lifecycle Management', symbol: '🎯' },
+      { id: 'orion', name: 'Orion', role: 'Odoo 19 & Rostering', symbol: '🏹' },
+      { id: 'sage', name: 'Sage', role: 'Task Planning & Acceptance Review', symbol: '🌿' },
+      { id: 'sentinel', name: 'Sentinel', role: 'Independent Quality Assurance', symbol: '🛡️' },
+      { id: 'sirius', name: 'Sirius', role: 'Operations & Mobile Client', symbol: '⭐' },
+      { id: 'sol', name: 'Sol', role: 'DogForce Rostering Engine', symbol: '☀️' },
+      { id: 'synapse', name: 'Synapse', role: 'MeetingMind Squad Orchestrator', symbol: '⚡' },
+      { id: 'themis', name: 'Themis', role: 'Product Planning & UX Guardrails', symbol: '⚖️' },
+      { id: 'vega', name: 'Vega', role: 'MeetingMind CTO', symbol: '🌌' },
+      { id: 'vela', name: 'Vela', role: 'WordPress System of Record', symbol: '⛵' },
+      { id: 'wren', name: 'Wren', role: 'Growth & Analytics', symbol: '🐦' },
+    ];
+
+    for (const ca of communityAgents) {
+      if (!known.has(ca.id.toLowerCase())) {
+        known.set(ca.id.toLowerCase(), ca);
+      }
+    }
+
+    return Array.from(known.values());
+  }, [identities, _ownerId, ownerName]);
+
+  // Sync state
+  const [isSyncing, setIsSyncing] = React.useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = React.useState<string | null>(null);
+  const [syncStats, setSyncStats] = React.useState<{
+    threadsTotal: number;
+    threadsUpdated: number;
+    inboxMessagesTotal: number;
+    inboxMessagesNew: number;
+    communityRoot: string;
+    lastSyncAt: string;
+  } | null>(null);
+
+  // Search & filter state
+  const [threadSearch, setThreadSearch] = React.useState('');
+  const [threadStatusFilter, setThreadStatusFilter] = React.useState<'all' | 'open' | 'resolved' | 'archived'>('all');
 
   // Subpage 1: Inboxes State
   const [selectedInbox, setSelectedInbox] = React.useState<string>(_ownerId);
@@ -129,9 +200,10 @@ export function CommunicationScreen({
     if (!client) return;
     try {
       const res = await client.threads();
-      setThreads(res || []);
-      if (res && res.length > 0 && (!selectedThreadId || !res.some((t) => t.id === selectedThreadId))) {
-        setSelectedThreadId(res[0].id);
+      const sorted = (res || []).slice().sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+      setThreads(sorted);
+      if (sorted.length > 0 && (!selectedThreadId || !sorted.some((t) => t.id === selectedThreadId))) {
+        setSelectedThreadId(sorted[0].id);
       }
     } catch (e) {
       console.warn('Failed to fetch threads:', e);
@@ -181,6 +253,50 @@ export function CommunicationScreen({
     }
   }, [client, selectedStandup]);
 
+  const handleSyncCommunity = React.useCallback(async () => {
+    if (!client || isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const stats = await client.syncCommunity();
+      setSyncStats(stats);
+      setLastSyncedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      await Promise.all([
+        fetchThreads(),
+        fetchInbox(),
+        fetchAnnouncements(),
+        fetchSocialPosts(),
+        fetchStandups(),
+      ]);
+      if (selectedThreadId) {
+        await fetchThreadMessages(selectedThreadId);
+      }
+    } catch (e) {
+      console.warn('Failed to sync community filesystem:', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [client, isSyncing, fetchThreads, fetchInbox, fetchAnnouncements, fetchSocialPosts, fetchStandups, selectedThreadId, fetchThreadMessages]);
+
+  // Initial sync on mount
+  React.useEffect(() => {
+    void handleSyncCommunity();
+  }, []);
+
+  // Periodic live refresh (every 10s) to keep all views live with community dir changes
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      if (activeTab === 'inboxes') fetchInbox();
+      if (activeTab === 'threads') {
+        fetchThreads();
+        if (selectedThreadId) fetchThreadMessages(selectedThreadId);
+      }
+      if (activeTab === 'announcements') fetchAnnouncements();
+      if (activeTab === 'social') fetchSocialPosts();
+      if (activeTab === 'standups') fetchStandups();
+    }, 10_000);
+    return () => clearInterval(timer);
+  }, [activeTab, fetchInbox, fetchThreads, fetchAnnouncements, fetchSocialPosts, fetchStandups, selectedThreadId, fetchThreadMessages]);
+
   React.useEffect(() => {
     if (activeTab === 'inboxes') fetchInbox();
     if (activeTab === 'threads') fetchThreads();
@@ -194,6 +310,31 @@ export function CommunicationScreen({
       fetchThreadMessages(selectedThreadId);
     }
   }, [selectedThreadId, fetchThreadMessages]);
+
+  const filteredThreads = React.useMemo(() => {
+    return threads.filter((t) => {
+      const q = threadSearch.trim().toLowerCase();
+      let authorsText = '';
+      if (t.author_identities) {
+        try {
+          const parsed = JSON.parse(t.author_identities);
+          if (Array.isArray(parsed)) authorsText = parsed.join(' ');
+          else authorsText = String(parsed);
+        } catch {
+          authorsText = t.author_identities;
+        }
+      }
+      const matchesSearch =
+        !q ||
+        t.title.toLowerCase().includes(q) ||
+        t.id.toLowerCase().includes(q) ||
+        authorsText.toLowerCase().includes(q);
+      const matchesStatus =
+        threadStatusFilter === 'all' ||
+        (t.status || 'open').toLowerCase() === threadStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [threads, threadSearch, threadStatusFilter]);
 
   // Terminal dispatch handler
   const handleDispatchTerminal = (agentId: string, cmdOrPrompt: string) => {
@@ -358,63 +499,101 @@ Format in clean, executive markdown.`;
           </div>
         </div>
 
-        {/* Subpage Tabs Switcher */}
-        <div className="flex items-center glass-panel p-1 rounded-xl text-xs font-medium border border-border/40">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Live Community Sync Status */}
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 glass-panel rounded-xl border border-border/50 text-[11px] font-mono text-muted-foreground shadow-xs"
+            title={
+              syncStats
+                ? `Root: ${syncStats.communityRoot}\nIndexed ${syncStats.threadsTotal} threads, ${syncStats.inboxMessagesTotal} inbox notes`
+                : 'Connected to live community/ filesystem'
+            }
+          >
+            <span className="relative flex size-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full size-2 bg-emerald-500" />
+            </span>
+            <span className="text-foreground font-semibold">Live Community</span>
+            <span>·</span>
+            <span className="text-muted-foreground">
+              {lastSyncedAt ? `Synced ${lastSyncedAt}` : 'community/ synced'}
+            </span>
+            {syncStats && (
+              <span className="text-[10px] text-muted-foreground/80 hidden sm:inline">
+                ({syncStats.threadsTotal} th · {syncStats.inboxMessagesTotal} in)
+              </span>
+            )}
+          </div>
+
           <button
             type="button"
-            onClick={() => setActiveTab('inboxes')}
-            className={cn(
-              'px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5',
-              activeTab === 'inboxes' ? 'glass-chosen text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
-            )}
+            onClick={() => void handleSyncCommunity()}
+            disabled={isSyncing}
+            className="px-3 py-1.5 glass-panel hover:bg-foreground/[0.08] text-foreground rounded-xl transition cursor-pointer flex items-center gap-1.5 text-xs font-semibold shadow-xs disabled:opacity-50"
+            title="Force immediate rescan of community/threads and community/inboxes"
           >
-            <Inbox className="size-3.5" />
-            <span>Inboxes</span>
+            <RefreshCw className={cn('size-3.5', isSyncing && 'animate-spin text-indigo-500')} />
+            <span>{isSyncing ? 'Syncing...' : 'Sync Disk'}</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('threads')}
-            className={cn(
-              'px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5',
-              activeTab === 'threads' ? 'glass-chosen text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <Share2 className="size-3.5" />
-            <span>Threads</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('announcements')}
-            className={cn(
-              'px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5',
-              activeTab === 'announcements' ? 'glass-chosen text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <Radio className="size-3.5" />
-            <span>Announcements</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('social')}
-            className={cn(
-              'px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5',
-              activeTab === 'social' ? 'glass-chosen text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <Hash className="size-3.5" />
-            <span>Social</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('standups')}
-            className={cn(
-              'px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5',
-              activeTab === 'standups' ? 'glass-chosen text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            <Calendar className="size-3.5" />
-            <span>Daily Standups</span>
-          </button>
+
+          {/* Subpage Tabs Switcher */}
+          <div className="flex items-center glass-panel p-1 rounded-xl text-xs font-medium border border-border/40">
+            <button
+              type="button"
+              onClick={() => setActiveTab('inboxes')}
+              className={cn(
+                'px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5',
+                activeTab === 'inboxes' ? 'glass-chosen text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Inbox className="size-3.5" />
+              <span>Inboxes</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('threads')}
+              className={cn(
+                'px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5',
+                activeTab === 'threads' ? 'glass-chosen text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Share2 className="size-3.5" />
+              <span>Threads ({threads.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('announcements')}
+              className={cn(
+                'px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5',
+                activeTab === 'announcements' ? 'glass-chosen text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Radio className="size-3.5" />
+              <span>Announcements</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('social')}
+              className={cn(
+                'px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5',
+                activeTab === 'social' ? 'glass-chosen text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Hash className="size-3.5" />
+              <span>Social</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('standups')}
+              className={cn(
+                'px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5',
+                activeTab === 'standups' ? 'glass-chosen text-foreground font-semibold shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Calendar className="size-3.5" />
+              <span>Daily Standups</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -526,7 +705,12 @@ Format in clean, executive markdown.`;
                         <span className="text-foreground">{m.to_identity || selectedInbox}</span>
                       </span>
                       <span className="text-muted-foreground font-mono text-[10px]">
-                        {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(m.ts).toLocaleString([], {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
                       </span>
                     </div>
                     {m.subject && (
@@ -586,11 +770,18 @@ Format in clean, executive markdown.`;
       {activeTab === 'threads' && (
         <div className="flex-1 flex gap-3.5 overflow-hidden">
           {/* Threads Directory Column */}
-          <div className="w-72 glass-panel border border-border/60 rounded-2xl p-3 flex flex-col shrink-0 shadow-xs">
+          <div className="w-80 glass-panel border border-border/60 rounded-2xl p-3 flex flex-col shrink-0 shadow-xs overflow-hidden">
             <div className="flex items-center justify-between pb-2 border-b border-border/40">
-              <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">
-                Discussion Threads ({threads.length})
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">
+                  Threads ({threads.length})
+                </span>
+                {filteredThreads.length !== threads.length && (
+                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-400 font-semibold">
+                    {filteredThreads.length} shown
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setShowNewThreadModal(true)}
@@ -601,14 +792,83 @@ Format in clean, executive markdown.`;
               </button>
             </div>
 
+            {/* Search & Status Filters */}
+            <div className="space-y-2 py-2 border-b border-border/40">
+              <div className="relative">
+                <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Search threads, #, author..."
+                  value={threadSearch}
+                  onChange={(e) => setThreadSearch(e.target.value)}
+                  className="w-full h-8 pl-8 pr-7 bg-background/50 border border-border/60 rounded-xl text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:border-foreground transition"
+                />
+                {threadSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setThreadSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1 text-[10.5px] font-medium">
+                {(['all', 'open', 'resolved'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setThreadStatusFilter(st)}
+                    className={cn(
+                      'px-2 py-0.5 rounded-lg capitalize transition cursor-pointer',
+                      threadStatusFilter === st
+                        ? 'bg-foreground text-background font-semibold shadow-2xs'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                    )}
+                  >
+                    {st} {st === 'all' ? `(${threads.length})` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Threads List */}
             <div className="space-y-1.5 mt-2 overflow-y-auto flex-1 pr-1">
-              {threads.length === 0 ? (
-                <div className="h-40 flex items-center justify-center text-xs text-muted-foreground">
-                  No active threads
+              {filteredThreads.length === 0 ? (
+                <div className="h-48 flex flex-col items-center justify-center text-center p-3 text-xs text-muted-foreground gap-1.5">
+                  <span>No threads match your search</span>
+                  {(threadSearch || threadStatusFilter !== 'all') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setThreadSearch('');
+                        setThreadStatusFilter('all');
+                      }}
+                      className="text-indigo-400 hover:underline text-[11px] cursor-pointer"
+                    >
+                      Clear filters
+                    </button>
+                  )}
                 </div>
               ) : (
-                threads.map((t) => {
+                filteredThreads.map((t) => {
                   const isSelected = selectedThreadId === t.id;
+                  const numMatch = /^th_(\d{3})/.exec(t.id);
+                  const displayNum = numMatch ? `#${numMatch[1]}` : `#${t.id.replace(/^th_/, '').slice(0, 4)}`;
+                  const isOpen = (t.status || 'open').toLowerCase() === 'open';
+
+                  let authors: string[] = [];
+                  if (t.author_identities) {
+                    try {
+                      const parsed = JSON.parse(t.author_identities);
+                      if (Array.isArray(parsed)) authors = parsed;
+                      else if (parsed) authors = [String(parsed)];
+                    } catch {
+                      authors = [t.author_identities];
+                    }
+                  }
+
                   return (
                     <div
                       key={t.id}
@@ -620,21 +880,53 @@ Format in clean, executive markdown.`;
                           : 'glass-panel hover:bg-muted/60 text-foreground border-border/40'
                       )}
                     >
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className={cn('font-mono', isSelected ? 'text-background/80' : 'text-muted-foreground')}>
-                          {t.id}
-                        </span>
+                      <div className="flex items-center justify-between text-[10px] mb-1">
+                        <div className="flex items-center gap-1.5 font-mono">
+                          <span
+                            className={cn(
+                              'size-1.5 rounded-full shrink-0',
+                              isOpen
+                                ? isSelected
+                                  ? 'bg-emerald-300'
+                                  : 'bg-emerald-500'
+                                : isSelected
+                                ? 'bg-muted'
+                                : 'bg-slate-400'
+                            )}
+                          />
+                          <span className={cn('font-bold', isSelected ? 'text-background' : 'text-indigo-400')}>
+                            {displayNum}
+                          </span>
+                        </div>
                         <span
                           className={cn(
                             'px-1.5 py-0.2 rounded text-[9px] font-medium font-mono',
                             isSelected ? 'bg-background/20 text-background' : 'bg-muted text-muted-foreground'
                           )}
                         >
-                          {t.message_count} replies
+                          {t.message_count} {t.message_count === 1 ? 'msg' : 'msgs'}
                         </span>
                       </div>
-                      <div className={cn('text-xs font-semibold line-clamp-2 mt-1', isSelected ? 'text-background' : 'text-foreground')}>
+
+                      <div
+                        className={cn(
+                          'text-xs font-semibold line-clamp-2 leading-snug',
+                          isSelected ? 'text-background' : 'text-foreground'
+                        )}
+                      >
                         {t.title}
+                      </div>
+
+                      <div className="flex items-center justify-between mt-1.5 text-[9.5px] font-mono">
+                        <span className={cn(isSelected ? 'text-background/80' : 'text-muted-foreground')}>
+                          {authors.length > 0 ? `@${authors[0]}` : 'team'}
+                        </span>
+                        <span className={cn(isSelected ? 'text-background/70' : 'text-muted-foreground/80')}>
+                          {new Date(t.updated_at || t.created_at).toLocaleDateString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </span>
                       </div>
                     </div>
                   );
@@ -646,74 +938,153 @@ Format in clean, executive markdown.`;
           {/* Thread Conversation Stream */}
           <div className="flex-1 glass-panel border border-border/60 rounded-2xl p-4 flex flex-col shadow-xs overflow-hidden">
             {selectedThreadId ? (
-              <>
-                <div className="flex items-center justify-between pb-3 border-b border-border/40 shrink-0">
-                  <div>
-                    <h2 className="text-sm font-bold text-foreground">
-                      {threads.find((t) => t.id === selectedThreadId)?.title}
-                    </h2>
-                    <span className="text-[10.5px] font-mono text-muted-foreground">
-                      Thread ID: {selectedThreadId}
-                    </span>
-                  </div>
+              (() => {
+                const currentThread = threads.find((t) => t.id === selectedThreadId);
+                const isOpen = (currentThread?.status || 'open').toLowerCase() === 'open';
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleDispatchTerminal('astra', `Addressing discussion in thread ${selectedThreadId}`)}
-                      className="px-3 py-1 bg-foreground text-background hover:bg-foreground/90 rounded-xl text-xs font-semibold cursor-pointer transition flex items-center gap-1.5"
-                    >
-                      <TerminalIcon className="size-3" />
-                      <span>Dispatch Agent</span>
-                    </button>
-                  </div>
-                </div>
+                let authors: string[] = [];
+                if (currentThread?.author_identities) {
+                  try {
+                    const parsed = JSON.parse(currentThread.author_identities);
+                    if (Array.isArray(parsed)) authors = parsed;
+                    else if (parsed) authors = [String(parsed)];
+                  } catch {
+                    authors = [currentThread.author_identities];
+                  }
+                }
 
-                {/* Messages Feed */}
-                <div className="flex-1 overflow-y-auto space-y-3 py-3 pr-1">
-                  {threadMessages.map((m) => (
-                    <div key={m.id} className="p-3.5 rounded-xl glass-panel border border-border/60 space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-indigo-400">{m.from_identity || 'Anonymous'}</span>
-                        <span className="text-[10.5px] font-mono text-muted-foreground">
-                          {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+                return (
+                  <>
+                    <div className="flex items-start justify-between pb-3 border-b border-border/40 shrink-0 gap-3">
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider',
+                              isOpen
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-slate-500/15 text-slate-400 border border-slate-500/30'
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'size-1.5 rounded-full',
+                                isOpen ? 'bg-emerald-400' : 'bg-slate-400'
+                              )}
+                            />
+                            {currentThread?.status || 'open'}
+                          </span>
+
+                          <span className="text-[10.5px] font-mono text-muted-foreground">
+                            {currentThread?.id}
+                          </span>
+
+                          {currentThread?.original_file_path && (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-foreground/[0.04] text-[10px] font-mono text-muted-foreground border border-border/40"
+                              title={currentThread.original_file_path}
+                            >
+                              <FileText className="size-3 text-indigo-400" />
+                              <span>{currentThread.original_file_path.split('/').slice(-2).join('/')}</span>
+                            </span>
+                          )}
+
+                          {authors.length > 0 && (
+                            <span className="text-[10.5px] font-mono text-indigo-400 font-semibold">
+                              by {authors.map((a) => `@${a}`).join(', ')}
+                            </span>
+                          )}
+                        </div>
+
+                        <h2 className="text-sm font-bold text-foreground leading-snug">
+                          {currentThread?.title || selectedThreadId}
+                        </h2>
                       </div>
-                      <FormattedContent
-                        content={m.body || ''}
-                        onRunInTerminal={(cmd) => handleDispatchTerminal('astra', `Execute: ${cmd}`)}
-                      />
-                      {m.body && m.body.length > 60 && (
-                        <AIClarificationCard
-                          originalText={m.body}
-                          contextType="technical"
-                          agentId={m.from_identity || 'astra'}
-                          onDispatchAction={(prompt) => handleDispatchTerminal(m.from_identity || 'astra', prompt)}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
 
-                {/* Reply Composer */}
-                <form onSubmit={handleSendThreadReply} className="pt-2.5 border-t border-border/40 flex items-center gap-2 shrink-0">
-                  <input
-                    type="text"
-                    placeholder="Reply to this thread..."
-                    value={threadReplyInput}
-                    onChange={(e) => setThreadReplyInput(e.target.value)}
-                    className="flex-1 h-9 px-3 bg-background border border-border/60 rounded-xl text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:border-foreground"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!threadReplyInput.trim()}
-                    className="h-9 px-4 bg-foreground hover:bg-foreground/90 text-background text-xs font-semibold rounded-xl transition cursor-pointer flex items-center gap-1.5 disabled:opacity-40"
-                  >
-                    <Send className="size-3" />
-                    <span>Reply</span>
-                  </button>
-                </form>
-              </>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const firstAuthor = authors[0] || 'astra';
+                            handleDispatchTerminal(firstAuthor, `Addressing discussion in thread ${selectedThreadId}`);
+                          }}
+                          className="px-3 py-1 bg-foreground text-background hover:bg-foreground/90 rounded-xl text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 shadow-xs"
+                        >
+                          <TerminalIcon className="size-3" />
+                          <span>Dispatch Agent</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Messages Feed */}
+                    <div className="flex-1 overflow-y-auto space-y-3 py-3 pr-1">
+                      {threadMessages.map((m) => {
+                        const cleanSender = (m.from_identity || 'team').replace(/^@/, '').toLowerCase();
+                        const senderRoster = agentRoster.find((a) => a.id.toLowerCase() === cleanSender);
+                        const senderName = senderRoster ? senderRoster.name : (m.from_identity || 'Team');
+                        const senderSymbol = senderRoster ? senderRoster.symbol : '💬';
+
+                        return (
+                          <div key={m.id} className="p-3.5 rounded-xl glass-panel border border-border/60 space-y-2">
+                            <div className="flex items-center justify-between text-xs pb-1.5 border-b border-border/30">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm">{senderSymbol}</span>
+                                <span className="font-bold text-foreground">@{senderName}</span>
+                                {senderRoster?.role && (
+                                  <span className="text-[10px] font-mono text-muted-foreground">
+                                    · {senderRoster.role}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[10.5px] font-mono text-muted-foreground">
+                                {new Date(m.ts).toLocaleString([], {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </div>
+
+                            <FormattedContent
+                              content={m.body || ''}
+                              onRunInTerminal={(cmd) => handleDispatchTerminal(cleanSender, `Execute: ${cmd}`)}
+                            />
+
+                            {m.body && m.body.length > 80 && (
+                              <AIClarificationCard
+                                originalText={m.body}
+                                contextType="technical"
+                                agentId={cleanSender}
+                                onDispatchAction={(prompt) => handleDispatchTerminal(cleanSender, prompt)}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Reply Composer */}
+                    <form onSubmit={handleSendThreadReply} className="pt-2.5 border-t border-border/40 flex items-center gap-2 shrink-0">
+                      <input
+                        type="text"
+                        placeholder="Reply to this thread (persists to SQLite and syncs to community/threads/)..."
+                        value={threadReplyInput}
+                        onChange={(e) => setThreadReplyInput(e.target.value)}
+                        className="flex-1 h-9 px-3 bg-background border border-border/60 rounded-xl text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:border-foreground transition"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!threadReplyInput.trim()}
+                        className="h-9 px-4 bg-foreground hover:bg-foreground/90 text-background text-xs font-semibold rounded-xl transition cursor-pointer flex items-center gap-1.5 disabled:opacity-40"
+                      >
+                        <Send className="size-3" />
+                        <span>Reply</span>
+                      </button>
+                    </form>
+                  </>
+                );
+              })()
             ) : (
               <div className="h-full flex items-center justify-center text-muted-foreground text-xs">
                 Select a thread to view multi-agent conversation

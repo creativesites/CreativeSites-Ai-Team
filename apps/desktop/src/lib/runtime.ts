@@ -718,6 +718,22 @@ export class RuntimeClient {
     this.request<Standup>('POST', '/v1/communication/standups', input);
   generateAi = (prompt: string, contextType?: string, agentId?: string) =>
     this.request<AiGenerateResponse>('POST', '/v1/communication/ai/generate', { prompt, contextType, agentId });
+  syncCommunity = () =>
+    this.request<{
+      threadsTotal: number;
+      threadsUpdated: number;
+      inboxMessagesTotal: number;
+      inboxMessagesNew: number;
+      announcementsTotal: number;
+      standupsTotal: number;
+      communityRoot: string;
+      lastSyncAt: string;
+    }>('POST', '/v1/communication/sync');
+  communitySyncStatus = () =>
+    this.request<{
+      communityRoot: string;
+      ok: boolean;
+    }>('GET', '/v1/communication/sync');
 
   /**
    * Follows the event stream until `signal` aborts, resuming after the last

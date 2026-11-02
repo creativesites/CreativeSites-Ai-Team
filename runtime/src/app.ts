@@ -14,6 +14,7 @@ import { readAdapterEnv } from './adapter-env.ts';
 import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
 import { gitAvailable } from './workspaces.ts';
+import { syncCommunity } from './community-sync.ts';
 
 export const VERSION = '0.2.0';
 
@@ -70,6 +71,20 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   const terminals = new TerminalManager();
   bridge = new Bridge({ repo, teamRepo });
   bridge.start();
+
+  try {
+    syncCommunity(repo);
+  } catch (err) {
+    console.warn('[runtime] initial community sync:', (err as Error).message);
+  }
+  const commSyncTimer = setInterval(() => {
+    try {
+      syncCommunity(repo);
+    } catch {
+      /* best effort */
+    }
+  }, 20_000);
+  commSyncTimer.unref?.();
 
   const health = (): Health => {
     let store = false;
@@ -134,6 +149,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     close: () =>
       new Promise<void>((resolve) => {
         clearInterval(sweep);
+        clearInterval(commSyncTimer);
         orchestrator.dispose();
         terminals.closeAll();
         bridge?.dispose();
