@@ -1,9 +1,24 @@
 import * as React from 'react';
+import {
+  CheckCircle2,
+  Clock,
+  GitCommit,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Play,
+  Send,
+  ShieldCheck,
+  Square,
+  Terminal as TerminalIcon,
+  Zap,
+} from 'lucide-react';
 import type { Evidence, Identity, JobDetail, JobSummary, Session, TranscriptEntry } from '@runtime/types';
 import { Avatar } from '@/components/app/avatar';
 import { isLive } from '@/components/app/shell';
 import { EmptyState, EvidenceTag, jobLabel, SectionTitle, StageBar, Tag } from '@/components/app/status';
-import { AgentTerminal, Terminal } from '@/components/terminal';
+import { AgentTerminal, StructuredTranscriptView, Terminal } from '@/components/terminal';
 import { DiffView } from '@/components/ui/diff-view';
 import { StepList, type Step } from '@/components/ui/tool-steps';
 import { href } from '@/lib/route';
@@ -13,7 +28,8 @@ import { cn } from '@/lib/utils';
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-type DevViewMode = 'agent-terminal' | 'split' | 'shell' | 'transcript';
+type DevViewMode = 'stream' | 'agent-terminal' | 'split' | 'shell';
+type InspectorTab = 'evidence' | 'steps' | 'changes';
 
 /** Commands and file changes the runtime recorded, shown as the agent's steps. */
 function stepsFrom(evidence: Evidence[]): Step[] {
@@ -49,6 +65,7 @@ export function DevScreen({
   const who = (id: string) => identities.find((i) => i.id === id) ?? { id, name: id, seats: [] };
   const steps = job ? stepsFrom(job.evidence) : [];
   const patches = job ? job.evidence.filter((e) => e.kind === 'diff' && (e.payload as { patch?: string })?.patch) : [];
+  const evidenceCount = (job?.evidence.length ?? 0) + steps.length + patches.length;
 
   // Combine job-specific sessions and all recent runtime sessions so standalone wakes are also visible
   const allSessions = React.useMemo(() => {
@@ -66,14 +83,81 @@ export function DevScreen({
   }, [allSessions]);
 
   const selectedSession = allSessions.find((s) => s.id === selected) ?? null;
-  const [viewMode, setViewMode] = React.useState<DevViewMode>('agent-terminal');
+  const activeAgent = selectedSession ? who(selectedSession.agentId) : null;
 
-  // Quick Wake bar state
+  // View mode & collapsible panels (persisted in localStorage)
+  const [viewMode, setViewMode] = React.useState<DevViewMode>(() => {
+    try {
+      const saved = localStorage.getItem('myaos.dev.viewMode') as DevViewMode | null;
+      if (saved && ['stream', 'agent-terminal', 'split', 'shell'].includes(saved)) return saved;
+    } catch {
+      /* ignore */
+    }
+    return 'stream';
+  });
+  const changeViewMode = (mode: DevViewMode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('myaos.dev.viewMode', mode);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const [sessionsRailOpen, setSessionsRailOpen] = React.useState<boolean>(() => {
+    try {
+      return localStorage.getItem('myaos.dev.sessionsRail') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const toggleSessionsRail = () => {
+    setSessionsRailOpen((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('myaos.dev.sessionsRail', next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const [evidenceOpen, setEvidenceOpen] = React.useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('myaos.dev.evidenceOpen');
+      if (saved !== null) return saved === '1';
+    } catch {
+      /* ignore */
+    }
+    return false;
+  });
+  const toggleEvidence = () => {
+    setEvidenceOpen((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('myaos.dev.evidenceOpen', next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
+  const [inspectorTab, setInspectorTab] = React.useState<InspectorTab>('evidence');
+
+  // Quick Wake bar state (left rail)
   const coworkers = identities.filter((i) => !i.isOwner);
   const [wakeTargetId, setWakeTargetId] = React.useState<string>(coworkers[0]?.id ?? 'atlas');
   const [wakePrompt, setWakePrompt] = React.useState('');
   const [waking, setWaking] = React.useState(false);
   const [wakeMessage, setWakeMessage] = React.useState<string | null>(null);
+
+  // Unified Bottom Instruction Dock state
+  const [instructionText, setInstructionText] = React.useState('');
+  const [instructionTarget, setInstructionTarget] = React.useState<string>('current');
+  const [sendingInstruction, setSendingInstruction] = React.useState(false);
+  const [dockStatus, setDockStatus] = React.useState<string | null>(null);
 
   const transcript = useRuntimeData(
     (c) => (selected ? c.transcript(selected) : Promise.resolve([] as TranscriptEntry[])),
@@ -91,16 +175,15 @@ export function DevScreen({
         fromActorKind: 'human',
         jobId: job?.id ?? null,
         prompt: wakePrompt.trim(),
-        reason: 'Woken from Dev terminal view',
+        reason: 'Woken from Sessions rail',
         allowFallbackAdapter: true,
       });
       setWakePrompt('');
       if (res.session?.id) {
         setSelected(res.session.id);
-        setViewMode('agent-terminal');
-        setWakeMessage(`Woke ${who(wakeTargetId).name} (${res.session.id})`);
+        setWakeMessage(`Woke ${who(wakeTargetId).name} (${res.session.id.slice(0, 12)})`);
       } else if (res.deferredUntil) {
-        setWakeMessage(`Rate limited — scheduled auto-resume at ${new Date(res.deferredUntil).toLocaleTimeString()}`);
+        setWakeMessage(`Rate limited — auto-resume at ${new Date(res.deferredUntil).toLocaleTimeString()}`);
       }
     } catch (err) {
       setWakeMessage(err instanceof Error ? err.message : String(err));
@@ -109,288 +192,685 @@ export function DevScreen({
     }
   };
 
+  const handleSendInstruction = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!client || !instructionText.trim() || sendingInstruction) return;
+    setSendingInstruction(true);
+    setDockStatus(null);
+    const text = instructionText.trim();
+    try {
+      if (instructionTarget === 'team-leader') {
+        const res = await client.dispatchTeamLeader({
+          fromActorId: 'winston',
+          jobId: job?.id ?? null,
+          roomId: selectedSession?.roomId ?? job?.roomId ?? null,
+          goal: text,
+        });
+        setInstructionText('');
+        if (res.session?.id) {
+          setSelected(res.session.id);
+          setDockStatus(`Delegated to Team Leader (${res.session.id.slice(0, 12)})`);
+        }
+      } else if (instructionTarget === 'current' && selectedSession) {
+        try {
+          await client.promptSession(selectedSession.id, text);
+          setInstructionText('');
+          setDockStatus(`Instruction sent to ${who(selectedSession.agentId).name}`);
+        } catch {
+          const res = await client.wakeAgent(selectedSession.agentId, {
+            fromActorId: 'winston',
+            fromActorKind: 'human',
+            sessionId: selectedSession.id,
+            jobId: selectedSession.jobId ?? job?.id ?? null,
+            roomId: selectedSession.roomId ?? null,
+            prompt: text,
+            reason: 'Follow-up instruction from Sessions dock',
+            allowFallbackAdapter: true,
+          });
+          setInstructionText('');
+          if (res.session?.id) setSelected(res.session.id);
+          setDockStatus(`Woke ${who(selectedSession.agentId).name} with instruction`);
+        }
+      } else {
+        const targetId =
+          instructionTarget !== 'current'
+            ? instructionTarget
+            : selectedSession?.agentId ?? wakeTargetId ?? coworkers[0]?.id ?? 'atlas';
+        const res = await client.wakeAgent(targetId, {
+          fromActorId: 'winston',
+          fromActorKind: 'human',
+          jobId: job?.id ?? selectedSession?.jobId ?? null,
+          roomId: selectedSession?.roomId ?? null,
+          prompt: text,
+          reason: 'Instruction from Sessions dock',
+          allowFallbackAdapter: true,
+        });
+        setInstructionText('');
+        if (res.session?.id) {
+          setSelected(res.session.id);
+          setDockStatus(`Started session with ${who(targetId).name}`);
+        } else if (res.deferredUntil) {
+          setDockStatus(`Rate limited — queued for ${new Date(res.deferredUntil).toLocaleTimeString()}`);
+        }
+      }
+    } catch (err) {
+      setDockStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSendingInstruction(false);
+    }
+  };
+
+  const handleInterruptSession = async () => {
+    if (!client || !selectedSession) return;
+    try {
+      await client.cancelSession(selectedSession.id, 'winston');
+      setDockStatus(`Stopped session ${selectedSession.id.slice(0, 12)}`);
+    } catch (err) {
+      setDockStatus(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleScheduleCheckIn = async (delaySeconds: number, label: string) => {
+    if (!client) return;
+    const targetId = selectedSession?.agentId ?? wakeTargetId ?? 'atlas';
+    try {
+      await client.createSchedule({
+        targetAgentId: targetId,
+        createdBy: 'winston',
+        jobId: selectedSession?.jobId ?? job?.id ?? null,
+        roomId: selectedSession?.roomId ?? job?.roomId ?? null,
+        delaySeconds,
+        prompt: `Scheduled ${label} check-in: inspect progress, check pending tasks, and continue or report status.`,
+        reason: `Quick ${label} check-in from Sessions dock`,
+      });
+      setDockStatus(`Scheduled ${label} check-in for ${who(targetId).name}`);
+    } catch (err) {
+      setDockStatus(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   return (
-    <div className="flex min-h-full flex-col gap-3 lg:flex-row">
-      <section aria-label="Sessions" className="bg-card flex flex-col gap-3 rounded-xl p-4 lg:w-72">
-        <SectionTitle aside={`${allSessions.filter(isLive).length} live`}>Sessions</SectionTitle>
-
-        {client && coworkers.length > 0 && (
-          <form onSubmit={handleQuickWake} className="glass-panel flex flex-col gap-2 rounded-lg p-2.5">
-            <span className="text-[11px] font-medium text-muted-foreground">Wake / Start Agent Terminal</span>
-            <select
-              value={wakeTargetId}
-              onChange={(e) => setWakeTargetId(e.target.value)}
-              aria-label="Agent to wake"
-              className="h-8 rounded border border-border/60 bg-background/70 px-2 text-xs"
-            >
-              {coworkers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.runtime ?? 'claude'})
-                  {c.statusState === 'rate_limited' ? ' · RATE LIMITED' : c.statusState === 'working' ? ' · LIVE' : ''}
-                </option>
-              ))}
-            </select>
-            <input
-              value={wakePrompt}
-              onChange={(e) => setWakePrompt(e.target.value)}
-              placeholder="Instruction to run…"
-              aria-label="Wake prompt"
-              className="h-8 rounded border border-border/60 bg-background/70 px-2 text-xs outline-none"
-            />
+    <div className="flex h-[calc(100vh-2rem)] min-h-[620px] flex-col gap-3 overflow-hidden lg:flex-row">
+      {/* 1. Collapsible Left Sessions Rail */}
+      {sessionsRailOpen ? (
+        <section
+          aria-label="Sessions"
+          className="bg-card flex shrink-0 flex-col gap-3 overflow-hidden rounded-xl border border-border/50 p-3.5 lg:w-72"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">Sessions</span>
+              <Tag tone={allSessions.filter(isLive).length > 0 ? 'observed' : 'quiet'}>
+                {allSessions.filter(isLive).length} live
+              </Tag>
+            </div>
             <button
-              type="submit"
-              disabled={!wakePrompt.trim() || waking}
-              className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'w-full')}
+              type="button"
+              onClick={toggleSessionsRail}
+              title="Minimize Sessions rail"
+              className="rounded-md p-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
             >
-              {waking ? 'Waking…' : 'Wake Agent'}
+              <PanelLeftClose className="size-4" />
             </button>
-            {wakeMessage && <span className="text-[11px] text-muted-foreground">{wakeMessage}</span>}
-          </form>
-        )}
+          </div>
 
-        {allSessions.length === 0 ? (
-          <EmptyState title="No agent sessions yet">Wake an agent above or start a builder from the Job screen; its live terminal appears here.</EmptyState>
-        ) : (
-          <div className="flex max-h-96 flex-col gap-1.5 overflow-y-auto pr-0.5">
-            {allSessions.map((s) => {
-              const agent = who(s.agentId);
-              return (
-                <button
-                  type="button"
-                  key={s.id}
-                  onClick={() => setSelected(s.id)}
-                  className={cn(
-                    'flex items-start gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-foreground/[0.04]',
-                    selected === s.id && 'glass-chosen'
-                  )}
-                >
-                  <Avatar who={agent} size={26} />
-                  <div className="flex min-w-0 flex-1 flex-col leading-tight">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="truncate text-sm font-medium">{agent.name}</span>
-                      <Tag tone={s.state === 'running' || s.state === 'starting' ? 'observed' : s.state === 'failed' ? 'risk' : 'quiet'}>
-                        {s.state}
-                      </Tag>
+          {client && coworkers.length > 0 && (
+            <form onSubmit={handleQuickWake} className="glass-panel flex flex-col gap-2 rounded-lg p-2.5">
+              <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                <Zap className="size-3 text-emerald-400" />
+                New Agent Session / Wake
+              </span>
+              <select
+                value={wakeTargetId}
+                onChange={(e) => setWakeTargetId(e.target.value)}
+                aria-label="Agent to wake"
+                className="h-8 rounded border border-border/60 bg-background/70 px-2 text-xs"
+              >
+                {coworkers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.runtime ?? 'claude'})
+                    {c.statusState === 'rate_limited' ? ' · RATE LIMITED' : c.statusState === 'working' ? ' · LIVE' : ''}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={wakePrompt}
+                onChange={(e) => setWakePrompt(e.target.value)}
+                placeholder="Instruction to start session…"
+                aria-label="Wake prompt"
+                className="h-8 rounded border border-border/60 bg-background/70 px-2 text-xs outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!wakePrompt.trim() || waking}
+                className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'w-full')}
+              >
+                <Play className="size-3.5" />
+                {waking ? 'Starting…' : 'Start / Wake Agent'}
+              </button>
+              {wakeMessage && <span className="text-[11px] text-emerald-400">{wakeMessage}</span>}
+            </form>
+          )}
+
+          {allSessions.length === 0 ? (
+            <EmptyState title="No agent sessions yet">
+              Wake an agent above or send an instruction in the bottom dock to start a live session.
+            </EmptyState>
+          ) : (
+            <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto pr-0.5">
+              {allSessions.map((s) => {
+                const agent = who(s.agentId);
+                return (
+                  <button
+                    type="button"
+                    key={s.id}
+                    onClick={() => setSelected(s.id)}
+                    className={cn(
+                      'flex items-start gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors hover:bg-foreground/[0.04]',
+                      selected === s.id && 'glass-chosen border-border/60'
+                    )}
+                  >
+                    <Avatar
+                      who={agent}
+                      size={28}
+                      dot={s.state === 'running' || s.state === 'starting' ? 'var(--observed)' : undefined}
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="truncate text-sm font-medium">{agent.name}</span>
+                        <Tag
+                          tone={
+                            s.state === 'running' || s.state === 'starting'
+                              ? 'observed'
+                              : s.state === 'failed'
+                                ? 'risk'
+                                : 'quiet'
+                          }
+                        >
+                          {s.state}
+                        </Tag>
+                      </div>
+                      <span className="truncate font-mono text-[11px] text-muted-foreground">
+                        {s.id.slice(0, 14)} · {s.turnCount ?? 0}t · {s.adapterId ?? 'acp'}
+                      </span>
+                      {s.acpSessionId && (
+                        <span className="truncate font-mono text-[10px] text-muted-foreground/75">
+                          acp: {s.acpSessionId}
+                        </span>
+                      )}
                     </div>
-                    <span className="truncate font-mono text-[11px] text-muted-foreground">
-                      {s.id} · {s.turnCount ?? 0}t
-                    </span>
-                    {s.acpSessionId && (
-                      <span className="truncate font-mono text-[10px] text-muted-foreground/80">
-                        acp: {s.acpSessionId}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="mt-auto flex max-h-36 flex-col gap-1 overflow-y-auto border-t border-border/50 pt-2">
+            <span className="text-[11px] font-medium text-muted-foreground">Filter by Job</span>
+            {jobs.map((j) => (
+              <a
+                key={j.id}
+                href={href({ name: 'dev', jobId: j.id })}
+                className={cn(
+                  'truncate rounded-md px-2 py-1 text-xs hover:bg-foreground/[0.05]',
+                  job?.id === j.id && 'glass-chosen'
+                )}
+              >
+                <span className="font-mono text-[11px] text-muted-foreground">{jobLabel(j.number)}</span> {j.title}
+              </a>
+            ))}
+            {jobs.length === 0 && <span className="text-xs text-muted-foreground">No jobs yet.</span>}
+          </div>
+        </section>
+      ) : (
+        <div className="bg-card flex shrink-0 flex-col items-center gap-3 rounded-xl border border-border/50 px-2 py-3">
+          <button
+            type="button"
+            onClick={toggleSessionsRail}
+            title="Expand Sessions rail"
+            className="rounded-lg p-1.5 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
+          >
+            <PanelLeftOpen className="size-4" />
+          </button>
+          <span className="font-mono text-[10px] text-muted-foreground [writing-mode:vertical-rl]">
+            Sessions ({allSessions.length})
+          </span>
+        </div>
+      )}
+
+      {/* 2. Center Full-Height Agent Session Stage */}
+      <main className="bg-card flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/50">
+        {/* Top Session Header */}
+        <header className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border/60 px-4 py-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            {!sessionsRailOpen && (
+              <button
+                type="button"
+                onClick={toggleSessionsRail}
+                className={cn(buttonVariants({ variant: 'glass', size: 'xs' }))}
+              >
+                <PanelLeftOpen className="size-3.5" /> Sessions
+              </button>
+            )}
+            {selectedSession && activeAgent ? (
+              <div className="flex min-w-0 items-center gap-2.5">
+                <Avatar
+                  who={activeAgent}
+                  size={28}
+                  dot={
+                    selectedSession.state === 'running' || selectedSession.state === 'starting'
+                      ? 'var(--observed)'
+                      : undefined
+                  }
+                />
+                <div className="flex min-w-0 flex-col leading-tight">
+                  <div className="flex items-center gap-2">
+                    <h1 className="truncate text-sm font-semibold">{activeAgent.name}</h1>
+                    <Tag
+                      tone={
+                        selectedSession.state === 'running' || selectedSession.state === 'starting'
+                          ? 'observed'
+                          : selectedSession.state === 'failed'
+                            ? 'risk'
+                            : 'quiet'
+                      }
+                    >
+                      {selectedSession.state}
+                    </Tag>
+                    {selectedSession.adapterId && (
+                      <span className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                        {selectedSession.adapterId}
                       </span>
                     )}
                   </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="mt-2 flex flex-col gap-1 border-t border-border/50 pt-2">
-          <span className="text-xs text-muted-foreground">Jobs</span>
-          {jobs.map((j) => (
-            <a key={j.id} href={href({ name: 'dev', jobId: j.id })} className={cn('truncate rounded-md px-2 py-1 text-sm hover:bg-foreground/[0.05]', job?.id === j.id && 'glass-chosen')}>
-              <span className="font-mono text-xs text-muted-foreground">{jobLabel(j.number)}</span> {j.title}
-            </a>
-          ))}
-          {jobs.length === 0 && <span className="text-xs text-muted-foreground">No jobs yet.</span>}
-        </div>
-      </section>
-
-      <main className="bg-card flex min-w-0 flex-1 flex-col rounded-xl">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 pt-3.5 pb-3">
-          <div className="flex flex-col gap-1.5">
-            {job ? (
-              <div className="flex flex-wrap items-center gap-2.5">
-                <span className="font-mono text-xs text-muted-foreground">{jobLabel(job.number)}</span>
-                <h1 className="text-base font-semibold">{job.title}</h1>
-                <a href={href({ name: 'job', jobId: job.id })} className="text-xs text-muted-foreground underline-offset-4 hover:underline">
-                  Work view
-                </a>
+                  <div className="flex max-w-md items-center gap-2 truncate font-mono text-[11px] text-muted-foreground">
+                    <span>{selectedSession.id}</span>
+                    {selectedSession.acpSessionId && <span>· acp: {selectedSession.acpSessionId.slice(0, 14)}</span>}
+                    {selectedSession.worktree && (
+                      <span className="truncate" title={selectedSession.worktree}>
+                        · {selectedSession.worktree.split('/').slice(-2).join('/')}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <h1 className="text-base font-semibold">Live Agent Terminal &amp; Shell</h1>
-                <span className="text-xs text-muted-foreground">Full CLI / ACP stream &amp; interactive PTY</span>
+                <TerminalIcon className="size-4 text-muted-foreground" />
+                <h1 className="text-sm font-semibold">Agent Sessions &amp; Live Terminal</h1>
               </div>
             )}
-            {job && <StageBar stage={job.stage} compact className="max-w-md" />}
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Developer view mode">
-            {(
-              [
-                { id: 'agent-terminal', label: 'Agent Terminal (Live Output)' },
-                { id: 'split', label: 'Split (Agent + Shell)' },
-                { id: 'shell', label: 'Worktree Shell (zsh)' },
-                { id: 'transcript', label: 'Structured Transcript' },
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={viewMode === tab.id}
-                onClick={() => setViewMode(tab.id)}
-                className={cn(
-                  buttonVariants({ variant: viewMode === tab.id ? 'default' : 'glass', size: 'sm' }),
-                  'text-xs'
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
+          {/* View Mode Tabs + Minimize/Expand Evidence Button */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="glass-panel flex items-center gap-1 rounded-lg p-0.5" role="tablist" aria-label="Session view mode">
+              {(
+                [
+                  { id: 'stream', label: 'Live Stream' },
+                  { id: 'agent-terminal', label: 'Agent Terminal (ANSI)' },
+                  { id: 'split', label: 'Split (Agent + Shell)' },
+                  { id: 'shell', label: 'Worktree Shell (zsh)' },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={viewMode === tab.id}
+                  onClick={() => changeViewMode(tab.id)}
+                  className={cn(
+                    'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                    viewMode === tab.id
+                      ? 'bg-foreground text-background shadow-xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={toggleEvidence}
+              aria-expanded={evidenceOpen}
+              title={evidenceOpen ? 'Minimize Evidence & Diff Inspector' : 'Open Evidence & Diff Inspector'}
+              className={cn(
+                buttonVariants({ variant: evidenceOpen ? 'default' : 'glass', size: 'sm' }),
+                'gap-1.5 text-xs'
+              )}
+            >
+              <ShieldCheck className="size-3.5" />
+              <span>Evidence</span>
+              {evidenceCount > 0 && (
+                <span className="rounded-full bg-foreground/15 px-1.5 py-0.2 font-mono text-[10px]">
+                  {evidenceCount}
+                </span>
+              )}
+              {evidenceOpen ? <PanelRightClose className="size-3.5" /> : <PanelRightOpen className="size-3.5" />}
+            </button>
           </div>
         </header>
 
-        <div className="flex flex-1 flex-col gap-5 p-5">
+        {/* Optional Job Stage Context Banner */}
+        {job && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 bg-foreground/[0.02] px-4 py-1.5 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-muted-foreground">{jobLabel(job.number)}</span>
+              <span className="font-medium">{job.title}</span>
+              <a
+                href={href({ name: 'job', jobId: job.id })}
+                className="text-sky-400 underline-offset-4 hover:underline"
+              >
+                Open Job Board →
+              </a>
+            </div>
+            <StageBar stage={job.stage} compact className="max-w-xs" />
+          </div>
+        )}
+
+        {/* Active Session Viewport (takes 100% of remaining height above the composer) */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3.5">
+          {viewMode === 'stream' && (
+            !selectedSession ? (
+              <EmptyState title="No session selected">
+                Select a session on the left or type an instruction below to wake an agent.
+              </EmptyState>
+            ) : transcript.status !== 'ready' ? (
+              <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+                {transcript.status === 'offline' ? 'Runtime offline.' : 'Loading session stream…'}
+              </div>
+            ) : (
+              <StructuredTranscriptView
+                entries={transcript.data}
+                agentName={activeAgent?.name ?? selectedSession.agentId}
+                sessionState={selectedSession.state}
+                className="min-h-0 flex-1"
+              />
+            )
+          )}
+
           {viewMode === 'agent-terminal' && (
-            <section aria-label="Agent Terminal" className="flex flex-col gap-3">
-              <SectionTitle aside={selectedSession ? `${selectedSession.runtimeCommand ?? 'ACP'} · ${selectedSession.worktree ?? 'workspace'}` : 'select or wake an agent session'}>
-                Full Agent Terminal Output
-              </SectionTitle>
-              {!selectedSession ? (
-                <EmptyState title="No session selected">
-                  Wake an agent on the left or start a builder from a job to stream its full Claude Code / Codex / Gemini terminal output here.
-                </EmptyState>
-              ) : (
-                <AgentTerminal
-                  sessionId={selectedSession.id}
-                  agentId={selectedSession.agentId}
-                  agentName={who(selectedSession.agentId).name}
-                  className="min-h-[440px]"
-                />
-              )}
-            </section>
+            !selectedSession ? (
+              <EmptyState title="No session selected">
+                Wake an agent on the left or send an instruction below to stream its full Claude Code / Codex / Gemini terminal output here.
+              </EmptyState>
+            ) : (
+              <AgentTerminal
+                sessionId={selectedSession.id}
+                agentId={selectedSession.agentId}
+                agentName={activeAgent?.name}
+                hideComposer
+                className="min-h-0 flex-1"
+              />
+            )
           )}
 
           {viewMode === 'split' && (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <section aria-label="Agent Terminal" className="flex flex-col gap-2">
-                <SectionTitle aside="live agent CLI output">Agent Terminal</SectionTitle>
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-2">
+              <div className="flex min-h-0 flex-col overflow-hidden">
                 {selectedSession ? (
                   <AgentTerminal
                     sessionId={selectedSession.id}
                     agentId={selectedSession.agentId}
-                    agentName={who(selectedSession.agentId).name}
-                    className="min-h-[420px]"
+                    agentName={activeAgent?.name}
+                    hideComposer
+                    className="min-h-0 flex-1"
                   />
                 ) : (
-                  <EmptyState title="No agent session selected">Select or wake an agent on the left.</EmptyState>
+                  <EmptyState title="No agent session selected">Select or wake an agent to view its terminal.</EmptyState>
                 )}
-              </section>
-              <section aria-label="Interactive Shell" className="flex flex-col gap-2">
-                <SectionTitle aside="interactive login shell">Worktree Shell (zsh)</SectionTitle>
-                <Terminal cwd={selectedSession?.worktree ?? undefined} className="min-h-[420px]" />
-              </section>
+              </div>
+              <div className="flex min-h-0 flex-col overflow-hidden">
+                <Terminal cwd={selectedSession?.worktree ?? undefined} className="min-h-0 flex-1" />
+              </div>
             </div>
           )}
 
           {viewMode === 'shell' && (
-            <section aria-label="Terminal" className="flex flex-col gap-3">
-              <SectionTitle aside="interactive PTY shell in the worktree or workspace">Terminal</SectionTitle>
-              <Terminal cwd={selectedSession?.worktree ?? undefined} className="min-h-[460px]" />
-            </section>
+            <Terminal cwd={selectedSession?.worktree ?? undefined} className="min-h-0 flex-1" />
           )}
+        </div>
 
-          {viewMode === 'transcript' && (
-            <section aria-label="Transcript" className="flex min-w-0 flex-1 flex-col gap-3">
-              <SectionTitle aside={selected ? 'streamed from the session' : 'select a session'}>Transcript</SectionTitle>
-              {!selected ? (
-                <EmptyState title="No session selected">Pick a session on the left.</EmptyState>
-              ) : transcript.status !== 'ready' ? (
-                <p className="text-sm text-muted-foreground">{transcript.status === 'offline' ? 'Runtime offline.' : 'Loading…'}</p>
-              ) : transcript.data.length === 0 ? (
-                <EmptyState title="No transcript yet">The session is starting; chunks appear as the agent works.</EmptyState>
-              ) : (
-                <div className="flex max-h-[32rem] flex-col gap-2 overflow-y-auto rounded-lg border border-border/50 p-3">
-                  {transcript.data.map((entry) => (
-                    <TranscriptLine key={entry.id} entry={entry} />
+        {/* Sticky Bottom Instruction & Control Dock */}
+        <footer className="border-t border-border/60 bg-background/80 px-4 py-2.5 backdrop-blur-md">
+          <form onSubmit={handleSendInstruction} className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-muted-foreground">Instruct:</span>
+                <select
+                  value={instructionTarget}
+                  onChange={(e) => setInstructionTarget(e.target.value)}
+                  aria-label="Instruction target"
+                  className="h-7 rounded-md border border-border/60 bg-card px-2 text-xs font-medium"
+                >
+                  {selectedSession && (
+                    <option value="current">
+                      Continue {activeAgent?.name ?? selectedSession.agentId} ({selectedSession.id.slice(0, 12)})
+                    </option>
+                  )}
+                  <option value="team-leader">★ Team Leader (Auto-delegate &amp; wake team)</option>
+                  {coworkers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      Wake {c.name} ({c.runtime ?? 'claude'})
+                      {c.statusState === 'rate_limited' ? ' · RATE LIMITED' : ''}
+                    </option>
                   ))}
-                </div>
-              )}
-            </section>
-          )}
+                </select>
 
-          <div className="grid grid-cols-1 gap-5 border-t border-border/60 pt-4 2xl:grid-cols-2">
-            <section aria-label="Steps" className="flex min-w-0 flex-1 flex-col gap-3">
-              <SectionTitle aside="recorded by the runtime">Steps</SectionTitle>
-              {steps.length === 0 ? (
+                {selectedSession && (selectedSession.state === 'running' || selectedSession.state === 'starting') && (
+                  <button
+                    type="button"
+                    onClick={handleInterruptSession}
+                    className={cn(buttonVariants({ variant: 'destructive', size: 'xs' }))}
+                  >
+                    <Square className="size-3" /> Stop / Interrupt
+                  </button>
+                )}
+              </div>
+
+              {/* Quick Autonomous Action Pills */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleScheduleCheckIn(900, '15m')}
+                  title="Schedule an automatic 15-minute progress check-in for this agent"
+                  className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'text-[11px]')}
+                >
+                  <Clock className="size-3" /> +15m Check-in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleScheduleCheckIn(3600, '1h')}
+                  title="Schedule an automatic 1-hour wakeup timer for this agent"
+                  className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'text-[11px]')}
+                >
+                  <Clock className="size-3" /> +1h Timer
+                </button>
+                {job && client && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void client
+                          .commitJob(job.id, 'checkpoint from Sessions dock')
+                          .then((r) => setDockStatus(r.committed ? `Committed ${r.commitSha.slice(0, 8)}` : 'Worktree clean'))
+                          .catch((e) => setDockStatus(e instanceof Error ? e.message : String(e)));
+                      }}
+                      className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'text-[11px]')}
+                    >
+                      <GitCommit className="size-3" /> Commit Worktree
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void client
+                          .verifyJob(job.id, 'kael')
+                          .then((r) => setDockStatus(r.ok ? 'Independent verification passed (Kael)' : 'Verification reported failures'))
+                          .catch((e) => setDockStatus(e instanceof Error ? e.message : String(e)));
+                      }}
+                      className={cn(buttonVariants({ variant: 'glass', size: 'xs' }), 'text-[11px]')}
+                    >
+                      <CheckCircle2 className="size-3" /> Verify (Kael)
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-end gap-2">
+              <textarea
+                rows={2}
+                value={instructionText}
+                onChange={(e) => setInstructionText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleSendInstruction();
+                  }
+                }}
+                placeholder={
+                  selectedSession
+                    ? `Give instructions to ${activeAgent?.name ?? selectedSession.agentId} (Enter to send, Shift+Enter for newline)…`
+                    : 'Type an instruction to wake an agent or tell the Team Leader what needs to be done…'
+                }
+                aria-label="Instruction to agent"
+                className="min-h-[44px] flex-1 resize-none rounded-lg border border-border/60 bg-card px-3 py-2 text-xs leading-relaxed outline-none focus:border-foreground/40"
+              />
+              <button
+                type="submit"
+                disabled={!instructionText.trim() || sendingInstruction}
+                className={cn(buttonVariants({ variant: 'default', size: 'default' }), 'h-[44px] shrink-0 px-4')}
+              >
+                <Send className="size-3.5" />
+                <span>{sendingInstruction ? 'Sending…' : 'Send'}</span>
+              </button>
+            </div>
+
+            {dockStatus && (
+              <div className="flex items-center justify-between text-[11px] text-emerald-400">
+                <span>{dockStatus}</span>
+                <button
+                  type="button"
+                  onClick={() => setDockStatus(null)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+          </form>
+        </footer>
+      </main>
+
+      {/* 3. Minimizable Right Evidence, Steps & Diff Inspector Drawer */}
+      {evidenceOpen && (
+        <aside
+          aria-label="Evidence"
+          className="bg-card flex shrink-0 flex-col gap-3 overflow-hidden rounded-xl border border-border/50 p-4 lg:w-88"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold">Evidence &amp; Inspector</h2>
+              <p className="text-[11px] text-muted-foreground">Substrate-native truth recorded by the runtime.</p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleEvidence}
+              title="Minimize Evidence drawer"
+              className="rounded-md p-1 text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
+            >
+              <PanelRightClose className="size-4" />
+            </button>
+          </div>
+
+          {/* Drawer Sub-tabs: Evidence Ledger | Steps | Changes */}
+          <div className="glass-panel grid grid-cols-3 gap-1 rounded-lg p-0.5 text-xs">
+            {(
+              [
+                { id: 'evidence', label: `Ledger (${job?.evidence.length ?? 0})` },
+                { id: 'steps', label: `Steps (${steps.length})` },
+                { id: 'changes', label: `Diffs (${patches.length})` },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setInspectorTab(t.id)}
+                className={cn(
+                  'rounded-md py-1 text-[11px] font-medium transition-colors',
+                  inspectorTab === t.id
+                    ? 'bg-foreground text-background'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-0.5">
+            {inspectorTab === 'evidence' && (
+              <>
+                {job && job.criteria.length > 0 && (
+                  <div className="flex flex-col gap-1.5 rounded-lg border border-border/50 bg-background/40 p-2.5">
+                    <span className="text-[11px] font-medium text-muted-foreground">Done means</span>
+                    {job.criteria.map((c) => (
+                      <div key={c.id} className="flex items-start justify-between gap-2 text-xs">
+                        <span>{c.text}</span>
+                        <EvidenceTag value={c.evidenceClass} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-col">
+                  <SectionTitle aside={job ? `${job.evidence.length} items` : 'no job selected'}>Ledger</SectionTitle>
+                  {!job || job.evidence.length === 0 ? (
+                    <p className="py-4 text-xs text-muted-foreground">
+                      Nothing recorded yet. Commands, diffs, and independent verifications appear here automatically.
+                    </p>
+                  ) : (
+                    job.evidence.map((e) => (
+                      <div
+                        key={e.id}
+                        className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/50 py-2 text-xs"
+                      >
+                        <span className="font-mono text-[11px] text-muted-foreground">{time(e.createdAt)}</span>
+                        <span className="flex min-w-0 flex-col">
+                          <span className="break-words">{e.summary}</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {who(e.recordedBy).name} · {e.kind}
+                          </span>
+                        </span>
+                        <EvidenceTag value={e.class} />
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+
+            {inspectorTab === 'steps' && (
+              steps.length === 0 ? (
                 <EmptyState title="No commands recorded">Commands and checks run by agents appear here.</EmptyState>
               ) : (
                 <StepList steps={steps} />
-              )}
-            </section>
-            <section aria-label="Diff" className="flex min-w-0 flex-1 flex-col gap-3">
-              <SectionTitle>Changes</SectionTitle>
-              {patches.length === 0 ? (
+              )
+            )}
+
+            {inspectorTab === 'changes' && (
+              patches.length === 0 ? (
                 <EmptyState title="No file changes recorded" />
               ) : (
                 patches.map((e) => <DiffView key={e.id} patch={(e.payload as { patch: string }).patch} />)
-              )}
-            </section>
+              )
+            )}
           </div>
-        </div>
-      </main>
 
-      <aside aria-label="Evidence" className="bg-card flex flex-col gap-4 rounded-xl p-4.5 lg:w-90">
-        <div>
-          <h2 className="text-[15px] font-semibold">Evidence</h2>
-          <p className="text-xs text-muted-foreground">Recorded from what agents did, not from their summaries.</p>
-        </div>
-        {job && job.criteria.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <span className="text-xs text-muted-foreground">Done means</span>
-            {job.criteria.map((c) => (
-              <div key={c.id} className="flex items-start justify-between gap-2.5 text-[13px]">
-                <span>{c.text}</span>
-                <EvidenceTag value={c.evidenceClass} />
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="flex flex-col">
-          <span className="pb-1 text-xs text-muted-foreground">Ledger</span>
-          {!job || job.evidence.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing recorded yet.</p>
-          ) : (
-            job.evidence.map((e) => (
-              <div key={e.id} className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-2 border-b border-border/50 py-1.5 text-xs">
-                <span className="font-mono text-muted-foreground">{time(e.createdAt)}</span>
-                <span className="flex min-w-0 flex-col">
-                  <span className="break-words">{e.summary}</span>
-                  <span className="text-muted-foreground">
-                    {who(e.recordedBy).name} · {e.kind}
-                  </span>
-                </span>
-                <EvidenceTag value={e.class} />
-              </div>
-            ))
-          )}
-        </div>
-        <Tag className="mt-auto self-start">Desktop reads the runtime; it makes no AI calls</Tag>
-      </aside>
-    </div>
-  );
-}
-
-function TranscriptLine({ entry }: { entry: TranscriptEntry }) {
-  const payload = (entry.payload ?? {}) as { text?: string; title?: string; status?: string; message?: string; toolCallId?: string; commitSha?: string };
-  const text = payload.text ?? payload.title ?? payload.message ?? '';
-  if (!text && entry.kind === 'turn_end') {
-    return <div className="text-xs text-muted-foreground">— turn ended —</div>;
-  }
-  const author = entry.role === 'user' ? 'You' : entry.role === 'assistant' ? 'Agent' : entry.role === 'thought' ? 'Thinking' : entry.kind;
-  return (
-    <div className={cn('flex flex-col gap-0.5 rounded-md px-2 py-1.5 text-[13px]', entry.role === 'assistant' ? 'bg-foreground/[0.03]' : '')}>
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-        <span className="font-mono">{new Date(entry.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-        <span>{author}</span>
-        {payload.status && <span>· {payload.status}</span>}
-      </div>
-      <span className="whitespace-pre-wrap break-words">{text || entry.kind}</span>
-      {entry.kind === 'commit' && payload.commitSha && <code className="text-[11px] text-muted-foreground">{payload.commitSha}</code>}
+          <Tag className="mt-auto self-start">Desktop reads the runtime; it makes no AI calls</Tag>
+        </aside>
+      )}
     </div>
   );
 }

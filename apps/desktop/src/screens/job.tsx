@@ -13,6 +13,7 @@ import {
 import type { AdapterInfo, Evidence, Identity, JobDetail, JobKind, JobStage, Room, Session, Task } from '@runtime/types';
 import { Avatar, OwnerAvatar } from '@/components/app/avatar';
 import { EmptyState, EvidenceTag, jobLabel, SectionTitle, StageBar, Tag } from '@/components/app/status';
+import { AgentTerminal } from '@/components/terminal';
 import { buttonVariants } from '@/components/ui/button';
 import { href } from '@/lib/route';
 import { useRuntime, useRuntimeData } from '@/lib/runtime-context';
@@ -467,13 +468,25 @@ export function JobScreen({
             )}
           </section>
 
-          <section aria-label="What happened" className="bg-card flex flex-col gap-1 rounded-xl px-5 py-4.5">
-            <SectionTitle aside="from the evidence record">Evidence</SectionTitle>
-            {job.evidence.length === 0 ? (
-              <EmptyState title="Nothing recorded yet" className="mt-2">Commands, commits and checks appear here as the runtime records them.</EmptyState>
-            ) : (
-              [...job.evidence].reverse().map((e) => <EvidenceRow key={e.id} evidence={e} actor={e.recordedBy ? who(e.recordedBy) : undefined} />)
-            )}
+          <section aria-label="What happened" className="bg-card flex flex-col gap-2 rounded-xl px-5 py-4">
+            <details className="group" open={job.evidence.length > 0 && job.evidence.length <= 6}>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 select-none">
+                <SectionTitle aside={`${job.evidence.length} recorded`}>Evidence (click to minimize / expand)</SectionTitle>
+                <span className="rounded bg-foreground/[0.06] px-2 py-0.5 font-mono text-[11px] text-muted-foreground group-open:hidden">
+                  Show ({job.evidence.length})
+                </span>
+                <span className="hidden rounded bg-foreground/[0.06] px-2 py-0.5 font-mono text-[11px] text-muted-foreground group-open:inline">
+                  Minimize
+                </span>
+              </summary>
+              <div className="mt-2 flex flex-col gap-1">
+                {job.evidence.length === 0 ? (
+                  <EmptyState title="Nothing recorded yet" className="mt-2">Commands, commits and checks appear here as the runtime records them.</EmptyState>
+                ) : (
+                  [...job.evidence].reverse().map((e) => <EvidenceRow key={e.id} evidence={e} actor={e.recordedBy ? who(e.recordedBy) : undefined} />)
+                )}
+              </div>
+            </details>
           </section>
         </main>
 
@@ -611,28 +624,46 @@ function TaskRow({ task, assignee, busy, onRunCheck, onDone, onStart }: { task: 
 
 function SessionRow({ session, jobId, agent, onCancel, busy }: { session: Session; jobId: string; agent?: Identity; onCancel: () => void; busy: boolean }) {
   const live = session.state === 'starting' || session.state === 'running' || session.state === 'idle';
+  const [expanded, setExpanded] = React.useState(false);
   return (
-    <div className="glass-panel flex flex-wrap items-center gap-2.5 rounded-lg px-3 py-2">
-      {agent ? <Avatar who={agent} size={24} /> : null}
-      <div className="flex min-w-0 flex-1 flex-col leading-tight">
-        <span className="truncate text-sm font-medium">{agent?.name ?? session.agentId}</span>
-        <span className="font-mono text-[11px] text-muted-foreground">
-          {session.id}
-          {session.acpSessionId ? ` · acp: ${session.acpSessionId}` : ''}
-        </span>
-      </div>
-      <code className="basis-36 truncate font-mono text-xs text-muted-foreground">{session.runtimeCommand}</code>
-      <Tag tone={session.state === 'failed' ? 'risk' : live ? 'observed' : 'quiet'}>{session.state}</Tag>
-      <span className="text-xs text-muted-foreground">{session.turnCount ?? 0} turns</span>
-      <a href={href({ name: 'dev', jobId })} className={buttonVariants({ variant: 'glass', size: 'sm' })}>
-        Terminal
-      </a>
-      {live && (
-        <button type="button" onClick={onCancel} disabled={busy} className={buttonVariants({ variant: 'glass', size: 'sm' })}>
-          {busy ? 'Cancelling…' : 'Cancel'}
+    <div className="glass-panel flex flex-col gap-2.5 rounded-lg px-3 py-2">
+      <div className="flex flex-wrap items-center gap-2.5">
+        {agent ? <Avatar who={agent} size={24} /> : null}
+        <div className="flex min-w-0 flex-1 flex-col leading-tight">
+          <span className="truncate text-sm font-medium">{agent?.name ?? session.agentId}</span>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {session.id}
+            {session.acpSessionId ? ` · acp: ${session.acpSessionId}` : ''}
+          </span>
+        </div>
+        <code className="basis-36 truncate font-mono text-xs text-muted-foreground">{session.runtimeCommand}</code>
+        <Tag tone={session.state === 'failed' ? 'risk' : live ? 'observed' : 'quiet'}>{session.state}</Tag>
+        <span className="text-xs text-muted-foreground">{session.turnCount ?? 0} turns</span>
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className={buttonVariants({ variant: expanded ? 'default' : 'glass', size: 'sm' })}
+        >
+          {expanded ? 'Hide Terminal' : 'Inline Terminal / Instruct'}
         </button>
+        <a href={href({ name: 'dev', jobId })} className={buttonVariants({ variant: 'glass', size: 'sm' })}>
+          Full View
+        </a>
+        {live && (
+          <button type="button" onClick={onCancel} disabled={busy} className={buttonVariants({ variant: 'glass', size: 'sm' })}>
+            {busy ? 'Cancelling…' : 'Cancel'}
+          </button>
+        )}
+        {session.error && <span className="basis-full text-xs text-risk">{session.error}</span>}
+      </div>
+      {expanded && (
+        <AgentTerminal
+          sessionId={session.id}
+          agentId={session.agentId}
+          agentName={agent?.name ?? session.agentId}
+          className="h-[380px]"
+        />
       )}
-      {session.error && <span className="basis-full text-xs text-risk">{session.error}</span>}
     </div>
   );
 }

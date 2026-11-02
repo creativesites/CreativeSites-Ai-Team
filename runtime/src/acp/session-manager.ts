@@ -139,6 +139,87 @@ export function parseRateLimitFromText(text: string, nowMs = Date.now()): { isRa
   };
 }
 
+export function stripCoordinationBoilerplate(text: string): string {
+  return text.split('\n--- MyaOS Autonomous Team Coordination ---')[0]?.trim() || text.trim();
+}
+
+export function isInternalDiagnosticStderr(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  if (/^\[session\/(create|prompt|load|cancel|new)\]/i.test(trimmed)) return true;
+  if (/\bphase=(validate-cwd|settings|init|spawn|auth)\b/i.test(trimmed) && /\bdurationMs=\d+/i.test(trimmed)) return true;
+  return false;
+}
+
+/**
+ * Coalesces raw streaming transcript rows (token-level `message` / `thought` chunks
+ * and paired `tool_call` updates) into logical turns for both terminal and UI rendering.
+ */
+function coalesceTranscriptEntries(entries: T.TranscriptEntry[]): T.TranscriptEntry[] {
+  const result: T.TranscriptEntry[] = [];
+
+  for (const entry of entries) {
+    const p = (entry.payload && typeof entry.payload === 'object' ? entry.payload : {}) as Record<string, unknown>;
+    const prev = result[result.length - 1];
+
+    // 1. Merge consecutive assistant message chunks into one block
+    if (
+      (entry.kind === 'message' || entry.kind === 'agent_message_chunk') &&
+      prev &&
+      (prev.kind === 'message' || prev.kind === 'agent_message_chunk') &&
+      prev.role === entry.role
+    ) {
+      const prevPayload = (prev.payload && typeof prev.payload === 'object' ? prev.payload : {}) as Record<string, unknown>;
+      prev.payload = {
+        ...prevPayload,
+        text: `${String(prevPayload.text ?? '')}${String(p.text ?? '')}`,
+      };
+      continue;
+    }
+
+    // 2. Merge consecutive thought chunks into one block
+    if (
+      (entry.kind === 'thought' || entry.kind === 'agent_thought_chunk') &&
+      prev &&
+      (prev.kind === 'thought' || prev.kind === 'agent_thought_chunk')
+    ) {
+      const prevPayload = (prev.payload && typeof prev.payload === 'object' ? prev.payload : {}) as Record<string, unknown>;
+      prev.payload = {
+        ...prevPayload,
+        text: `${String(prevPayload.text ?? '')}${String(p.text ?? '')}`,
+      };
+      continue;
+    }
+
+    // 3. Merge tool_call_update into its preceding matching tool_call when adjacent
+    if (
+      (entry.kind === 'tool' || entry.kind === 'tool_call_update') &&
+      prev &&
+      (prev.kind === 'tool' || prev.kind === 'tool_call' || prev.kind === 'tool_call_update')
+    ) {
+      const prevPayload = (prev.payload && typeof prev.payload === 'object' ? prev.payload : {}) as Record<string, unknown>;
+      const prevToolId = prev.itemId ?? String(prevPayload.toolCallId ?? '');
+      const curToolId = entry.itemId ?? String(p.toolCallId ?? '');
+      if (prevToolId && curToolId && prevToolId === curToolId) {
+        prev.title = entry.title ?? prev.title;
+        prev.payload = {
+          ...prevPayload,
+          ...p,
+          rawInput: p.rawInput ?? prevPayload.rawInput,
+        };
+        continue;
+      }
+    }
+
+    result.push({
+      ...entry,
+      payload: p ? { ...p } : entry.payload,
+    });
+  }
+
+  return result;
+}
+
 /**
  * Formats a session and its transcript entries into a full ANSI terminal log
  * (matching the feel of Claude Code / Codex / Antigravity terminal output).
@@ -162,15 +243,17 @@ export function formatSessionTerminalOutput(session: T.Session, entries: T.Trans
     ''
   );
 
-  for (const entry of entries) {
+  const coalesced = coalesceTranscriptEntries(entries);
+
+  for (const entry of coalesced) {
     const p = (entry.payload && typeof entry.payload === 'object' ? entry.payload : {}) as Record<string, unknown>;
     const ts = new Date(entry.createdAt).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
     switch (entry.kind) {
       case 'prompt':
       case 'user_message': {
         const text = String(p.text ?? '');
-        const display = text.split('\n--- MyaOS Autonomous Team Coordination ---')[0]?.trim() || text;
-        lines.push(`${magenta}❯ [${ts}] Prompt → ${agentName ?? session.agentId}:${reset}`);
+        const display = stripCoordinationBoilerplate(text);
+        lines.push(`${magenta}❯ [${ts}] Instruction → ${agentName ?? session.agentId}:${reset}`);
         for (const l of display.split('\n')) {
           lines.push(`  ${l}`);
         }
@@ -181,7 +264,11 @@ export function formatSessionTerminalOutput(session: T.Session, entries: T.Trans
       case 'agent_thought_chunk': {
         const text = String(p.text ?? '').trim();
         if (text) {
-          lines.push(`${dim}💭 [${ts}] ${text}${reset}`);
+          lines.push(`${dim}💭 [${ts}] Thinking:${reset}`);
+          for (const l of text.split('\n')) {
+            lines.push(`  ${dim}${l}${reset}`);
+          }
+          lines.push('');
         }
         break;
       }
@@ -219,7 +306,7 @@ export function formatSessionTerminalOutput(session: T.Session, entries: T.Trans
       }
       case 'message':
       case 'agent_message_chunk': {
-        const text = String(p.text ?? '');
+        const text = String(p.text ?? '').trim();
         if (text) {
           lines.push(`${green}● [${ts}] ${agentName ?? session.agentId}:${reset}`);
           for (const l of text.split('\n')) {
@@ -232,7 +319,7 @@ export function formatSessionTerminalOutput(session: T.Session, entries: T.Trans
       case 'stderr':
       case 'adapter_stderr': {
         const text = String(p.text ?? p.line ?? '').trim();
-        if (text) {
+        if (text && !isInternalDiagnosticStderr(text)) {
           lines.push(`${yellow}⚠ [${ts}] [stderr] ${text}${reset}`);
         }
         break;
@@ -324,12 +411,13 @@ export class SessionManager {
       this.repo.updateTask(task.id, { status: 'running' });
     }
 
-    const prompt = this.buildPrompt(job, room, task, agent, input.prompt);
+    const acpPrompt = this.buildPrompt(job, room, task, agent, input.prompt);
+    const displayPrompt = stripCoordinationBoilerplate(input.prompt?.trim() ? input.prompt : acpPrompt);
     this.repo.appendTranscript(session.id, {
       kind: 'prompt',
       role: 'user',
       title: 'Session prompt',
-      payload: { text: prompt },
+      payload: { text: displayPrompt },
     });
 
     const client = new AcpClient({
@@ -356,7 +444,7 @@ export class SessionManager {
             });
             const rl = parseRateLimitFromText(line);
             if (rl) {
-              this.recordRateLimit(session.id, agent.id, adapter.id, job?.id ?? null, room?.id ?? null, task?.id ?? null, rl.reason, rl.resetAt, prompt);
+              this.recordRateLimit(session.id, agent.id, adapter.id, job?.id ?? null, room?.id ?? null, task?.id ?? null, rl.reason, rl.resetAt, displayPrompt);
             }
           } catch {
             /* store closed */
@@ -381,7 +469,7 @@ export class SessionManager {
     };
     this.live.set(session.id, live);
 
-    const run = this.run(live, prompt);
+    const run = this.run(live, acpPrompt);
     this.runs.set(session.id, run);
     void run.finally(() => this.runs.delete(session.id));
     return this.repo.getSession(session.id);
@@ -392,9 +480,10 @@ export class SessionManager {
    * the session if its previous turn already completed and closed the subprocess.
    */
   async prompt(sessionId: string, text: string): Promise<void> {
+    const cleanText = stripCoordinationBoilerplate(text);
     const live = this.live.get(sessionId);
-    if (live && !live.closed && live.acpSessionId) {
-      this.repo.appendTranscript(sessionId, { kind: 'prompt', role: 'user', payload: { text } });
+    if (live && !live.closed && live.acpSessionId && !this.runs.has(sessionId)) {
+      this.repo.appendTranscript(sessionId, { kind: 'prompt', role: 'user', payload: { text: cleanText } });
       this.repo.updateSession(sessionId, { state: 'running' });
       const result = await live.client.prompt(text);
       this.repo.appendTranscript(sessionId, { kind: 'turn', role: 'system', payload: result });
@@ -405,9 +494,13 @@ export class SessionManager {
     // Session turn already exited: run a continuation turn on the existing session record
     const existing = this.repo.getSession(sessionId);
     const agent = this.repo.getIdentity(existing.agentId);
+    const job = existing.jobId ? this.repo.getJob(existing.jobId) : null;
+    const room = existing.roomId ? this.repo.getRoom(existing.roomId) : job ? this.repo.getRoom(job.roomId) : null;
+    const task = existing.taskId ? this.repo.getTask(existing.taskId) : null;
     const adapter = this.resolveAdapter(existing.adapterId ?? agent.adapterId ?? agent.runtime);
     const worktreePath = existing.worktree ?? process.cwd() ?? os.homedir();
-    this.repo.appendTranscript(sessionId, { kind: 'prompt', role: 'user', title: 'Wake / follow-up prompt', payload: { text } });
+    const acpPrompt = this.buildPrompt(job, room, task, agent, cleanText);
+    this.repo.appendTranscript(sessionId, { kind: 'prompt', role: 'user', title: 'Wake / follow-up prompt', payload: { text: cleanText } });
     this.repo.updateSession(sessionId, { state: 'starting', error: null });
 
     const client = new AcpClient({
@@ -434,7 +527,7 @@ export class SessionManager {
             });
             const rl = parseRateLimitFromText(line);
             if (rl) {
-              this.recordRateLimit(sessionId, agent.id, adapter.id, existing.jobId ?? null, existing.roomId ?? null, existing.taskId ?? null, rl.reason, rl.resetAt, text);
+              this.recordRateLimit(sessionId, agent.id, adapter.id, existing.jobId ?? null, existing.roomId ?? null, existing.taskId ?? null, rl.reason, rl.resetAt, cleanText);
             }
           } catch {
             /* store closed */
@@ -458,7 +551,7 @@ export class SessionManager {
       closed: false,
     };
     this.live.set(sessionId, resumedLive);
-    const run = this.run(resumedLive, text);
+    const run = this.run(resumedLive, acpPrompt);
     this.runs.set(sessionId, run);
     void run.finally(() => this.runs.delete(sessionId));
   }
