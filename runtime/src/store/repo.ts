@@ -1822,7 +1822,7 @@ export class Repo {
   // ---------------------------------------------------------------- councils / verdicts
 
   createCouncil(jobId: string, input: T.CreateCouncilInput): T.Council {
-    this.getJob(jobId);
+    const job = this.getJob(jobId);
     const mode = oneOf(input.mode, ['quick', 'full'] as const, 'mode', 'quick');
     const options = Array.isArray(input.options) ? input.options : [];
     const seats = Array.isArray(input.seats) ? input.seats : [];
@@ -1843,12 +1843,19 @@ export class Repo {
       }
     }
     const id = newId('council');
+    const title = input.title?.trim() || job.title;
+    const decision = input.decision?.trim() || job.title;
+    const brief = input.brief?.trim() || job.brief;
+    const assumptions = Array.isArray(input.assumptions) ? input.assumptions : [];
     this.write((events) => {
       this.db
-        .prepare('INSERT INTO councils (id, job_id, mode, status, created_at, seat_config, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(id, jobId, mode, 'running', now(), jsonText({ options, seats }), now());
+        .prepare(
+          `INSERT INTO councils (id, job_id, mode, status, created_at, seat_config, started_at, title, decision, brief, assumptions)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(id, jobId, mode, 'running', now(), jsonText({ options, seats }), now(), title, decision, brief, jsonText(assumptions));
       this.refreshJobUpdated(jobId);
-      this.recordEvent(events, { type: 'council.created', subjectId: jobId, payload: { councilId: id, mode }, subjectType: 'job' });
+      this.recordEvent(events, { type: 'council.created', subjectId: jobId, payload: { councilId: id, mode, title }, subjectType: 'job' });
     });
     return this.getCouncil(id);
   }
@@ -1859,11 +1866,20 @@ export class Repo {
     const config = parseJson<{ options: T.CouncilOption[]; seats: T.CouncilSeat[] }>(row.seat_config, { options: [], seats: [] });
     const cards = this.all('SELECT * FROM council_cards WHERE council_id = ? ORDER BY round, rowid', councilId).map(toCouncilCard);
     const verdictRow = this.one('SELECT * FROM verdicts WHERE council_id = ?', councilId);
+    const draftObj = parseJson<Record<string, unknown>>(row.draft, {});
     return {
       id: String(row.id),
       jobId: String(row.job_id),
       mode: String(row.mode) as T.Council['mode'],
       status: String(row.status) as T.Council['status'],
+      title: str(row.title),
+      decision: str(row.decision),
+      brief: str(row.brief),
+      assumptions: parseJson<string[]>(row.assumptions, []),
+      cruxes: parseJson<T.CouncilCrux[]>(row.cruxes, []),
+      draft: Object.keys(draftObj).length ? (draftObj as unknown as T.CouncilDraft) : null,
+      events: parseJson<T.CouncilStreamEvent[]>(row.events, []),
+      sessionDir: str(row.session_dir),
       options: config.options,
       seats: config.seats,
       cards,
@@ -1875,6 +1891,68 @@ export class Repo {
   listCouncils(jobId: string): T.Council[] {
     this.getJob(jobId);
     return this.all('SELECT id FROM councils WHERE job_id = ? ORDER BY created_at DESC', jobId).map((r) => this.getCouncil(String(r.id)));
+  }
+
+  listAllCouncils(limit = 50): T.Council[] {
+    return this.all('SELECT id FROM councils ORDER BY created_at DESC LIMIT ?', Math.min(positiveInt(limit, 'limit', 50) || 50, 200)).map((r) =>
+      this.getCouncil(String(r.id))
+    );
+  }
+
+  updateCouncilState(
+    councilId: string,
+    patch: {
+      title?: string;
+      decision?: string;
+      brief?: string;
+      assumptions?: string[];
+      cruxes?: T.CouncilCrux[];
+      draft?: T.CouncilDraft | null;
+      events?: T.CouncilStreamEvent[];
+      sessionDir?: string | null;
+      options?: T.CouncilOption[];
+      seats?: T.CouncilSeat[];
+    }
+  ): T.Council {
+    const council = this.getCouncil(councilId);
+    const sets: [string, SQLInputValue][] = [];
+    if (patch.title !== undefined) sets.push(['title', patch.title]);
+    if (patch.decision !== undefined) sets.push(['decision', patch.decision]);
+    if (patch.brief !== undefined) sets.push(['brief', patch.brief]);
+    if (patch.assumptions !== undefined) sets.push(['assumptions', jsonText(patch.assumptions)]);
+    if (patch.cruxes !== undefined) sets.push(['cruxes', jsonText(patch.cruxes)]);
+    if (patch.draft !== undefined) sets.push(['draft', jsonText(patch.draft ?? {})]);
+    if (patch.events !== undefined) sets.push(['events', jsonText(patch.events)]);
+    if (patch.sessionDir !== undefined) sets.push(['session_dir', patch.sessionDir]);
+    if (patch.options !== undefined || patch.seats !== undefined) {
+      sets.push([
+        'seat_config',
+        jsonText({
+          options: patch.options ?? council.options,
+          seats: patch.seats ?? council.seats,
+        }),
+      ]);
+    }
+    if (sets.length) {
+      this.db
+        .prepare(`UPDATE councils SET ${sets.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
+        .run(...sets.map(([, v]) => v), councilId);
+    }
+    return this.getCouncil(councilId);
+  }
+
+  appendCouncilEvent(councilId: string, ev: T.CouncilStreamEvent): void {
+    const council = this.getCouncil(councilId);
+    const nextEvents = [...(council.events ?? []), ev];
+    this.write((events) => {
+      this.db.prepare('UPDATE councils SET events = ? WHERE id = ?').run(jsonText(nextEvents), councilId);
+      this.recordEvent(events, {
+        type: 'council.event',
+        subjectId: council.jobId,
+        payload: { councilId, event: ev },
+        subjectType: 'job',
+      });
+    });
   }
 
   addCouncilCard(councilId: string, input: T.CreateCouncilCardInput): T.CouncilCard {
@@ -1911,6 +1989,9 @@ export class Repo {
       ruin,
       reversible: input.reversible == null ? null : Boolean(input.reversible),
       argument: input.argument ?? null,
+      text: input.text ?? input.argument ?? null,
+      parsed: input.parsed ?? null,
+      quotes: input.quotes ?? [],
     };
     const id = newId('card');
     this.write((events) => {
@@ -1922,16 +2003,28 @@ export class Repo {
     return toCouncilCard(this.one('SELECT * FROM council_cards WHERE id = ?', id)!);
   }
 
-  createVerdict(councilId: string): T.CouncilVerdict {
+  createVerdict(councilId: string, richOverride?: Partial<T.CouncilResult>): T.CouncilVerdict {
     const council = this.getCouncil(councilId);
     if (council.status !== 'running') throw new ConflictError(`This council is ${council.status}; it cannot produce another verdict`);
     if (!council.cards.length) throw new ConflictError('No cards have been submitted');
-    let result: T.CouncilResult;
+    // Score using the latest round's cards (or all cards if only 1 round)
+    const maxRound = Math.max(...council.cards.map((c) => c.round || 1));
+    const roundCards = council.cards.filter((c) => (c.round || 1) === maxRound).map((c) => c.result);
+    let computed: T.CouncilResult;
     try {
-      result = computeCouncil(council.options, council.seats, council.cards.map((c) => c.result));
+      computed = computeCouncil(council.options, council.seats, roundCards.length ? roundCards : council.cards.map((c) => c.result));
     } catch (e) {
       throw new ConflictError((e as Error).message);
     }
+    const result: T.CouncilResult = {
+      ...computed,
+      ...richOverride,
+      scores: richOverride?.scores ?? computed.scores,
+      topId: richOverride?.topId ?? computed.topId,
+      recommended: richOverride?.recommended ?? computed.topId,
+      rules: richOverride?.rules ?? computed.rules,
+      conditions: richOverride?.conditions?.length ? richOverride.conditions : computed.conditions,
+    };
     const id = newId('verdict');
     this.write((events) => {
       this.db

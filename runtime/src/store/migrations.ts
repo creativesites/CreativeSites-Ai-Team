@@ -511,4 +511,18 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX bridge_ingest_job ON bridge_ingest(job_id, imported_at);
     `,
   },
+  {
+    version: 4,
+    name: 'roast room council multi-round state',
+    sql: `
+      ALTER TABLE councils ADD COLUMN title TEXT;
+      ALTER TABLE councils ADD COLUMN decision TEXT;
+      ALTER TABLE councils ADD COLUMN brief TEXT;
+      ALTER TABLE councils ADD COLUMN assumptions TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE councils ADD COLUMN cruxes TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE councils ADD COLUMN draft TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE councils ADD COLUMN events TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE councils ADD COLUMN session_dir TEXT;
+    `,
+  },
 ];

@@ -14,6 +14,13 @@ import * as workspaces from '../workspaces.ts';
 import type { Checker } from '../checks.ts';
 import type { SessionManager } from '../acp/session-manager.ts';
 import type { Bridge } from '../bridge.ts';
+import { getRosterPayload } from '../council-roster.ts';
+import { findFolderSession, listFolderSessions } from '../council-watch.ts';
+import {
+  buildSessionPayloadFromCouncil,
+  startLiveCouncil,
+  subscribeCouncilStream,
+} from '../council-runner.ts';
 
 export interface ServerOptions {
   repo: Repo;
@@ -319,12 +326,57 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       body: repo.createApproval({ ...(ctx.body as unknown as T.CreateApprovalInput), jobId: ctx.params.id }),
     })),
     route('GET', '/v1/jobs/:id/usage', (ctx) => ({ status: 200, body: repo.listUsage({ jobId: ctx.params.id }) })),
+    route('GET', '/v1/councils/roster', () => ({ status: 200, body: getRosterPayload() })),
+    route('GET', '/v1/councils/sessions', () => {
+      const dbCouncils: T.CouncilSessionSummary[] = repo.listAllCouncils(50).map((c) => ({
+        id: c.id,
+        title: c.title || 'Council Session',
+        prompt: c.decision || c.brief || '',
+        mode: c.mode,
+        status: c.status === 'running' ? 'running' : 'done',
+        source: 'runtime',
+        jobId: c.jobId,
+      }));
+      const folders = listFolderSessions();
+      return { status: 200, body: { liveId: dbCouncils.find((c) => c.status === 'running')?.id ?? null, sessions: [...dbCouncils, ...folders] } };
+    }),
+    route('GET', '/v1/councils/sessions/:id', (ctx) => {
+      const id = ctx.params.id!;
+      const folderHit = findFolderSession(id);
+      if (folderHit) return { status: 200, body: folderHit };
+      const council = repo.getCouncil(id);
+      return { status: 200, body: buildSessionPayloadFromCouncil(council) };
+    }),
     route('GET', '/v1/jobs/:id/councils', (ctx) => ({ status: 200, body: repo.listCouncils(ctx.params.id!) })),
     route('POST', '/v1/jobs/:id/councils', (ctx) => ({
       status: 201,
       body: repo.createCouncil(ctx.params.id!, ctx.body as unknown as T.CreateCouncilInput),
     })),
+    route('POST', '/v1/jobs/:id/councils/run', (ctx) => ({
+      status: 201,
+      body: startLiveCouncil(repo, ctx.params.id!, ctx.body as unknown as T.RunCouncilInput),
+    })),
     route('GET', '/v1/councils/:id', (ctx) => ({ status: 200, body: repo.getCouncil(ctx.params.id!) })),
+    route('GET', '/v1/councils/:id/stream', (ctx) => {
+      const id = ctx.params.id!;
+      const origin = ctx.req.headers.origin;
+      ctx.res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+        Connection: 'keep-alive',
+        ...(origin && origins.has(origin) ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
+      });
+      const folderHit = findFolderSession(id);
+      if (folderHit) {
+        for (const ev of folderHit.events) {
+          ctx.res.write(`data: ${JSON.stringify(ev)}\n\n`);
+        }
+        ctx.res.write(`data: ${JSON.stringify({ type: 'end' })}\n\n`);
+        return 'stream';
+      }
+      subscribeCouncilStream(id, repo, ctx.res);
+      return 'stream';
+    }),
     route('POST', '/v1/councils/:id/cards', (ctx) => ({
       status: 201,
       body: repo.addCouncilCard(ctx.params.id!, ctx.body as unknown as T.CreateCouncilCardInput),

@@ -166,3 +166,41 @@ test('the pure scorer is deterministic and sorted', () => {
   assert.deepEqual(result.scores.map((s) => s.id), ['A', 'B', 'C']);
   assert.equal(result.objection?.text, 'B is safer');
 });
+
+test('roast-room roster, bundled example sessions, and live multi-round council runner work end-to-end', async () => {
+  const roster = await call('GET', '/v1/councils/roster');
+  assert.equal(roster.status, 200);
+  assert.ok(roster.json.seats.length >= 21);
+  assert.ok(roster.json.seats.some((s: any) => s.key === 'themis' && s.boardGroup === 'myaos'));
+  assert.ok(roster.json.seats.some((s: any) => s.key === 'bezos' && s.boardGroup === 'operators'));
+
+  const sessions = await call('GET', '/v1/councils/sessions');
+  assert.equal(sessions.status, 200);
+  assert.ok(sessions.json.sessions.some((s: any) => s.id === '2026-10-23-myaos-desktop-direction'));
+
+  const exampleSession = await call('GET', '/v1/councils/sessions/2026-10-23-myaos-desktop-direction');
+  assert.equal(exampleSession.status, 200);
+  assert.ok(exampleSession.json.events.some((e: any) => e.type === 'setup'));
+  assert.ok(exampleSession.json.events.some((e: any) => e.type === 'cruxes'));
+  assert.ok(exampleSession.json.events.some((e: any) => e.type === 'verdict'));
+
+  // Run a live multi-round council on the job and wait for completion
+  const started = await call('POST', `/v1/jobs/${jobId}/councils/run`, {
+    prompt: 'Should we ship the Roast-Room council stage with 4-frame talking heads now?',
+    mode: 'full',
+    boardGroup: 'myaos',
+  });
+  assert.equal(started.status, 201);
+  const runCouncilId = started.json.council.id;
+  for (let i = 0; i < 40; i++) {
+    const check = await call('GET', `/v1/councils/${runCouncilId}`);
+    if (check.json.status === 'verdict') break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const finished = await call('GET', `/v1/councils/${runCouncilId}`);
+  assert.equal(finished.json.status, 'verdict');
+  assert.ok(finished.json.cards.length >= 21); // 7 seats * 3 rounds
+  assert.ok(finished.json.cruxes.length >= 1);
+  assert.ok(finished.json.verdict.payload.why.length >= 3);
+  assert.ok(finished.json.verdict.payload.tasks.length >= 2);
+});

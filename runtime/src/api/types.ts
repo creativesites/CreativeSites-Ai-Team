@@ -394,7 +394,35 @@ export interface CouncilSeat {
   seat: string;
   question: string;
   weight: number;
+  reason?: string;
   identityId?: string | null;
+}
+
+export interface CouncilCardParsed {
+  stance: string;
+  call: string;
+  optionScores: Record<string, number>;
+  pillar: number | null;
+  finalScore: number | null;
+  confidence: number | null;
+  ruin: Ruin | '';
+  door: 'one-way' | 'two-way' | '';
+  disagreeWith: string | null;
+  disagreeLine: string;
+  concede: string;
+  moved: string;
+  vote: 'endorse' | 'amend' | 'dissent' | '';
+  amendment: string;
+  oneLine: string;
+  question: string;
+  risk: string;
+  thisWeek: string;
+}
+
+export interface CouncilQuoteCheck {
+  quote: string;
+  source: string;
+  verified: boolean;
 }
 
 export interface CouncilCardResult {
@@ -406,6 +434,9 @@ export interface CouncilCardResult {
   ruin: Record<string, Ruin>;
   reversible: boolean | null;
   argument: string | null;
+  text?: string | null;
+  parsed?: CouncilCardParsed | null;
+  quotes?: CouncilQuoteCheck[];
 }
 
 export interface CouncilCard {
@@ -425,6 +456,36 @@ export interface CouncilScore {
   formula: string;
 }
 
+export interface CouncilCruxSide {
+  position: string;
+  seats: string[];
+}
+
+export interface CouncilCrux {
+  question: string;
+  sides: CouncilCruxSide[];
+}
+
+export interface CouncilDraft {
+  option: string;
+  label: string;
+  recommendation: string;
+  conditions: string[];
+  next_steps: string[];
+  cheapest_test: string;
+  kill_criteria: string;
+}
+
+export interface CouncilVerdictSeatSummary {
+  key: string;
+  weight: number;
+  stance?: string;
+  optionScores?: Record<string, number>;
+  pillar?: number | null;
+  moved?: string;
+  oneLine?: string;
+}
+
 export interface CouncilResult {
   label: string;
   call: string;
@@ -440,6 +501,27 @@ export interface CouncilResult {
   };
   conditions: string[];
   objection: { text: string; by: string } | null;
+  // Roast-Room rich verdict fields
+  recommended?: string;
+  override_note?: string;
+  why?: { point: string; seat: string; framework: string }[];
+  fights?: { crux: string; story: string }[];
+  minority?: { seat: string; quote: string; would_have_to_be_true: string };
+  amendments?: { seat: string; amendment: string; adopted: boolean; reason: string }[];
+  next_steps?: { when: string; action: string }[];
+  cheapest_test?: string;
+  kill_criteria?: string;
+  revisit?: string;
+  votes?: Record<string, number> | null;
+  seats?: CouncilVerdictSeatSummary[];
+  disclaimer?: string;
+  tasks?: CreateTaskInput[];
+}
+
+export interface CouncilStreamEvent {
+  type: string;
+  t?: number;
+  [key: string]: unknown;
 }
 
 export interface Council {
@@ -447,6 +529,14 @@ export interface Council {
   jobId: string;
   mode: 'quick' | 'full';
   status: 'running' | 'verdict' | 'accepted' | 'cancelled';
+  title?: string | null;
+  decision?: string | null;
+  brief?: string | null;
+  assumptions?: string[];
+  cruxes?: CouncilCrux[];
+  draft?: CouncilDraft | null;
+  events?: CouncilStreamEvent[];
+  sessionDir?: string | null;
   options: CouncilOption[];
   seats: CouncilSeat[];
   cards: CouncilCard[];
@@ -469,6 +559,10 @@ export interface CouncilVerdict {
 
 export interface CreateCouncilInput {
   mode?: 'quick' | 'full';
+  title?: string;
+  decision?: string;
+  brief?: string;
+  assumptions?: string[];
   options: CouncilOption[];
   seats: CouncilSeat[];
 }
@@ -483,6 +577,37 @@ export interface CreateCouncilCardInput {
   ruin?: Record<string, Ruin>;
   reversible?: boolean;
   argument?: string;
+  text?: string;
+  parsed?: CouncilCardParsed;
+  quotes?: CouncilQuoteCheck[];
+}
+
+export interface RunCouncilInput {
+  prompt?: string;
+  mode?: 'quick' | 'full';
+  boardGroup?: 'myaos' | 'operators';
+  seats?: string[];
+  options?: CouncilOption[];
+}
+
+export interface CouncilSessionSummary {
+  id: string;
+  title: string;
+  prompt: string;
+  mode: 'quick' | 'full';
+  status: string;
+  source?: string;
+  jobId?: string | null;
+}
+
+export interface CouncilSessionPayload {
+  id: string;
+  title: string;
+  prompt: string;
+  mode: 'quick' | 'full';
+  status: string;
+  jobId?: string | null;
+  events: CouncilStreamEvent[];
 }
 
 export interface AcceptVerdictInput {
