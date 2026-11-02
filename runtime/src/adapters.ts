@@ -20,6 +20,15 @@ export interface AdapterPreset {
 
 export const ADAPTER_PRESETS: AdapterPreset[] = [
   {
+    id: 'antigravity',
+    name: 'Antigravity',
+    kind: 'antigravity',
+    command: 'antigravity',
+    args: ['--acp'],
+    versionArgs: ['--version'],
+    aliases: ['agy', 'antigravity-ide'],
+  },
+  {
     id: 'claude',
     name: 'Claude Code',
     kind: 'claude',
@@ -43,15 +52,6 @@ export const ADAPTER_PRESETS: AdapterPreset[] = [
     command: 'gemini',
     args: ['--acp'],
     versionArgs: ['--version'],
-  },
-  {
-    id: 'antigravity',
-    name: 'Antigravity',
-    kind: 'antigravity',
-    command: 'antigravity',
-    args: ['--acp'],
-    versionArgs: ['--version'],
-    aliases: ['agy'],
   },
   {
     id: 'dsh',
@@ -81,6 +81,8 @@ function extraPathDirs(): string[] {
   const home = process.env.HOME ?? '';
   return [
     path.join(home, '.local/bin'),
+    path.join(home, '.antigravity/antigravity/bin'),
+    path.join(home, '.antigravity-ide/antigravity-ide/bin'),
     path.join(home, '.cargo/bin'),
     ...nvmBinDirs(),
     path.join(home, '.volta/bin'),
@@ -184,14 +186,14 @@ function geminiAuth(adapterInstalled: boolean): AdapterAuth {
 
 function antigravityAuth(adapterInstalled: boolean): AdapterAuth {
   if (!adapterInstalled) {
-    return { state: 'missing_binary', detail: 'antigravity CLI is not installed (checked ~/.local/bin/antigravity and PATH)' };
+    return { state: 'missing_binary', detail: 'antigravity CLI is not installed (checked ~/.local/bin/antigravity, ~/.antigravity/antigravity/bin, and PATH)' };
   }
   const env = readAdapterEnv();
   if (process.env.ANTIGRAVITY_API_KEY || env.ANTIGRAVITY_API_KEY) {
-    return { state: 'configured', detail: 'ANTIGRAVITY_API_KEY is configured in adapters.env' };
+    return { state: 'ready', detail: 'Signed in (ANTIGRAVITY_API_KEY configured in adapters.env)' };
   }
   if (process.env.GEMINI_API_KEY || env.GEMINI_API_KEY) {
-    return { state: 'configured', detail: 'GEMINI_API_KEY is configured in adapters.env' };
+    return { state: 'ready', detail: 'Signed in (GEMINI_API_KEY configured in adapters.env)' };
   }
   try {
     const file = path.join(process.env.HOME ?? '', '.gemini', 'oauth_creds.json');

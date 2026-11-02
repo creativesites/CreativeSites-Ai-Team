@@ -9,7 +9,8 @@ test('antigravity adapter is registered as a first-class AI provider preset', ()
   assert.equal(preset.name, 'Antigravity');
   assert.equal(preset.command, 'antigravity');
   assert.deepEqual(preset.args, ['--acp']);
-  assert.deepEqual(preset.aliases, ['agy']);
+  assert.ok(preset.aliases.includes('agy'));
+  assert.ok(preset.aliases.includes('antigravity-ide'));
 });
 
 test('probeAdapters includes antigravity with probed installation and auth info', () => {

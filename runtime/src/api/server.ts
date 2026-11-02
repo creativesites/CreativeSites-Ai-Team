@@ -6,6 +6,7 @@ import type { Health, RuntimeEvent } from './types.ts';
 import type * as T from './types.ts';
 import { runShell } from '../exec.ts';
 import { probeAdapters } from '../adapters.ts';
+import { readAdapterEnv, writeAdapterEnvVar } from '../adapter-env.ts';
 import {
   ConflictError,
   ForbiddenError,
@@ -292,10 +293,35 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       repo.clearAdapterRateLimit(ctx.params.id!);
       return { status: 200, body: adapterList(false) };
     }),
+    route('GET', '/v1/adapters/env', () => {
+      const env = readAdapterEnv();
+      return {
+        status: 200,
+        body: {
+          hasAntigravityKey: Boolean(process.env.ANTIGRAVITY_API_KEY || env.ANTIGRAVITY_API_KEY),
+          hasGeminiKey: Boolean(process.env.GEMINI_API_KEY || env.GEMINI_API_KEY),
+          hasOpenaiKey: Boolean(process.env.OPENAI_API_KEY || env.OPENAI_API_KEY),
+          hasAnthropicKey: Boolean(process.env.ANTHROPIC_API_KEY || env.ANTHROPIC_API_KEY),
+          keys: Object.keys(env).filter((k) => !k.startsWith('_')),
+        },
+      };
+    }),
+    route('POST', '/v1/adapters/env', (ctx) => {
+      const key = asString(ctx.body.key, 'key');
+      const val = asString(ctx.body.value, 'value');
+      writeAdapterEnvVar(key, val);
+      return { status: 200, body: adapterList(true) };
+    }),
 
     // identities & rate-limits
     route('GET', '/v1/identities', (ctx) => ({ status: 200, body: repo.listIdentities(ctx.query.get('archived') === '1') })),
     route('POST', '/v1/identities', (ctx) => ({ status: 201, body: repo.createIdentity(ctx.body as unknown as T.CreateIdentityInput) })),
+    route('POST', '/v1/identities/batch-runtime', (ctx) => {
+      const runtime = asString(ctx.body.runtime, 'runtime');
+      const unassignedOnly = ctx.body.unassignedOnly !== false;
+      const ids = Array.isArray(ctx.body.identityIds) ? ctx.body.identityIds.map(String) : undefined;
+      return { status: 200, body: repo.batchSetIdentityRuntime(runtime, unassignedOnly, ids) };
+    }),
     route('GET', '/v1/identities/:id', (ctx) => ({ status: 200, body: repo.getIdentity(ctx.params.id!) })),
     route('POST', '/v1/identities/:id', (ctx) => ({ status: 200, body: repo.updateIdentity(ctx.params.id!, ctx.body as T.UpdateIdentityInput) })),
     route('POST', '/v1/identities/:id/rate-limit', (ctx) => {

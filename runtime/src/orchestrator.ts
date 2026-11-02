@@ -850,7 +850,10 @@ export class Orchestrator {
   }
 
   private inferAdapterFromRuntime(runtime?: string | null): string {
-    if (!runtime) return 'claude';
+    if (!runtime) {
+      const def = this.repo.getSetting('defaultRuntime') || 'antigravity';
+      return typeof def === 'string' && def ? def.toLowerCase() : 'antigravity';
+    }
     const r = runtime.toLowerCase();
     if (r.includes('antigravity') || r.includes('agy')) return 'antigravity';
     if (r.includes('gemini')) return 'gemini';

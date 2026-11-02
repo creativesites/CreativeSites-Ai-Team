@@ -716,7 +716,7 @@ export function DevScreen({
           <div className={cn('min-h-0 flex-1 flex flex-col', viewMode !== 'agent-terminal' && 'hidden')}>
             {!selectedSession ? (
               <EmptyState title="No session selected">
-                Wake an agent on the left or send an instruction below to stream its full Claude Code / Codex / Gemini terminal output here.
+                Wake an agent on the left or send an instruction below to stream its full Antigravity / Claude Code / Codex / Gemini terminal output here.
               </EmptyState>
             ) : (
               <AgentTerminal

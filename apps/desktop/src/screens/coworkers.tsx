@@ -9,11 +9,11 @@ import { useRuntime, useRuntimeData } from '@/lib/runtime-context';
 import { cn } from '@/lib/utils';
 
 const RUNTIMES = [
+  { name: 'Antigravity (Recommended)', command: 'antigravity --acp', adapterId: 'antigravity' },
   { name: 'Claude Code', command: 'claude-agent-acp', adapterId: 'claude' },
   { name: 'Codex', command: 'codex-acp', adapterId: 'codex' },
   { name: 'Gemini CLI', command: 'gemini --acp', adapterId: 'gemini' },
-  { name: 'Antigravity', command: 'antigravity --acp', adapterId: 'antigravity' },
-  { name: 'Custom agent', command: 'any command that speaks ACP over stdio', adapterId: 'claude' },
+  { name: 'Custom agent', command: 'any command that speaks ACP over stdio', adapterId: 'antigravity' },
 ];
 
 const fmtTime = (iso?: string | null) =>

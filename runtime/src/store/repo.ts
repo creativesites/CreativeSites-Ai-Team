@@ -190,6 +190,11 @@ export class Repo {
     return out as T.Settings;
   }
 
+  getSetting(key: string): unknown {
+    const row = this.one('SELECT value FROM settings WHERE key = ?', key);
+    return row ? parseJson(row.value, null) : undefined;
+  }
+
   updateSettings(patch: T.Settings): T.Settings {
     const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
     if (!entries.length) return this.getSettings();
@@ -482,6 +487,25 @@ export class Repo {
       this.recordEvent(events, { type: 'identity.updated', subjectId: id, subjectType: 'identity' });
     });
     return this.getIdentity(id);
+  }
+
+  batchSetIdentityRuntime(runtime: string, unassignedOnly = true, ids?: string[]): { updated: number } {
+    let updated = 0;
+    this.write((events) => {
+      let query = 'SELECT id, runtime FROM identities WHERE is_owner = 0';
+      if (unassignedOnly) {
+        query += " AND (runtime IS NULL OR trim(runtime) = '' OR runtime = 'claude-agent-acp')";
+      }
+      const targets = this.all(query);
+      for (const t of targets) {
+        const id = String(t.id);
+        if (ids && !ids.includes(id)) continue;
+        this.db.prepare('UPDATE identities SET runtime = ? WHERE id = ?').run(runtime, id);
+        this.recordEvent(events, { type: 'identity.updated', subjectId: id, subjectType: 'identity', payload: { runtime } });
+        updated++;
+      }
+    });
+    return { updated };
   }
 
   private insertIdentity(input: T.CreateIdentityInput & { id: string; name: string }) {

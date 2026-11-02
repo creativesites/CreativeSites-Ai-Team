@@ -1,12 +1,19 @@
 import * as React from 'react';
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
+  Cpu,
   FileText,
+  KeyRound,
+  Lock,
   Plus,
   RefreshCw,
-  Terminal,
+  ShieldCheck,
+  Sparkles,
   Trash2,
+  Users,
+  Zap,
 } from 'lucide-react';
 import type {
   AdapterInfo,
@@ -194,8 +201,15 @@ export function SettingsScreen(props: SettingsScreenProps) {
         onDeletePolicy={handleDeletePolicy}
       />
 
-      {/* 4. Adapter Health */}
-      <AdapterHealthSection adapters={adapters} revision={revision} />
+      {/* 4. AI Engines & Agent Runtimes */}
+      <AiEnginesSection
+        adapters={adapters}
+        settings={settings}
+        identities={identities}
+        isOffline={isOffline}
+        onUpdateSettings={handleUpdateSettings}
+        revision={revision}
+      />
 
       {/* 5. Team Bridge */}
       <TeamBridgeSection
@@ -825,83 +839,438 @@ function ApprovalPoliciesSection({
   );
 }
 
-// ---------------------------------------------------------------- 4. Adapter Health Section
+// ---------------------------------------------------------------- 4. AI Engines & Agent Runtimes Section
 
-function AdapterHealthSection({
-  adapters,
+function AiEnginesSection({
+  adapters: initialAdapters,
+  settings,
+  identities,
+  isOffline,
+  onUpdateSettings,
   revision: _revision,
 }: {
   adapters: AdapterInfo[];
+  settings: Settings;
+  identities: Identity[];
+  isOffline: boolean;
+  onUpdateSettings: (patch: Settings) => Promise<void>;
   revision: number;
 }) {
-  return (
-    <section aria-label="Adapter health" className="bg-card flex flex-col gap-4 rounded-xl p-5 shadow-sm">
-      <SectionTitle aside="Probed at runtime on this machine">Adapter Health & ACP Capabilities</SectionTitle>
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        The runtime drives AI adapters over the Agent Client Protocol (ACP). Readiness and capabilities are probed directly
-        via CLI execution. Capabilities like file writes and command executions are observed, never assumed.
-      </p>
+  const { client } = useRuntime();
+  const [adapters, setAdapters] = React.useState<AdapterInfo[]>(initialAdapters);
+  const [probing, setProbing] = React.useState(false);
 
-      {adapters.length === 0 ? (
-        <p className="py-2 text-xs text-muted-foreground">The runtime has not reported adapter states yet.</p>
-      ) : (
-        <div className="flex flex-col gap-2.5">
-          {adapters.map((adapter) => {
-            const status = authBadge(adapter.auth);
+  // Sync when initialAdapters updates
+  React.useEffect(() => {
+    if (initialAdapters.length > 0) {
+      setAdapters(initialAdapters);
+    }
+  }, [initialAdapters]);
+
+  // Default engine state
+  const currentDefault = (settings.defaultRuntime as string) || 'antigravity';
+  const [defaultEngine, setDefaultEngine] = React.useState(currentDefault);
+  const [savingDefault, setSavingDefault] = React.useState(false);
+
+  React.useEffect(() => {
+    if (settings.defaultRuntime && typeof settings.defaultRuntime === 'string') {
+      setDefaultEngine(settings.defaultRuntime);
+    }
+  }, [settings.defaultRuntime]);
+
+  // Batch agent update state
+  const [batchUpdating, setBatchUpdating] = React.useState(false);
+  const [batchMsg, setBatchMsg] = React.useState<string | null>(null);
+
+  // Secrets state
+  const [envStatus, setEnvStatus] = React.useState<{ hasAntigravityKey: boolean; hasGeminiKey: boolean; keys: string[] } | null>(null);
+  const [selectedKeyName, setSelectedKeyName] = React.useState<'ANTIGRAVITY_API_KEY' | 'GEMINI_API_KEY' | 'OPENAI_API_KEY' | 'ANTHROPIC_API_KEY'>('ANTIGRAVITY_API_KEY');
+  const [secretVal, setSecretVal] = React.useState('');
+  const [savingSecret, setSavingSecret] = React.useState(false);
+  const [secretFeedback, setSecretFeedback] = React.useState<string | null>(null);
+
+  // Load env keys status
+  const loadEnvStatus = React.useCallback(async () => {
+    if (!client) return;
+    try {
+      const res = await client.adaptersEnv();
+      setEnvStatus(res);
+    } catch {
+      /* ignore */
+    }
+  }, [client]);
+
+  React.useEffect(() => {
+    void loadEnvStatus();
+  }, [loadEnvStatus]);
+
+  // Re-probe adapters
+  const handleReProbe = async () => {
+    if (!client || isOffline) return;
+    setProbing(true);
+    try {
+      const res = await client.adapters(true);
+      setAdapters(res);
+      await loadEnvStatus();
+    } finally {
+      setProbing(false);
+    }
+  };
+
+  // Set default engine
+  const handleSetDefaultEngine = async (eng: string) => {
+    if (isOffline) return;
+    setDefaultEngine(eng);
+    setSavingDefault(true);
+    try {
+      await onUpdateSettings({ defaultRuntime: eng });
+    } finally {
+      setSavingDefault(false);
+    }
+  };
+
+  // Batch assign unconfigured agents to Antigravity
+  const handleBatchSetAntigravity = async () => {
+    if (!client || isOffline) return;
+    setBatchUpdating(true);
+    setBatchMsg(null);
+    try {
+      const res = await client.batchSetIdentityRuntime('antigravity --acp', true);
+      setBatchMsg(`Assigned Antigravity to ${res.updated} agent${res.updated === 1 ? '' : 's'}.`);
+    } catch (err) {
+      setBatchMsg(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBatchUpdating(false);
+    }
+  };
+
+  // Save secret
+  const handleSaveSecret = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client || !secretVal.trim() || isOffline) return;
+    setSavingSecret(true);
+    setSecretFeedback(null);
+    try {
+      const updated = await client.setAdapterEnv(selectedKeyName, secretVal.trim());
+      setAdapters(updated);
+      setSecretVal('');
+      setSecretFeedback(`Saved ${selectedKeyName} to ~/.myaos/adapters.env (0600).`);
+      await loadEnvStatus();
+    } catch (err) {
+      setSecretFeedback(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSavingSecret(false);
+    }
+  };
+
+  // Count team members by engine
+  const teamMembers = identities.filter((i) => !i.isOwner && i.id !== 'winston');
+  const antigravityMembers = teamMembers.filter((i) => {
+    const r = (i.runtime || '').toLowerCase();
+    return r.includes('antigravity') || r.includes('agy') || (!r && defaultEngine === 'antigravity');
+  });
+  const claudeMembers = teamMembers.filter((i) => (i.runtime || '').toLowerCase().includes('claude'));
+  const codexMembers = teamMembers.filter((i) => (i.runtime || '').toLowerCase().includes('codex'));
+  const geminiMembers = teamMembers.filter((i) => (i.runtime || '').toLowerCase().includes('gemini'));
+  const unconfiguredMembers = teamMembers.filter((i) => !i.runtime || !i.runtime.trim());
+
+  const ENGINE_OPTIONS = [
+    {
+      id: 'antigravity',
+      name: 'Antigravity',
+      tagline: 'Google DeepMind Agentic Pair Programmer',
+      badge: 'Recommended',
+      command: 'antigravity --acp',
+      icon: Sparkles,
+      iconColor: 'text-primary',
+    },
+    {
+      id: 'claude',
+      name: 'Claude Code',
+      tagline: 'Anthropic CLI Subprocess',
+      badge: 'ACP v1',
+      command: 'claude-agent-acp',
+      icon: Cpu,
+      iconColor: 'text-amber-500',
+    },
+    {
+      id: 'codex',
+      name: 'Codex',
+      tagline: 'OpenAI Agent Client Protocol',
+      badge: 'ACP v1',
+      command: 'codex-acp',
+      icon: ShieldCheck,
+      iconColor: 'text-emerald-500',
+    },
+    {
+      id: 'gemini',
+      name: 'Gemini CLI',
+      tagline: 'Google Gemini Command-Line',
+      badge: 'ACP Subshell',
+      command: 'gemini --acp',
+      icon: Zap,
+      iconColor: 'text-indigo-400',
+    },
+  ];
+
+  return (
+    <section aria-label="AI engines and agent runtimes" className="bg-card flex flex-col gap-5 rounded-xl p-5 shadow-sm border border-border/60">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <SectionTitle aside="Probed live on this Mac · ACP stdio">AI Engines &amp; Agent Runtimes</SectionTitle>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            The runtime drives autonomous agents via the Agent Client Protocol (ACP). Antigravity, Claude Code, Codex, and Gemini CLI are probed live on your system.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={handleReProbe}
+          disabled={probing || isOffline}
+          className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'gap-1.5 cursor-pointer shrink-0')}
+          title="Re-probe installed CLI adapters on PATH"
+        >
+          <RefreshCw className={cn('size-3.5', probing && 'animate-spin')} />
+          <span>{probing ? 'Probing…' : 'Re-probe Engines'}</span>
+        </button>
+      </div>
+
+      {/* 1. Default Team Engine Selector */}
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-foreground">Default Team Engine</span>
+          <span className="text-[11px] font-mono text-muted-foreground">
+            {savingDefault ? 'Saving…' : `Active: ${defaultEngine}`}
+          </span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {ENGINE_OPTIONS.map((eng) => {
+            const isSelected = defaultEngine.toLowerCase() === eng.id;
+            const Icon = eng.icon;
             return (
               <div
-                key={adapter.id}
-                className="glass-panel flex flex-col gap-2 rounded-lg p-3 text-xs"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <span className="font-semibold text-foreground">{adapter.name}</span>
-                    <span className="font-mono text-muted-foreground text-[11px]">{adapter.command}</span>
-                    {adapter.version && (
-                      <span className="font-mono text-[11px] text-muted-foreground">v{adapter.version}</span>
-                    )}
-                  </div>
-                  <Tag tone={status.tone}>{status.label}</Tag>
-                </div>
-
-                <div className="text-muted-foreground leading-relaxed">
-                  {adapter.auth?.detail || 'No detail provided.'}
-                </div>
-
-                {adapter.abilities && Object.keys(adapter.abilities).length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    <span className="text-[11px] text-muted-foreground">Probed abilities:</span>
-                    {Object.entries(adapter.abilities).map(([ability, supported]) => (
-                      <Tag key={ability} tone={supported ? 'observed' : 'quiet'}>
-                        {ability}
-                      </Tag>
-                    ))}
-                  </div>
+                key={eng.id}
+                onClick={() => handleSetDefaultEngine(eng.id)}
+                className={cn(
+                  'glass-panel flex flex-col justify-between gap-2.5 rounded-xl p-3.5 border transition-all cursor-pointer relative overflow-hidden',
+                  isSelected
+                    ? 'border-primary/80 bg-primary/[0.04] shadow-xs ring-1 ring-primary/40'
+                    : 'border-border/60 hover:border-foreground/30 hover:bg-foreground/[0.02]'
                 )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className={cn('flex size-7 items-center justify-center rounded-lg bg-foreground/[0.06]', eng.iconColor)}>
+                      <Icon className="size-4" />
+                    </span>
+                    <div>
+                      <div className="font-bold text-xs text-foreground flex items-center gap-1.5">
+                        <span>{eng.name}</span>
+                        {eng.badge && (
+                          <span className={cn(
+                            'text-[9px] font-mono px-1.5 py-0.2 rounded font-semibold',
+                            eng.id === 'antigravity'
+                              ? 'bg-primary/15 text-primary border border-primary/30'
+                              : 'bg-foreground/[0.06] text-muted-foreground'
+                          )}>
+                            {eng.badge}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">{eng.tagline}</div>
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <span className="flex size-4.5 items-center justify-center rounded-full bg-primary text-primary-foreground shrink-0 shadow-2xs">
+                      <Check className="size-3 stroke-[2.5]" />
+                    </span>
+                  )}
+                </div>
+                <div className="font-mono text-[10px] text-muted-foreground/80 bg-foreground/[0.03] px-2 py-1 rounded border border-border/40 truncate">
+                  {eng.command}
+                </div>
               </div>
             );
           })}
         </div>
-      )}
+      </div>
 
-      {/* Adapter auth notice */}
-      <div className="glass-panel flex items-start gap-3 rounded-lg p-3 text-xs text-muted-foreground">
-        <Terminal className="size-4 shrink-0 mt-0.5 text-observed" />
-        <div className="flex flex-col gap-1 leading-relaxed">
-          <span className="font-semibold text-foreground">Configuring Secrets & Keys</span>
-          <p>
-            API secrets are never entered or stored in the desktop UI. To authenticate Antigravity, Gemini, or add custom keys, run in
-            terminal:
-          </p>
-          <div className="flex flex-col gap-1 font-mono text-foreground/90 bg-background/50 rounded p-1.5 self-start text-[11px]">
-            <span>node runtime/scripts/set-adapter-key.mjs ANTIGRAVITY_API_KEY &lt;your-key&gt;</span>
-            <span>node runtime/scripts/set-adapter-key.mjs GEMINI_API_KEY &lt;your-key&gt;</span>
+      {/* 2. Team Roster Engine Breakdown */}
+      <div className="glass-panel flex flex-col gap-3 rounded-xl p-4 border border-border/60 bg-foreground/[0.015]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Users className="size-4 text-primary" />
+            <span className="text-xs font-bold text-foreground">Team Agent Engine Allocation</span>
+            <span className="text-[11px] font-mono text-muted-foreground">({teamMembers.length} active agents)</span>
           </div>
-          <p className="text-[11px]">
-            Secrets are saved to <span className="font-mono">~/.myaos/adapters.env</span> (permissions 0600) and passed
-            only to the adapter subprocess.
-          </p>
+          {unconfiguredMembers.length > 0 && (
+            <button
+              type="button"
+              onClick={handleBatchSetAntigravity}
+              disabled={batchUpdating || isOffline}
+              className={cn(buttonVariants({ variant: 'default', size: 'xs' }), 'gap-1.5 cursor-pointer shadow-xs')}
+            >
+              <Sparkles className={cn('size-3', batchUpdating && 'animate-spin')} />
+              <span>Apply Antigravity to {unconfiguredMembers.length} Unconfigured Agent{unconfiguredMembers.length === 1 ? '' : 's'}</span>
+            </button>
+          )}
         </div>
+
+        <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+          <span className="rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1 font-semibold text-primary flex items-center gap-1.5">
+            <Sparkles className="size-3" />
+            <span>Antigravity:</span>
+            <strong className="font-mono font-bold">{antigravityMembers.length}</strong>
+          </span>
+          <span className="rounded-lg bg-foreground/[0.05] border border-border/60 px-2.5 py-1 font-semibold text-foreground flex items-center gap-1.5">
+            <Cpu className="size-3 text-amber-500" />
+            <span>Claude Code:</span>
+            <strong className="font-mono font-bold">{claudeMembers.length}</strong>
+          </span>
+          <span className="rounded-lg bg-foreground/[0.05] border border-border/60 px-2.5 py-1 font-semibold text-foreground flex items-center gap-1.5">
+            <ShieldCheck className="size-3 text-emerald-500" />
+            <span>Codex:</span>
+            <strong className="font-mono font-bold">{codexMembers.length}</strong>
+          </span>
+          <span className="rounded-lg bg-foreground/[0.05] border border-border/60 px-2.5 py-1 font-semibold text-foreground flex items-center gap-1.5">
+            <Zap className="size-3 text-indigo-400" />
+            <span>Gemini CLI:</span>
+            <strong className="font-mono font-bold">{geminiMembers.length}</strong>
+          </span>
+        </div>
+
+        {batchMsg && (
+          <div className="rounded-lg bg-primary/10 border border-primary/20 p-2 text-xs text-primary flex items-center gap-1.5 font-medium animate-fade-in">
+            <CheckCircle2 className="size-3.5" />
+            <span>{batchMsg}</span>
+          </div>
+        )}
+      </div>
+
+      {/* 3. Probed Adapters List */}
+      <div className="flex flex-col gap-2.5">
+        <span className="text-xs font-semibold text-foreground">Probed ACP Adapters &amp; Binaries</span>
+        {adapters.length === 0 ? (
+          <p className="py-2 text-xs text-muted-foreground">The runtime has not reported adapter states yet. Click &quot;Re-probe Engines&quot; above.</p>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {adapters.map((adapter) => {
+              const status = authBadge(adapter.auth);
+              const isAntigravity = adapter.id === 'antigravity';
+              return (
+                <div
+                  key={adapter.id}
+                  className={cn(
+                    'glass-panel flex flex-col gap-2 rounded-xl p-3.5 text-xs border transition-colors',
+                    isAntigravity ? 'border-primary/40 bg-primary/[0.02]' : 'border-border/60'
+                  )}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      {isAntigravity ? (
+                        <Sparkles className="size-4 text-primary" />
+                      ) : adapter.id === 'claude' ? (
+                        <Cpu className="size-4 text-amber-500" />
+                      ) : adapter.id === 'codex' ? (
+                        <ShieldCheck className="size-4 text-emerald-500" />
+                      ) : (
+                        <Zap className="size-4 text-indigo-400" />
+                      )}
+                      <span className="font-bold text-foreground text-xs">{adapter.name}</span>
+                      <span className="font-mono text-muted-foreground text-[11px] bg-foreground/[0.04] px-1.5 py-0.5 rounded border border-border/30">
+                        {adapter.command}
+                      </span>
+                      {adapter.version && (
+                        <span className="font-mono text-[11px] text-muted-foreground font-semibold">
+                          v{adapter.version}
+                        </span>
+                      )}
+                      {adapter.path && (
+                        <span className="font-mono text-[10px] text-muted-foreground/70 hidden md:inline truncate max-w-xs" title={adapter.path}>
+                          {adapter.path}
+                        </span>
+                      )}
+                    </div>
+                    <Tag tone={status.tone}>{status.label}</Tag>
+                  </div>
+
+                  <div className="text-muted-foreground text-xs leading-relaxed">
+                    {adapter.auth?.detail || 'No detail provided.'}
+                  </div>
+
+                  {adapter.abilities && Object.keys(adapter.abilities).length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[11px] text-muted-foreground">Observed abilities:</span>
+                      {Object.entries(adapter.abilities).map(([ability, supported]) => (
+                        <Tag key={ability} tone={supported ? 'observed' : 'quiet'}>
+                          {ability}
+                        </Tag>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 4. Credentials & Keys Configuration */}
+      <div className="glass-panel flex flex-col gap-3 rounded-xl p-4 border border-border/60 bg-foreground/[0.015]">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-bold text-foreground">
+            <KeyRound className="size-4 text-primary" />
+            <span>Engine Secrets &amp; Credentials (~/.myaos/adapters.env)</span>
+          </div>
+          <div className="flex items-center gap-2 font-mono text-[11px]">
+            <span className={cn('px-2 py-0.5 rounded-full border', envStatus?.hasAntigravityKey ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-foreground/[0.05] text-muted-foreground border-border/40')}>
+              Antigravity Key: {envStatus?.hasAntigravityKey ? 'Set' : 'Unset'}
+            </span>
+            <span className={cn('px-2 py-0.5 rounded-full border', envStatus?.hasGeminiKey ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-foreground/[0.05] text-muted-foreground border-border/40')}>
+              Gemini Key: {envStatus?.hasGeminiKey ? 'Set' : 'Unset'}
+            </span>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveSecret} className="flex flex-wrap items-center gap-2 text-xs">
+          <select
+            value={selectedKeyName}
+            onChange={(e) => setSelectedKeyName(e.target.value as any)}
+            className="glass-panel h-8.5 rounded-md px-2.5 text-xs outline-none bg-background/80 border border-border/60 font-mono"
+          >
+            <option value="ANTIGRAVITY_API_KEY">ANTIGRAVITY_API_KEY</option>
+            <option value="GEMINI_API_KEY">GEMINI_API_KEY</option>
+            <option value="OPENAI_API_KEY">OPENAI_API_KEY</option>
+            <option value="ANTHROPIC_API_KEY">ANTHROPIC_API_KEY</option>
+          </select>
+
+          <input
+            type="password"
+            placeholder="Paste secret or API key..."
+            value={secretVal}
+            onChange={(e) => setSecretVal(e.target.value)}
+            className="glass-panel h-8.5 flex-1 min-w-[200px] rounded-md px-2.5 font-mono text-xs outline-none bg-background/80 border border-border/60 placeholder:text-muted-foreground"
+          />
+
+          <button
+            type="submit"
+            disabled={savingSecret || !secretVal.trim() || isOffline}
+            className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'gap-1.5 cursor-pointer')}
+          >
+            <Lock className="size-3.5" />
+            <span>{savingSecret ? 'Saving…' : 'Save Secret'}</span>
+          </button>
+        </form>
+
+        {secretFeedback && (
+          <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-2 text-xs text-emerald-500 flex items-center gap-1.5 font-medium animate-fade-in">
+            <CheckCircle2 className="size-3.5" />
+            <span>{secretFeedback}</span>
+          </div>
+        )}
+
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Keys are stored in <span className="font-mono text-foreground">~/.myaos/adapters.env</span> with strict file permissions (0600) and passed only to adapter subprocesses. They are never written to SQLite or git.
+        </p>
       </div>
     </section>
   );

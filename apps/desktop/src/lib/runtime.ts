@@ -221,7 +221,16 @@ export class RuntimeClient {
   createJob = (input: CreateJobInput) => this.request<JobDetail>('POST', '/v1/jobs', input);
   sessions = () => this.request<Session[]>('GET', '/v1/sessions');
   search = (q: string, limit = 8) => this.request<SearchHit[]>('GET', `/v1/search?q=${encodeURIComponent(q)}&limit=${limit}`);
-  adapters = () => this.request<AdapterInfo[]>('GET', '/v1/adapters');
+  adapters = (probe = false) => this.request<AdapterInfo[]>('GET', `/v1/adapters${probe ? '?probe=1' : ''}`);
+  adaptersEnv = () =>
+    this.request<{ hasAntigravityKey: boolean; hasGeminiKey: boolean; hasOpenaiKey: boolean; hasAnthropicKey: boolean; keys: string[] }>(
+      'GET',
+      '/v1/adapters/env'
+    );
+  setAdapterEnv = (key: string, value: string) =>
+    this.request<AdapterInfo[]>('POST', '/v1/adapters/env', { key, value });
+  batchSetIdentityRuntime = (runtime: string, unassignedOnly = true, identityIds?: string[]) =>
+    this.request<{ updated: number }>('POST', '/v1/identities/batch-runtime', { runtime, unassignedOnly, identityIds });
 
   // ---- settings / teams / projects / workspaces
   settings = () => this.request<Settings>('GET', '/v1/settings');

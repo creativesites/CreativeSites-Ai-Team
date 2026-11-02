@@ -69,11 +69,11 @@ export interface TeamAuditResult {
 export type WorkspaceTab = 'workspace' | 'performance' | 'tasks' | 'evidence' | 'contract';
 
 const RUNTIMES = [
+  { name: 'Antigravity (Recommended)', command: 'antigravity --acp', adapterId: 'antigravity' },
   { name: 'Claude Code', command: 'claude-agent-acp', adapterId: 'claude' },
   { name: 'Codex', command: 'codex-acp', adapterId: 'codex' },
   { name: 'Gemini CLI', command: 'gemini --acp', adapterId: 'gemini' },
-  { name: 'Antigravity', command: 'antigravity --acp', adapterId: 'antigravity' },
-  { name: 'Custom agent', command: 'any command that speaks ACP over stdio', adapterId: 'claude' },
+  { name: 'Custom agent', command: 'any command that speaks ACP over stdio', adapterId: 'antigravity' },
 ];
 
 const fmtTime = (iso?: string | null) =>
@@ -554,6 +554,13 @@ export function TeamScreen({
                       onClick={() => void handleOpenTerminal(selectedAgent)}
                       className="px-2.5 py-1 glass-panel hover:bg-foreground/[0.08] text-foreground rounded-lg text-xs font-semibold transition cursor-pointer"
                     >
+                      🪐 Antigravity
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenTerminal(selectedAgent)}
+                      className="px-2.5 py-1 glass-panel hover:bg-foreground/[0.08] text-foreground rounded-lg text-xs font-semibold transition cursor-pointer"
+                    >
                       ⚡ Claude
                     </button>
                     <button
@@ -562,13 +569,6 @@ export function TeamScreen({
                       className="px-2.5 py-1 glass-panel hover:bg-foreground/[0.08] text-foreground rounded-lg text-xs font-semibold transition cursor-pointer"
                     >
                       ♊ Gemini
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleOpenTerminal(selectedAgent)}
-                      className="px-2.5 py-1 glass-panel hover:bg-foreground/[0.08] text-foreground rounded-lg text-xs font-semibold transition cursor-pointer"
-                    >
-                      🪐 Antigravity
                     </button>
                   </div>
                 </div>
@@ -579,7 +579,7 @@ export function TeamScreen({
                     {isAgentLive ? `CLI Session Running for @${selectedAgent.id}` : `No Active Terminal Session for @${selectedAgent.id}`}
                   </h3>
                   <p className="text-[11px] text-muted-foreground max-w-sm mt-1">
-                    Spawn Claude Code, Gemini CLI, or Antigravity in this agent&apos;s workspace to stream live output and dispatch tool calls.
+                    Spawn Antigravity, Claude Code, or Gemini CLI in this agent&apos;s workspace to stream live output and dispatch tool calls.
                   </p>
                   <button
                     type="button"
@@ -2212,7 +2212,7 @@ function SpawnAgentModal({
   const [lane, setLane] = React.useState('engineering');
   const [role, setRole] = React.useState('');
   const [capabilitiesStr, setCapabilitiesStr] = React.useState('typescript, react, rust');
-  const [runtimeEngine, setRuntimeEngine] = React.useState('claude-agent-acp');
+  const [runtimeEngine, setRuntimeEngine] = React.useState('antigravity --acp');
   const [initialPrompt, setInitialPrompt] = React.useState('');
   const [autoStart, setAutoStart] = React.useState(true);
 
@@ -2443,10 +2443,10 @@ function SpawnAgentModal({
                 onChange={(e) => setRuntimeEngine(e.target.value)}
                 className="glass-panel w-full rounded-lg px-2 py-1.5 text-xs outline-none"
               >
+                <option value="antigravity --acp">Antigravity (ACP) — Recommended</option>
                 <option value="claude-agent-acp">Claude Code (ACP)</option>
                 <option value="codex-acp">Codex (ACP)</option>
                 <option value="gemini --acp">Gemini CLI (ACP)</option>
-                <option value="antigravity --acp">Antigravity (ACP)</option>
               </select>
             </div>
           </div>
@@ -2540,7 +2540,7 @@ function EditRoleModal({ isOpen, onClose, identity, onSaved }: EditRoleModalProp
   const [capabilitiesStr, setCapabilitiesStr] = React.useState(
     parseArrayField(identity.capabilities).join(', ')
   );
-  const [runtime, setRuntime] = React.useState(identity.runtime || 'claude-agent-acp');
+  const [runtime, setRuntime] = React.useState(identity.runtime || 'antigravity --acp');
 
   const [isSaving, setIsSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -2644,12 +2644,19 @@ function EditRoleModal({ isOpen, onClose, identity, onSaved }: EditRoleModalProp
             </div>
             <div className="space-y-1">
               <label className="text-[11px] font-mono text-muted-foreground">Runtime Engine</label>
-              <input
-                type="text"
+              <select
                 value={runtime}
                 onChange={(e) => setRuntime(e.target.value)}
-                className="glass-panel w-full rounded-lg px-3 py-1.5 text-xs font-mono outline-none"
-              />
+                className="glass-panel w-full rounded-lg px-2 py-1.5 text-xs outline-none font-mono"
+              >
+                <option value="antigravity --acp">Antigravity (antigravity --acp)</option>
+                <option value="claude-agent-acp">Claude Code (claude-agent-acp)</option>
+                <option value="codex-acp">Codex (codex-acp)</option>
+                <option value="gemini --acp">Gemini CLI (gemini --acp)</option>
+                {!['antigravity --acp', 'claude-agent-acp', 'codex-acp', 'gemini --acp'].includes(runtime) && (
+                  <option value={runtime}>{runtime} (Custom)</option>
+                )}
+              </select>
             </div>
           </div>
 
