@@ -39,18 +39,6 @@ export interface CommunicationScreenProps {
   onDispatchPrompt?: (agentId: string, prompt: string) => void;
 }
 
-const DEFAULT_AGENTS = [
-  { id: 'Winston', name: 'Winston', role: 'Executive Lead', symbol: '👑' },
-  { id: 'orchestrator', name: 'Orchestrator', role: 'System Autonomous Router', symbol: '⚡' },
-  { id: 'atlas', name: 'Atlas', role: 'Team Coordinator & Cloud Run', symbol: '⏣' },
-  { id: 'astra', name: 'Astra', role: 'UI & Widget Streaming Lead', symbol: '✦' },
-  { id: 'iris', name: 'Iris', role: 'Telemetry & Operator 360', symbol: '👁' },
-  { id: 'vela', name: 'Vela', role: 'WordPress Host Bridge', symbol: '✧' },
-  { id: 'lyra', name: 'Lyra', role: 'React Native Mobile SDK', symbol: '📱' },
-  { id: 'kael', name: 'Kael', role: 'Lead Verifier & QA', symbol: '🛡' },
-  { id: 'antigravity', name: 'Antigravity', role: 'Browser QA & Playwright', symbol: '🛸' },
-];
-
 const SOCIAL_CHANNELS = [
   { id: 'watercooler', name: 'watercooler', desc: 'Late night informal sync & collective' },
   { id: 'work-related', name: 'work-related', desc: 'Architecture & technical discussion' },
@@ -70,26 +58,32 @@ export function CommunicationScreen({
   const { client } = useRuntime();
   const [activeTab, setActiveTab] = React.useState<CommunicationSubpage>(initialTab);
 
-  // Merge identities with default roster
-  const agentRoster = React.useMemo(() => {
-    const fromIdentities = identities.map((i) => ({
-      id: i.id,
-      name: i.name,
-      role: i.role ?? 'Coworker',
-      symbol: i.symbol ?? (i.isOwner ? '👑' : '🤖'),
-    }));
-    const ids = new Set(fromIdentities.map((a) => a.id.toLowerCase()));
-    const remainingDefaults = DEFAULT_AGENTS.filter((a) => !ids.has(a.id.toLowerCase()));
-    return [...fromIdentities, ...remainingDefaults];
-  }, [identities]);
+  // Only coworkers in the registry: no built-in names that may not exist.
+  const agentRoster = React.useMemo(
+    () =>
+      identities.map((i) => ({
+        id: i.id,
+        name: i.name,
+        role: i.role ?? 'Coworker',
+        symbol: i.symbol ?? (i.isOwner ? '👑' : '🤖'),
+      })),
+    [identities]
+  );
 
   // Subpage 1: Inboxes State
-  const [selectedInbox, setSelectedInbox] = React.useState<string>('Winston');
+  const [selectedInbox, setSelectedInbox] = React.useState<string>(_ownerId);
   const [inboxMessages, setInboxMessages] = React.useState<ChatMessage[]>([]);
   const [inboxSummary, setInboxSummary] = React.useState<string>('');
   const [isSummarizingInbox, setIsSummarizingInbox] = React.useState(false);
   const [inboxInput, setInboxInput] = React.useState('');
-  const [inboxRecipient, setInboxRecipient] = React.useState('orchestrator');
+  const [inboxRecipient, setInboxRecipient] = React.useState('');
+  // Default the recipient to the first coworker once the registry has loaded.
+  React.useEffect(() => {
+    if (!inboxRecipient) {
+      const first = identities.find((i) => i.id !== _ownerId && !i.isOwner);
+      if (first) setInboxRecipient(first.id);
+    }
+  }, [identities, inboxRecipient, _ownerId]);
 
   // Subpage 2: Threads State
   const [threads, setThreads] = React.useState<Thread[]>([]);
@@ -220,9 +214,9 @@ ${inboxMessages.slice(0, 10).map((m) => `From: ${m.from_identity || 'Unknown'} |
 
 Format as clean markdown.`;
       const res = await client.generateAi(prompt, 'summary', selectedInbox);
-      setInboxSummary(res.text || 'Summary generation completed.');
+      setInboxSummary(res.text || 'The model returned no text.');
     } catch (err: any) {
-      setInboxSummary(`Inbox contains ${inboxMessages.length} messages. Latest: ${inboxMessages[0]?.body?.slice(0, 80)}...`);
+      setInboxSummary(`No AI summary: ${err?.message || err}`);
     } finally {
       setIsSummarizingInbox(false);
     }
@@ -244,11 +238,9 @@ Extract and return a concise, high-impact executive digest with:
 
 Format in clean, executive markdown.`;
       const res = await client.generateAi(prompt, 'summary', selectedStandup.facilitator || 'atlas');
-      setStandupDigest(res.text || 'Digest completed.');
+      setStandupDigest(res.text || 'The model returned no text.');
     } catch (err: any) {
-      setStandupDigest(
-        `### 🎯 Executive Standup Roll-Up\n\n1. **🎯 Primary Focus**: Sprint alignment & task progression\n2. **🚀 Shipped**: Checkpoints recorded in substrate\n3. **⚠️ Active Blockers**: None identified`
-      );
+      setStandupDigest(`No AI digest: ${err?.message || err}`);
     } finally {
       setIsGeneratingDigest(false);
     }
@@ -763,7 +755,7 @@ Format in clean, executive markdown.`;
                       <span>{a.title}</span>
                     </span>
                     <span className="text-[10px] font-mono text-muted-foreground">
-                      {new Date(a.ts).toLocaleDateString()} by @{a.author_identity || 'Executive'} · Audience: {a.audience}
+                      {new Date(a.ts).toLocaleDateString()} by @{a.author_identity || 'unknown'} · Audience: {a.audience}
                     </span>
                   </div>
                   <FormattedContent content={a.content || ''} />
@@ -837,7 +829,7 @@ Format in clean, executive markdown.`;
                 socialPosts.map((p) => (
                   <div key={p.id} className="p-3 rounded-xl glass-panel border border-border/60 space-y-1">
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-bold text-foreground">@{p.author_identity || 'Winston'}</span>
+                      <span className="font-bold text-foreground">@{p.author_identity || 'unknown'}</span>
                       <span className="text-muted-foreground font-mono text-[10px]">
                         {new Date(p.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>

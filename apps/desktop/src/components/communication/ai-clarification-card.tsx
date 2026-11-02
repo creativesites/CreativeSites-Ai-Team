@@ -43,14 +43,9 @@ ${originalText.slice(0, 1000)}
 
 Format response in clean, crisp markdown with bullet points.`;
 
-      if (client) {
-        const res = await client.generateAi(prompt, contextType, agentId);
-        setExplanation(res.text || 'Clarification completed.');
-      } else {
-        setExplanation(
-          `### Executive AI Breakdown\n\n- **What this actually means**: Direct coordination request for @${agentId}.\n- **Why it matters**: Aligns active tasks and verifies evidence before job transitions.\n- **Actionable instruction**: Proceed with execution and record independent verification.`
-        );
-      }
+      if (!client) throw new Error('the runtime is not reachable');
+      const res = await client.generateAi(prompt, contextType, agentId);
+      setExplanation(res.text || 'The model returned no text.');
     } catch (err: any) {
       setExplanation(`Could not generate AI explanation: ${err.message || err}`);
     } finally {

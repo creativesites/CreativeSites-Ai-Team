@@ -189,8 +189,8 @@ test('1. Role Session Baton Relay compiles 3-tier capsule, rotates Gen 1 -> Gen 
   assert.equal(daedalus.activeSessionId, gen2Session.id);
 });
 
-test('2. Design Studio Canvas supports Greenfield generation, Codebase extraction, Fork/Update iteration, disk sync, and Verified Approval handoff', async () => {
-  // A. Create a Design Board linked to the Myavana project and job
+test('2. Design Studio starts empty, refuses canned generation, versions frames from disk, and hands an approved frame to a build task', async () => {
+  // A. A new board has no frames: nothing is invented on the owner's behalf
   const createdBoard = await call('POST', '/v1/design-boards', {
     projectId,
     jobId,
@@ -198,51 +198,32 @@ test('2. Design Studio Canvas supports Greenfield generation, Codebase extractio
     title: 'Hair Journey Studio Canvas',
     description: 'Mobile & Web UI exploration for Hairstyle Inference',
     mode: 'hybrid',
-    seedStarterFrames: true,
   });
   assert.equal(createdBoard.status, 201);
   const boardId = createdBoard.json.id as string;
   assert.equal(createdBoard.json.designTokens.brandName, 'hair-journey');
-  assert.equal(createdBoard.json.frames.length, 2, 'seeded 2 starter greenfield frames on canvas');
+  assert.equal(createdBoard.json.frames.length, 0, 'a new board starts empty');
 
-  // B. Entry Point 2: Extract existing UI screens from the codebase onto the same canvas
-  const extracted = await call('POST', `/v1/design-boards/${boardId}/extract`, {
-    projectId,
+  // B. Generation and extraction no longer fill templates
+  const generated = await call('POST', `/v1/design-boards/${boardId}/generate`, { prompt: 'Design a hairstyle filter bar' });
+  assert.equal(generated.status, 501);
+  const extracted = await call('POST', `/v1/design-boards/${boardId}/extract`, { projectId, device: 'phone' });
+  assert.equal(extracted.status, 501);
+  assert.equal((await call('GET', `/v1/design-boards/${boardId}`)).json.frames.length, 0, 'refused calls create no frames');
+
+  // C. A frame added explicitly is saved to disk and versioned
+  const added = await call('POST', `/v1/design-boards/${boardId}/frames`, {
+    title: 'Hair Timeline',
     device: 'phone',
-    prompt: 'Extract current HairTimeline screen onto canvas for iteration',
+    sourceFiles: ['src/screens/HairTimeline.tsx'],
+    htmlContent: '<main>Hair Timeline</main>',
+    authorId: 'winston',
   });
-  assert.equal(extracted.status, 201);
-  assert.ok(extracted.json.frames.length >= 1);
-  const timelineFrame = extracted.json.frames[0];
-  assert.match(timelineFrame.title, /Hair Timeline/i);
-  assert.ok(timelineFrame.sourceFiles.includes('src/screens/HairTimeline.tsx'));
-  assert.ok(timelineFrame.htmlPath && fs.existsSync(timelineFrame.htmlPath));
+  assert.equal(added.status, 201);
+  const forkedFrame = added.json;
+  assert.ok(forkedFrame.htmlPath && fs.existsSync(forkedFrame.htmlPath));
 
-  // C. Iterate in-place (v1 -> v2) with a pinned element instruction
-  const updated = await call('POST', `/v1/design-boards/${boardId}/generate`, {
-    prompt: 'Add a collapsible hairstyle filter bar and sticky bottom CTA',
-    targetFrameIds: [timelineFrame.id],
-    action: 'update',
-    pinnedElement: 'screen-header',
-  });
-  assert.equal(updated.status, 201);
-  const frameV2 = updated.json.frames[0];
-  assert.equal(frameV2.id, timelineFrame.id);
-  assert.equal(frameV2.version, 2);
-  assert.equal(frameV2.versions.length, 2);
-
-  // D. Fork a variant onto the canvas next to frameV2
-  const forked = await call('POST', `/v1/design-boards/${boardId}/generate`, {
-    prompt: 'Fork dark glassmorphism variant with AI coach card',
-    targetFrameIds: [timelineFrame.id],
-    action: 'fork',
-  });
-  assert.equal(forked.status, 201);
-  const forkedFrame = forked.json.frames[0];
-  assert.equal(forkedFrame.parentFrameId, timelineFrame.id);
-  assert.ok(forkedFrame.x > frameV2.x, 'forked frame is positioned to the right of its parent on the canvas');
-
-  // E. Direct workspace file edit syncs automatically on GET /v1/design-boards/:id
+  // D. A direct file edit (how an agent will write frames) syncs on GET and bumps the version
   fs.writeFileSync(forkedFrame.htmlPath, `${forkedFrame.htmlContent}\n<!-- Direct agent file edit -->`, 'utf8');
   const syncedBoard = await call('GET', `/v1/design-boards/${boardId}`);
   const syncedFork = (syncedBoard.json.frames as any[]).find((f) => f.id === forkedFrame.id);

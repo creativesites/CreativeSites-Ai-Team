@@ -142,13 +142,19 @@ test('5. standups: record daily roll-call and commitments', async () => {
   assert.equal(found.facilitator, 'Atlas');
 });
 
-test('6. executive ai breakdown: returns structured analysis for instruction prompts', async () => {
-  const res = await call('POST', '/v1/communication/ai/generate', {
-    prompt: 'You are the MyaOS Executive AI Copilot. Break down the following message into: 1. "What this actually means", 2. "Why it matters", 3. "Actionable instruction". Original: Ensure independent verification rule is satisfied.',
-    contextType: 'instruction',
-    agentId: 'kael',
-  });
-  assert.equal(res.status, 200);
-  assert.ok(res.json.text.includes('Executive AI Breakdown'));
-  assert.ok(res.json.text.includes('What this actually means'));
+test('6. ai generate: without a model it refuses instead of returning canned text', async () => {
+  const saved = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  try {
+    const res = await call('POST', '/v1/communication/ai/generate', {
+      prompt: 'Break down the following message. Original: Ensure independent verification rule is satisfied.',
+      contextType: 'instruction',
+      agentId: 'kael',
+    });
+    assert.equal(res.status, 503);
+    assert.match(res.json.error, /no AI text was generated/);
+    assert.equal(res.json.text, undefined, 'no canned summary is returned');
+  } finally {
+    if (saved !== undefined) process.env.GEMINI_API_KEY = saved;
+  }
 });

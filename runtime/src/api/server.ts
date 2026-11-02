@@ -20,9 +20,7 @@ import { compileBatonCapsule, shouldRotateSession } from '../acp/baton.ts';
 import {
   approveFrameAndHandoff,
   extractProjectDesignTokens,
-  extractRepoScreensToFrames,
   syncBoardFramesFromDisk,
-  synthesizeDesignFramesForPrompt,
   writeFrameFileToDisk,
 } from '../design-studio.ts';
 import type { Bridge } from '../bridge.ts';
@@ -825,21 +823,7 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         projectId: resolvedProjectId,
         designTokens,
       });
-      const baseDir = projectRoot ?? opts.workspaceRoots[0] ?? process.cwd();
-      if (input.mode === 'extracted' && projectRoot) {
-        extractRepoScreensToFrames(repo, board, projectRoot);
-      } else if (input.seedStarterFrames) {
-        synthesizeDesignFramesForPrompt(
-          repo,
-          board,
-          {
-            prompt: input.description?.trim() || input.title,
-            device: 'phone',
-            variantCount: 2,
-          },
-          baseDir
-        );
-      }
+      // A new board starts empty. Frames come only from agents or from the owner.
       return { status: 201, body: repo.getDesignBoard(board.id) };
     }),
     route('GET', '/v1/design-boards/:id', (ctx) => ({
@@ -854,45 +838,15 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       repo.deleteDesignBoard(ctx.params.id!);
       return { status: 204 };
     }),
+    // Generation and extraction used to fill canned templates and credit an agent.
+    // They return 501 until an agent session builds the frames.
     route('POST', '/v1/design-boards/:id/generate', (ctx) => {
-      const board = repo.getDesignBoard(ctx.params.id!);
-      let baseDir = opts.workspaceRoots[0] ?? process.cwd();
-      if (board.projectId) {
-        try {
-          baseDir = repo.getProject(board.projectId).rootPath ?? baseDir;
-        } catch {
-          /* ignore */
-        }
-      }
-      const frames = synthesizeDesignFramesForPrompt(
-        repo,
-        board,
-        ctx.body as unknown as T.GenerateDesignInput,
-        baseDir
-      );
-      return { status: 201, body: { board: repo.getDesignBoard(board.id), frames } };
+      repo.getDesignBoard(ctx.params.id!);
+      return { status: 501, body: { error: 'Agent-built design generation is not available yet; no frames were created.' } };
     }),
     route('POST', '/v1/design-boards/:id/extract', (ctx) => {
-      const board = repo.getDesignBoard(ctx.params.id!);
-      const input = ctx.body as unknown as T.ExtractDesignInput;
-      const projectId = input.projectId ?? board.projectId;
-      let projectRoot = opts.workspaceRoots[0] ?? process.cwd();
-      if (projectId) {
-        try {
-          projectRoot = repo.getProject(projectId).rootPath ?? projectRoot;
-        } catch {
-          /* ignore */
-        }
-      }
-      const frames = extractRepoScreensToFrames(
-        repo,
-        board,
-        projectRoot,
-        input.targetPaths,
-        input.device,
-        input.prompt
-      );
-      return { status: 201, body: { board: repo.getDesignBoard(board.id), frames } };
+      repo.getDesignBoard(ctx.params.id!);
+      return { status: 501, body: { error: 'Agent-built extraction of existing UI is not available yet; no frames were created.' } };
     }),
     route('POST', '/v1/design-boards/:id/frames', (ctx) => {
       const board = repo.getDesignBoard(ctx.params.id!);
@@ -1024,16 +978,15 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         }
       }
 
-      // Intelligent executive fallback
-      let fallbackText = '';
-      if (input?.contextType === 'instruction' || prompt.includes('What this actually means')) {
-        fallbackText = `### Executive AI Breakdown\n\n- **What this actually means**: Actionable directive coordinating work across the team with clear acceptance criteria.\n- **Why it matters to Winston & CreativeSites**: Keeps team velocity synchronized, enforces substrate-native evidence, and avoids uncommitted work drift.\n- **Actionable instruction**: Proceed with execution, verify independent checks, and record evidence hash.`;
-      } else if (prompt.includes('standup') || prompt.includes('Primary Focus Today')) {
-        fallbackText = `### 🎯 Executive Standup Roll-Up\n\n1. **🎯 Primary Focus Today**: Active feature implementation, verification gates, and platform consistency.\n2. **🚀 Shipped / In-Progress Milestones**: Workstream execution active across specialized agents.\n3. **⚠️ Active Blockers & Risks**: None insurmountable; all dependencies verified against substrate.\n4. **🤖 Agent Assignments**: Winston (Lead), Atlas (Coordination), Astra (UI/Streaming), Kael (Lead Verifier).`;
-      } else {
-        fallbackText = `### Executive Summary\n\n- Review ongoing coordination threads and active commitments.\n- Ensure independent verification rule is satisfied before state transition.\n- Next steps are ready for dispatch.`;
-      }
-      return { status: 200, body: { text: fallbackText, model: 'system-executive-copilot' } };
+      // No canned text: without a working model call there is no summary to show.
+      return {
+        status: 503,
+        body: {
+          error: apiKey
+            ? 'The Gemini call failed, so no AI text was generated.'
+            : 'No AI model is configured for summaries (GEMINI_API_KEY is not set), so no AI text was generated.',
+        },
+      };
     }),
   ];
 

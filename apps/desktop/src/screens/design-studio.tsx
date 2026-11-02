@@ -64,7 +64,6 @@ export function DesignStudioScreen({
   initialBoardId,
   projects,
   jobs,
-  rooms,
   identities,
   ownerId,
 }: {
@@ -148,20 +147,9 @@ export function DesignStudioScreen({
         if (targetId) {
           const full = await client.designBoard(targetId);
           setActiveBoard(full);
-        } else if (list.length === 0) {
-          // Auto-seed an initial board so the studio canvas is ready immediately on first visit
-          const seeded = await client.createDesignBoard({
-            projectId: projects[0]?.id ?? null,
-            jobId: jobs[0]?.id ?? null,
-            roomId: rooms[0]?.id ?? null,
-            title: projects[0] ? `${projects[0].name} · UI Design Canvas` : 'MyaOS Product Design Studio',
-            description: 'Interactive multi-frame phone & web UI canvas for greenfield features and codebase UI iteration',
-            mode: 'hybrid',
-            createdBy: ownerId,
-            seedStarterFrames: true,
-          });
-          setBoards([seeded]);
-          setActiveBoard(seeded);
+        } else {
+          // No boards yet: show the empty state; nothing is created on the owner's behalf.
+          setActiveBoard(null);
         }
       } catch (e) {
         notify.error((e as Error).message);
@@ -169,7 +157,7 @@ export function DesignStudioScreen({
         setLoading(false);
       }
     },
-    [client, initialBoardId, projects, jobs, rooms, ownerId]
+    [client, initialBoardId]
   );
 
   React.useEffect(() => {
@@ -324,7 +312,6 @@ export function DesignStudioScreen({
         projectId: newBoardProjectId || null,
         jobId: newBoardJobId || null,
         createdBy: ownerId,
-        seedStarterFrames: newBoardMode === 'greenfield',
       });
       setShowNewBoardModal(false);
       setNewBoardTitle('');

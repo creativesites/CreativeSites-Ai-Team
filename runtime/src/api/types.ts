@@ -1327,7 +1327,6 @@ export interface CreateDesignBoardInput {
   description?: string | null;
   mode?: DesignBoardMode;
   createdBy?: string;
-  seedStarterFrames?: boolean;
 }
 
 export interface UpdateDesignBoardInput {
@@ -1420,46 +1419,46 @@ export interface ChatMessage {
 export interface Thread {
   id: string;
   title: string;
-  author_identities?: string;
-  target_identities?: string;
+  author_identities?: string | null;
+  target_identities?: string | null;
   status: string;
-  related_task_id?: string;
-  related_project_id?: string;
+  related_task_id?: string | null;
+  related_project_id?: string | null;
   created_at: string;
   updated_at: string;
   message_count: number;
-  original_file_path?: string;
+  original_file_path?: string | null;
 }
 
 export interface Announcement {
   id: number;
   title: string;
-  author_identity?: string;
-  content?: string;
-  audience?: string;
+  author_identity?: string | null;
+  content?: string | null;
+  audience?: string | null;
   ts: string;
-  original_file_path?: string;
+  original_file_path?: string | null;
 }
 
 export interface SocialPost {
   id: number;
   channel: string;
-  author_identity?: string;
+  author_identity?: string | null;
   content: string;
   ts: string;
-  original_file_path?: string;
+  original_file_path?: string | null;
 }
 
 export interface Standup {
   id: number;
   standup_date: string;
-  facilitator?: string;
-  present_identities?: string;
-  absent_identities?: string;
-  content?: string;
-  parsed_updates?: string;
+  facilitator?: string | null;
+  present_identities?: string | null;
+  absent_identities?: string | null;
+  content?: string | null;
+  parsed_updates?: string | null;
   ts: string;
-  original_file_path?: string;
+  original_file_path?: string | null;
 }
 
 export interface SendInboxMessageInput {
