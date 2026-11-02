@@ -4,6 +4,7 @@ import type * as T from '../api/types.ts';
 import { ADAPTER_PRESETS, findExecutable } from '../adapters.ts';
 import type { Checker } from '../checks.ts';
 import { ConflictError, InputError, type Repo } from '../store/repo.ts';
+import { compileBatonCapsule, shouldRotateSession } from './baton.ts';
 import { AcpClient, AcpError, type PermissionOption, type PermissionOutcome, type PermissionRequest } from './client.ts';
 
 export interface StartSessionInput {
@@ -14,6 +15,9 @@ export interface StartSessionInput {
   adapterId?: string | null;
   prompt?: string;
   mode?: T.Session['mode'];
+  parentSessionId?: string | null;
+  generation?: number;
+  batonCapsule?: string | null;
 }
 
 export interface SessionLifecycleHooks {
@@ -364,6 +368,22 @@ export function formatSessionTerminalOutput(session: T.Session, entries: T.Trans
         lines.push(`${dim}─── [${ts}] Turn complete (${stopReason}) ───${reset}`, '');
         break;
       }
+      case 'baton_handoff': {
+        lines.push(
+          `${magenta}⚡ [${ts}] ${entry.title ?? 'Baton Handoff Capsule Received'}${reset}`,
+          `${dim}   Context carried seamlessly from session ${String(p.parentSessionId ?? '')} (~${Number(p.capsuleTokens ?? 0)} tokens, saved ~${Number(p.estimatedSavedTokens ?? 0)} tokens)${reset}`,
+          ''
+        );
+        break;
+      }
+      case 'session_rotated': {
+        lines.push(
+          `${magenta}↻ [${ts}] ${entry.title ?? 'Session Rotated to Next Generation'}${reset}`,
+          `${dim}   New Session: ${String(p.newSessionId ?? '')} (reason: ${String(p.reason ?? 'threshold')})${reset}`,
+          ''
+        );
+        break;
+      }
       case 'error': {
         lines.push(`${red}✖ [${ts}] Error: ${String(p.message ?? 'unknown error')}${reset}`);
         break;
@@ -434,14 +454,33 @@ export class SessionManager {
       baseSha,
       baseBranch,
       mode: input.mode ?? task?.mode ?? 'build',
+      parentSessionId: input.parentSessionId ?? null,
+      generation: input.generation,
+      batonCapsule: input.batonCapsule ?? null,
     });
 
     if (task && task.status === 'pending') {
       this.repo.updateTask(task.id, { status: 'running' });
     }
 
-    const acpPrompt = this.buildPrompt(job, room, task, agent, input.prompt);
-    const displayPrompt = stripCoordinationBoilerplate(input.prompt?.trim() ? input.prompt : acpPrompt);
+    if (input.batonCapsule) {
+      const capsuleTokens = Math.ceil(input.batonCapsule.length / 3.8);
+      this.repo.appendTranscript(session.id, {
+        kind: 'baton_handoff',
+        role: 'system',
+        title: `Baton Handoff Capsule (Gen ${session.generation ?? 2})`,
+        payload: {
+          parentSessionId: input.parentSessionId ?? null,
+          generation: session.generation ?? 2,
+          capsuleTokens,
+          text: input.batonCapsule,
+        },
+      });
+    }
+
+    const baseAcpPrompt = this.buildPrompt(job, room, task, agent, input.prompt);
+    const acpPrompt = input.batonCapsule ? `${input.batonCapsule}\n\n${baseAcpPrompt}` : baseAcpPrompt;
+    const displayPrompt = stripCoordinationBoilerplate(input.prompt?.trim() ? input.prompt : baseAcpPrompt);
     this.repo.appendTranscript(session.id, {
       kind: 'prompt',
       role: 'user',
@@ -507,11 +546,94 @@ export class SessionManager {
   }
 
   /**
+   * Rotates a session into a fresh Gen N+1 session for the same role, carrying a
+   * deterministic 3-Tier Baton Capsule so zero recent context is lost while shedding
+   * accumulated token bloat.
+   */
+  async rotate(
+    sessionId: string,
+    opts?: { prompt?: string; taskId?: string | null; reason?: string }
+  ): Promise<T.SessionRotationResult> {
+    const existing = this.repo.getSession(sessionId);
+    const { capsule, previousContextTokens, capsuleTokens } = compileBatonCapsule(this.repo, sessionId);
+    const estimatedSavedTokens = Math.max(0, previousContextTokens - capsuleTokens);
+
+    // Close live subprocess on old session if still active
+    const live = this.live.get(sessionId);
+    if (live && !live.closed) {
+      live.closed = true;
+      await live.client.close().catch(() => {});
+      this.live.delete(sessionId);
+    }
+
+    const nextGen = (existing.generation ?? 1) + 1;
+    const nextPrompt =
+      opts?.prompt?.trim() ||
+      'Continue from your Baton Handoff Capsule (Tier 3 Hot Working Memory) and complete the next step.';
+
+    const newSession = await this.start({
+      agentId: existing.agentId,
+      jobId: existing.jobId ?? null,
+      roomId: existing.roomId ?? null,
+      taskId: opts?.taskId !== undefined ? opts.taskId : existing.taskId ?? null,
+      adapterId: existing.adapterId ?? null,
+      mode: existing.mode ?? 'build',
+      parentSessionId: existing.id,
+      generation: nextGen,
+      batonCapsule: capsule,
+      prompt: nextPrompt,
+    });
+
+    this.repo.appendTranscript(sessionId, {
+      kind: 'session_rotated',
+      role: 'system',
+      title: `Rotated to Gen ${nextGen} (${newSession.id})`,
+      payload: {
+        newSessionId: newSession.id,
+        generation: nextGen,
+        reason: opts?.reason ?? 'manual',
+        previousContextTokens,
+        capsuleTokens,
+        estimatedSavedTokens,
+      },
+    });
+    if (existing.state === 'running' || existing.state === 'starting') {
+      this.repo.updateSession(sessionId, { state: 'idle', supersededBySessionId: newSession.id });
+    } else {
+      this.repo.updateSession(sessionId, { supersededBySessionId: newSession.id });
+    }
+
+    return {
+      previousSession: this.repo.getSession(sessionId),
+      newSession: this.repo.getSession(newSession.id),
+      batonCapsule: capsule,
+      estimatedSavedTokens,
+    };
+  }
+
+  /**
    * Sends a follow-up prompt to a live session, OR seamlessly resumes/continues
    * the session if its previous turn already completed and closed the subprocess.
+   * Automatically rotates to a fresh Gen N+1 session carrying a 3-Tier Baton Capsule
+   * when the session crosses the internal context token or turn threshold.
    */
-  async prompt(sessionId: string, text: string): Promise<void> {
+  async prompt(sessionId: string, text: string, opts?: { taskId?: string | null; skipAutoRotate?: boolean }): Promise<T.Session> {
     const cleanText = stripCoordinationBoilerplate(text);
+    const existing = this.repo.getSession(sessionId);
+
+    // Check if the session has crossed our internal token/turn threshold and should relay the baton
+    if (!opts?.skipAutoRotate) {
+      const rotCheck = shouldRotateSession(this.repo, existing, opts?.taskId);
+      if (rotCheck.rotate) {
+        const rotated = await this.rotate(sessionId, {
+          prompt: cleanText,
+          taskId: opts?.taskId,
+          reason: rotCheck.reason,
+        });
+        return rotated.newSession;
+      }
+    }
+
     const live = this.live.get(sessionId);
     if (live && !live.closed && live.acpSessionId && !this.runs.has(sessionId)) {
       this.repo.appendTranscript(sessionId, { kind: 'prompt', role: 'user', payload: { text: cleanText } });
@@ -535,11 +657,10 @@ export class SessionManager {
       }
       this.repo.appendTranscript(sessionId, { kind: 'turn', role: 'system', payload: result });
       this.repo.updateSession(sessionId, { state: 'idle' });
-      return;
+      return this.repo.getSession(sessionId);
     }
 
     // Session turn already exited: run a continuation turn on the existing session record
-    const existing = this.repo.getSession(sessionId);
     const agent = this.repo.getIdentity(existing.agentId);
     const job = existing.jobId ? this.repo.getJob(existing.jobId) : null;
     const room = existing.roomId ? this.repo.getRoom(existing.roomId) : job ? this.repo.getRoom(job.roomId) : null;
@@ -605,6 +726,7 @@ export class SessionManager {
     const run = this.run(resumedLive, acpPrompt);
     this.runs.set(sessionId, run);
     void run.finally(() => this.runs.delete(sessionId));
+    return this.repo.getSession(sessionId);
   }
 
   cancel(sessionId: string, actorId: string): T.Session {
@@ -1043,7 +1165,9 @@ export class SessionManager {
       'Autonomous Directives (include on their own line in your response when needed):',
       '  - Wake another agent immediately: [WAKE: <agentId>] <instructions for that agent>',
       '  - Schedule a self-wakeup or timer: [SCHEDULE: 10m] <what to check when woken> (or cron: [SCHEDULE: */15 * * * *] <prompt>)',
-      '  - Spawn a new specialist agent:    [SPAWN: <newAgentId> name="<Name>" role="<Role>" adapter="<claude|codex|gemini>"] <initial prompt>'
+      '  - Spawn a new specialist agent:    [SPAWN: <newAgentId> name="<Name>" role="<Role>" adapter="<claude|codex|gemini>"] <initial prompt>',
+      '  - Self-checkpoint at the end of every turn (preserves your hot working memory across token-lean session relays):',
+      '    [STATE: done=<what you finished> | active=<files/focus> | next=<immediate next step>]'
     );
 
     if (override?.trim()) {

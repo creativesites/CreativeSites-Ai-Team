@@ -8,6 +8,7 @@ export type Route =
   | { name: 'job'; jobId: string }
   | { name: 'council'; jobId: string }
   | { name: 'verdict'; jobId: string }
+  | { name: 'design-studio'; boardId?: string }
   | { name: 'dev'; jobId?: string }
   | { name: 'coworkers' }
   | { name: 'approvals' }
@@ -27,6 +28,8 @@ export function parseRoute(hash: string): Route {
       if (parts[1] && parts[2] === 'verdict') return { name: 'verdict', jobId: parts[1] };
       if (parts[1]) return { name: 'job', jobId: parts[1] };
       break;
+    case 'design-studio':
+      return { name: 'design-studio', boardId: parts[1] };
     case 'dev':
       return { name: 'dev', jobId: parts[1] };
     case 'coworkers':
@@ -58,6 +61,8 @@ export function href(route: Route): string {
       return `#/jobs/${e(route.jobId)}/council`;
     case 'verdict':
       return `#/jobs/${e(route.jobId)}/verdict`;
+    case 'design-studio':
+      return route.boardId ? `#/design-studio/${e(route.boardId)}` : '#/design-studio';
     case 'dev':
       return route.jobId ? `#/dev/${e(route.jobId)}` : '#/dev';
     case 'coworkers':

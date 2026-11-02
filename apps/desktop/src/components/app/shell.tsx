@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Briefcase, ChevronDown, ChevronRight, FolderGit2, Hash, Home, Inbox, RefreshCw, Search, Settings, ShieldCheck, Terminal, Users } from 'lucide-react';
+import { Briefcase, ChevronDown, ChevronRight, FolderGit2, Hash, Home, Inbox, Palette, RefreshCw, Search, Settings, ShieldCheck, Terminal, Users } from 'lucide-react';
 import type { Identity, JobSummary, Room, Session } from '@runtime/types';
 import { Avatar, OwnerAvatar } from '@/components/app/avatar';
 import { CommandPalette } from '@/components/app/command-palette';
@@ -199,6 +199,14 @@ export function Sidebar({
             Council Room
           </NavLink>
         )}
+        <NavLink
+          to={{ name: 'design-studio' }}
+          active={route.name === 'design-studio'}
+          icon={<Palette />}
+          trailing={<Tag tone="quiet">Canvas</Tag>}
+        >
+          Design Studio
+        </NavLink>
         <NavLink to={{ name: 'workspaces' }} active={route.name === 'workspaces'} icon={<FolderGit2 />}>
           Workspaces
         </NavLink>

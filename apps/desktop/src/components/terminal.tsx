@@ -1050,6 +1050,46 @@ export function StructuredTranscriptView({
           );
         }
 
+        if (entry.kind === 'baton_handoff' || entry.kind === 'session_rotated') {
+          const bp = p as {
+            parentSessionId?: string;
+            supersededBySessionId?: string;
+            generation?: number;
+            capsuleTokens?: number;
+            parentTokens?: number;
+            reason?: string;
+            capsule?: string;
+          };
+          return (
+            <details
+              key={entry.id}
+              className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3.5 py-2.5 text-xs text-indigo-100"
+            >
+              <summary className="flex cursor-pointer items-center justify-between gap-2 select-none">
+                <div className="flex items-center gap-2 font-mono text-[11.5px] font-semibold text-indigo-300">
+                  <span>↺ {entry.title ?? 'Session Baton Relay'}</span>
+                  {bp.capsuleTokens != null && (
+                    <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] text-indigo-200">
+                      {bp.capsuleTokens} baton tokens
+                    </span>
+                  )}
+                </div>
+                <span className="font-mono text-[10px] text-indigo-300/80">{ts}</span>
+              </summary>
+              <div className="mt-2 flex flex-col gap-1.5 border-t border-indigo-500/25 pt-2 font-mono text-[11px] text-indigo-200/90">
+                {bp.reason && <div>Reason: {bp.reason}</div>}
+                {bp.parentSessionId && <div>Parent Session: {bp.parentSessionId}</div>}
+                {bp.supersededBySessionId && <div>Successor Session: {bp.supersededBySessionId}</div>}
+                {bp.capsule && (
+                  <pre className="mt-1 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg bg-black/40 p-2.5 text-[10.5px] text-zinc-300">
+                    {bp.capsule}
+                  </pre>
+                )}
+              </div>
+            </details>
+          );
+        }
+
         if (entry.kind === 'error') {
           return (
             <div key={entry.id} className="rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-xs text-red-200">

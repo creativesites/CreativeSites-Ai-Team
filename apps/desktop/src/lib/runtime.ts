@@ -5,6 +5,8 @@ import type {
   AgentWake,
   Approval,
   ApprovalPolicy,
+  ApproveDesignFrameInput,
+  ApproveDesignFrameResult,
   BridgeStatus,
   BridgeSyncResult,
   Budget,
@@ -19,6 +21,8 @@ import type {
   CreateCouncilInput,
   CreateCouncilCardInput,
   CreateCriterionInput,
+  CreateDesignBoardInput,
+  CreateDesignFrameInput,
   CreateEvidenceInput,
   CreateIdentityInput,
   CreateJobInput,
@@ -31,7 +35,11 @@ import type {
   CreateTaskInput,
   CreateTeamInput,
   DecideApprovalInput,
+  DesignBoard,
+  DesignFrame,
   Evidence,
+  ExtractDesignInput,
+  GenerateDesignInput,
   Health,
   Identity,
   IdentityStatusState,
@@ -52,6 +60,7 @@ import type {
   RuntimeEvent,
   SearchHit,
   Session,
+  SessionRotationResult,
   Settings,
   ShipJobInput,
   ShipJobResult,
@@ -61,6 +70,8 @@ import type {
   Team,
   TeamMember,
   TranscriptEntry,
+  UpdateDesignBoardInput,
+  UpdateDesignFrameInput,
   UpdateIdentityInput,
   UpdatePolicyInput,
   UpdateProjectInput,
@@ -288,7 +299,26 @@ export class RuntimeClient {
   cancelSession = (id: string, actorId: string) =>
     this.request<Session>('POST', `/v1/sessions/${encodeURIComponent(id)}/cancel`, { actorId });
   promptSession = (id: string, text: string) =>
-    this.request<{ ok: boolean }>('POST', `/v1/sessions/${encodeURIComponent(id)}/prompt`, { text });
+    this.request<{ ok: boolean; session?: Session }>('POST', `/v1/sessions/${encodeURIComponent(id)}/prompt`, { text });
+  rotateSession = (id: string, input: { prompt?: string; taskId?: string; reason?: string } = {}) =>
+    this.request<SessionRotationResult>('POST', `/v1/sessions/${encodeURIComponent(id)}/rotate`, input);
+  sessionBaton = (id: string) =>
+    this.request<{
+      sessionId: string;
+      generation: number;
+      parentSessionId: string | null;
+      supersededBySessionId: string | null;
+      check: {
+        rotate: boolean;
+        reason: string;
+        contextTokens: number;
+        logicalTurns: number;
+        policy: { softContextTokens: number; hardContextTokens: number; softLogicalTurns: number };
+      };
+      capsule: string;
+      previousContextTokens: number;
+      capsuleTokens: number;
+    }>('GET', `/v1/sessions/${encodeURIComponent(id)}/baton`);
   transcript = (id: string, since = 0) =>
     this.request<TranscriptEntry[]>('GET', `/v1/sessions/${encodeURIComponent(id)}/transcript?since=${since}`);
   sessionFiles = (id: string) =>
@@ -490,6 +520,42 @@ export class RuntimeClient {
   bridgeExportAllCouncils = () => this.request<{ exported: number; paths: string[] }>('POST', '/v1/bridge/export/councils');
   bridgeExportShippedJob = (jobId: string) => this.request<{ threadPath: string; proposalPath: string }>('POST', `/v1/bridge/export/shipped/${encodeURIComponent(jobId)}`);
   bridgeExportShipped = () => this.request<{ exported: number; paths: string[] }>('POST', '/v1/bridge/export/shipped');
+
+  // ---- design studio (infinite multi-frame canvas)
+  designBoards = (filter: { projectId?: string; jobId?: string; roomId?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (filter.projectId) q.set('projectId', filter.projectId);
+    if (filter.jobId) q.set('jobId', filter.jobId);
+    if (filter.roomId) q.set('roomId', filter.roomId);
+    return this.request<DesignBoard[]>('GET', `/v1/design-boards${q.toString() ? `?${q}` : ''}`);
+  };
+  designBoard = (id: string) => this.request<DesignBoard>('GET', `/v1/design-boards/${encodeURIComponent(id)}`);
+  createDesignBoard = (input: CreateDesignBoardInput) =>
+    this.request<DesignBoard>('POST', '/v1/design-boards', input);
+  updateDesignBoard = (id: string, input: UpdateDesignBoardInput) =>
+    this.request<DesignBoard>('PATCH', `/v1/design-boards/${encodeURIComponent(id)}`, input);
+  deleteDesignBoard = (id: string) =>
+    this.request<unknown>('DELETE', `/v1/design-boards/${encodeURIComponent(id)}`);
+  generateDesign = (boardId: string, input: GenerateDesignInput) =>
+    this.request<{ board: DesignBoard; frames: DesignFrame[] }>(
+      'POST',
+      `/v1/design-boards/${encodeURIComponent(boardId)}/generate`,
+      input
+    );
+  extractDesign = (boardId: string, input: ExtractDesignInput) =>
+    this.request<{ board: DesignBoard; frames: DesignFrame[] }>(
+      'POST',
+      `/v1/design-boards/${encodeURIComponent(boardId)}/extract`,
+      input
+    );
+  createDesignFrame = (boardId: string, input: Omit<CreateDesignFrameInput, 'boardId'>) =>
+    this.request<DesignFrame>('POST', `/v1/design-boards/${encodeURIComponent(boardId)}/frames`, input);
+  updateDesignFrame = (frameId: string, input: UpdateDesignFrameInput) =>
+    this.request<DesignFrame>('PATCH', `/v1/design-frames/${encodeURIComponent(frameId)}`, input);
+  deleteDesignFrame = (frameId: string) =>
+    this.request<unknown>('DELETE', `/v1/design-frames/${encodeURIComponent(frameId)}`);
+  approveDesignFrame = (frameId: string, input: ApproveDesignFrameInput) =>
+    this.request<ApproveDesignFrameResult>('POST', `/v1/design-frames/${encodeURIComponent(frameId)}/approve`, input);
 
   /**
    * Follows the event stream until `signal` aborts, resuming after the last

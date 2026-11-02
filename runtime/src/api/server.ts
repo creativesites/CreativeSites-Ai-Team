@@ -16,6 +16,15 @@ import {
 import * as workspaces from '../workspaces.ts';
 import type { Checker } from '../checks.ts';
 import { formatSessionTerminalOutput, type SessionManager } from '../acp/session-manager.ts';
+import { compileBatonCapsule, shouldRotateSession } from '../acp/baton.ts';
+import {
+  approveFrameAndHandoff,
+  extractProjectDesignTokens,
+  extractRepoScreensToFrames,
+  syncBoardFramesFromDisk,
+  synthesizeDesignFramesForPrompt,
+  writeFrameFileToDisk,
+} from '../design-studio.ts';
 import type { Bridge } from '../bridge.ts';
 import type { Orchestrator } from '../orchestrator.ts';
 import type { TerminalManager } from '../terminal-manager.ts';
@@ -630,8 +639,35 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       body: opts.sessions.cancel(ctx.params.id!, asString(ctx.body.actorId, 'actorId')),
     })),
     route('POST', '/v1/sessions/:id/prompt', async (ctx) => {
-      await opts.sessions.prompt(ctx.params.id!, asString(ctx.body.text, 'text'));
-      return { status: 202, body: { ok: true } };
+      const session = await opts.sessions.prompt(ctx.params.id!, asString(ctx.body.text, 'text'), {
+        taskId: asOptionalString(ctx.body.taskId),
+        skipAutoRotate: ctx.body.skipAutoRotate === true,
+      });
+      return { status: 202, body: { ok: true, session } };
+    }),
+    route('POST', '/v1/sessions/:id/rotate', async (ctx) => ({
+      status: 201,
+      body: await opts.sessions.rotate(ctx.params.id!, {
+        prompt: asOptionalString(ctx.body.prompt) ?? undefined,
+        taskId: asOptionalString(ctx.body.taskId),
+        reason: asOptionalString(ctx.body.reason) ?? 'manual',
+      }),
+    })),
+    route('GET', '/v1/sessions/:id/baton', (ctx) => {
+      const session = repo.getSession(ctx.params.id!);
+      const check = shouldRotateSession(repo, session);
+      const compiled = compileBatonCapsule(repo, session.id);
+      return {
+        status: 200,
+        body: {
+          sessionId: session.id,
+          generation: session.generation ?? 1,
+          parentSessionId: session.parentSessionId ?? null,
+          supersededBySessionId: session.supersededBySessionId ?? null,
+          check,
+          ...compiled,
+        },
+      };
     }),
     route('GET', '/v1/sessions/:id/files', async (ctx) => {
       const session = repo.getSession(ctx.params.id!);
@@ -699,6 +735,152 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       opts.terminals.kill(ctx.params.id!);
       return { status: 204 };
     }),
+
+    // design studio (infinite multi-frame canvas)
+    route('GET', '/v1/design-boards', (ctx) => ({
+      status: 200,
+      body: repo.listDesignBoards({
+        projectId: ctx.query.get('projectId') ?? undefined,
+        jobId: ctx.query.get('jobId') ?? undefined,
+        roomId: ctx.query.get('roomId') ?? undefined,
+      }),
+    })),
+    route('POST', '/v1/design-boards', (ctx) => {
+      const input = ctx.body as unknown as T.CreateDesignBoardInput;
+      let projectRoot: string | null = null;
+      let resolvedProjectId = input.projectId ?? null;
+      if (!resolvedProjectId && input.jobId) {
+        try {
+          resolvedProjectId = repo.getJob(input.jobId).projectId ?? null;
+        } catch {
+          /* ignore */
+        }
+      }
+      if (resolvedProjectId) {
+        try {
+          projectRoot = repo.getProject(resolvedProjectId).rootPath;
+        } catch {
+          /* ignore */
+        }
+      }
+      const designTokens = extractProjectDesignTokens(projectRoot);
+      const board = repo.createDesignBoard({
+        ...input,
+        projectId: resolvedProjectId,
+        designTokens,
+      });
+      const baseDir = projectRoot ?? opts.workspaceRoots[0] ?? process.cwd();
+      if (input.mode === 'extracted' && projectRoot) {
+        extractRepoScreensToFrames(repo, board, projectRoot);
+      } else if (input.seedStarterFrames) {
+        synthesizeDesignFramesForPrompt(
+          repo,
+          board,
+          {
+            prompt: input.description?.trim() || input.title,
+            device: 'phone',
+            variantCount: 2,
+          },
+          baseDir
+        );
+      }
+      return { status: 201, body: repo.getDesignBoard(board.id) };
+    }),
+    route('GET', '/v1/design-boards/:id', (ctx) => ({
+      status: 200,
+      body: syncBoardFramesFromDisk(repo, ctx.params.id!),
+    })),
+    route('PATCH', '/v1/design-boards/:id', (ctx) => ({
+      status: 200,
+      body: repo.updateDesignBoard(ctx.params.id!, ctx.body as unknown as T.UpdateDesignBoardInput),
+    })),
+    route('DELETE', '/v1/design-boards/:id', (ctx) => {
+      repo.deleteDesignBoard(ctx.params.id!);
+      return { status: 204 };
+    }),
+    route('POST', '/v1/design-boards/:id/generate', (ctx) => {
+      const board = repo.getDesignBoard(ctx.params.id!);
+      let baseDir = opts.workspaceRoots[0] ?? process.cwd();
+      if (board.projectId) {
+        try {
+          baseDir = repo.getProject(board.projectId).rootPath ?? baseDir;
+        } catch {
+          /* ignore */
+        }
+      }
+      const frames = synthesizeDesignFramesForPrompt(
+        repo,
+        board,
+        ctx.body as unknown as T.GenerateDesignInput,
+        baseDir
+      );
+      return { status: 201, body: { board: repo.getDesignBoard(board.id), frames } };
+    }),
+    route('POST', '/v1/design-boards/:id/extract', (ctx) => {
+      const board = repo.getDesignBoard(ctx.params.id!);
+      const input = ctx.body as unknown as T.ExtractDesignInput;
+      const projectId = input.projectId ?? board.projectId;
+      let projectRoot = opts.workspaceRoots[0] ?? process.cwd();
+      if (projectId) {
+        try {
+          projectRoot = repo.getProject(projectId).rootPath ?? projectRoot;
+        } catch {
+          /* ignore */
+        }
+      }
+      const frames = extractRepoScreensToFrames(
+        repo,
+        board,
+        projectRoot,
+        input.targetPaths,
+        input.device,
+        input.prompt
+      );
+      return { status: 201, body: { board: repo.getDesignBoard(board.id), frames } };
+    }),
+    route('POST', '/v1/design-boards/:id/frames', (ctx) => {
+      const board = repo.getDesignBoard(ctx.params.id!);
+      let baseDir = opts.workspaceRoots[0] ?? process.cwd();
+      if (board.projectId) {
+        try {
+          baseDir = repo.getProject(board.projectId).rootPath ?? baseDir;
+        } catch {
+          /* ignore */
+        }
+      }
+      const created = repo.createDesignFrame({
+        ...(ctx.body as unknown as T.CreateDesignFrameInput),
+        boardId: board.id,
+      });
+      const htmlPath = writeFrameFileToDisk(baseDir, board.id, created.id, created.htmlContent);
+      return { status: 201, body: repo.updateDesignFrame(created.id, { htmlPath, bumpVersion: false }) };
+    }),
+    route('PATCH', '/v1/design-frames/:id', (ctx) => {
+      const existing = repo.getDesignFrame(ctx.params.id!);
+      const input = ctx.body as unknown as T.UpdateDesignFrameInput;
+      let htmlPath = existing.htmlPath;
+      if (input.htmlContent !== undefined && existing.htmlPath) {
+        try {
+          fs.writeFileSync(existing.htmlPath, input.htmlContent, 'utf8');
+        } catch {
+          /* ignore */
+        }
+      }
+      return { status: 200, body: repo.updateDesignFrame(existing.id, { ...input, htmlPath }) };
+    }),
+    route('DELETE', '/v1/design-frames/:id', (ctx) => {
+      repo.deleteDesignFrame(ctx.params.id!);
+      return { status: 204 };
+    }),
+    route('POST', '/v1/design-frames/:id/approve', async (ctx) => ({
+      status: 200,
+      body: await approveFrameAndHandoff(
+        repo,
+        opts.orchestrator,
+        ctx.params.id!,
+        ctx.body as unknown as T.ApproveDesignFrameInput
+      ),
+    })),
   ];
 
   // ------------------------------------------------------------------ per-route helpers

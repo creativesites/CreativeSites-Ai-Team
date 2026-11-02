@@ -243,9 +243,16 @@ export function DevScreen({
         }
       } else if (instructionTarget === 'current' && selectedSession) {
         try {
-          await client.promptSession(selectedSession.id, text);
+          const pRes = await client.promptSession(selectedSession.id, text);
           setInstructionText('');
-          setDockStatus(`Instruction sent to ${who(selectedSession.agentId).name}`);
+          if (pRes.session?.id && pRes.session.id !== selectedSession.id) {
+            setSelected(pRes.session.id);
+            setDockStatus(
+              `Auto-rotated ${who(selectedSession.agentId).name} to Gen ${pRes.session.generation ?? 2} (${pRes.session.id.slice(0, 12)}) with Baton Capsule`
+            );
+          } else {
+            setDockStatus(`Instruction sent to ${who(selectedSession.agentId).name}`);
+          }
         } catch {
           const res = await client.wakeAgent(selectedSession.agentId, {
             fromActorId: 'winston',
@@ -297,6 +304,28 @@ export function DevScreen({
       setDockStatus(`Stopped session ${selectedSession.id.slice(0, 12)}`);
     } catch (err) {
       setDockStatus(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const [rotatingSession, setRotatingSession] = React.useState(false);
+  const handleRotateSession = async () => {
+    if (!client || !selectedSession || rotatingSession) return;
+    setRotatingSession(true);
+    setDockStatus(null);
+    try {
+      const res = await client.rotateSession(selectedSession.id, {
+        prompt: instructionText.trim() || undefined,
+        reason: 'manual_ui_relay',
+      });
+      setInstructionText('');
+      setSelected(res.newSession.id);
+      setDockStatus(
+        `Relayed Baton to Gen ${res.newSession.generation ?? 2} (${res.newSession.id.slice(0, 12)}) · Saved ~${res.estimatedSavedTokens.toLocaleString()} tokens`
+      );
+    } catch (err) {
+      setDockStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRotatingSession(false);
     }
   };
 
@@ -421,7 +450,7 @@ export function DevScreen({
                         </Tag>
                       </div>
                       <span className="truncate font-mono text-[11px] text-muted-foreground">
-                        {s.id.slice(0, 14)} · {s.turnCount ?? 0}t · {s.adapterId ?? 'acp'}
+                        Gen {s.generation ?? 1} · {s.id.slice(0, 10)} · {Math.round((s.contextTokens ?? 0) / 100) / 10}k ctx
                       </span>
                       {s.acpSessionId && (
                         <span className="truncate font-mono text-[10px] text-muted-foreground/75">
@@ -512,6 +541,37 @@ export function DevScreen({
                         {selectedSession.adapterId}
                       </span>
                     )}
+                    <span
+                      className={cn(
+                        'rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold',
+                        (selectedSession.contextTokens ?? 0) >= 32000
+                          ? 'bg-amber-500/20 text-amber-300'
+                          : 'bg-emerald-500/15 text-emerald-300'
+                      )}
+                      title="Role Session Relay Generation & Live Context Window Fill (Soft Relay Limit: 36k tokens)"
+                    >
+                      Gen {selectedSession.generation ?? 1} · {((selectedSession.contextTokens ?? 0) / 1000).toFixed(1)}k / 36k ctx
+                    </span>
+                    {selectedSession.parentSessionId && (
+                      <button
+                        type="button"
+                        onClick={() => setSelected(selectedSession.parentSessionId!)}
+                        className="rounded bg-foreground/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-sky-400 hover:underline"
+                        title="Jump to previous generation session"
+                      >
+                        ← Gen {(selectedSession.generation ?? 2) - 1}
+                      </button>
+                    )}
+                    {selectedSession.supersededBySessionId && (
+                      <button
+                        type="button"
+                        onClick={() => setSelected(selectedSession.supersededBySessionId!)}
+                        className="rounded bg-amber-500/20 px-1.5 py-0.5 font-mono text-[10px] text-amber-300 hover:underline"
+                        title="Jump to next generation session"
+                      >
+                        Gen {(selectedSession.generation ?? 1) + 1} →
+                      </button>
+                    )}
                   </div>
                   <div className="flex max-w-xl items-center gap-2 truncate font-mono text-[11px] text-muted-foreground">
                     <span>{selectedSession.id}</span>
@@ -574,6 +634,22 @@ export function DevScreen({
                 </button>
               ))}
             </div>
+
+            {selectedSession && (
+              <button
+                type="button"
+                onClick={handleRotateSession}
+                disabled={rotatingSession}
+                title="Rotate to a fresh Gen N+1 session for this role while carrying a compact 3-Tier Baton Capsule of recent context"
+                className={cn(
+                  buttonVariants({ variant: 'glass', size: 'sm' }),
+                  'border-amber-400/30 text-amber-300 hover:bg-amber-500/15'
+                )}
+              >
+                <Zap className="size-3.5 text-amber-400" />
+                {rotatingSession ? 'Relaying…' : 'Rotate Session (Carry Baton)'}
+              </button>
+            )}
 
             <button
               type="button"

@@ -598,4 +598,75 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX agent_schedules_due ON agent_schedules(enabled, next_run_at);
     `,
   },
+  {
+    version: 6,
+    name: 'session baton relay and design studio canvas',
+    sql: `
+      -- sessions: role session baton relay (generation, lineage, context token tracking, and baton capsule)
+      ALTER TABLE sessions ADD COLUMN parent_session_id TEXT;
+      ALTER TABLE sessions ADD COLUMN superseded_by_session_id TEXT;
+      ALTER TABLE sessions ADD COLUMN generation INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE sessions ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE sessions ADD COLUMN baton_capsule TEXT;
+
+      -- design_boards: infinite canvas boards for greenfield features or codebase UI extraction
+      CREATE TABLE design_boards (
+        id TEXT PRIMARY KEY,
+        project_id TEXT,
+        job_id TEXT,
+        room_id TEXT,
+        title TEXT NOT NULL,
+        description TEXT,
+        mode TEXT NOT NULL DEFAULT 'greenfield' CHECK (mode IN ('greenfield','extracted','hybrid')),
+        viewport_x REAL NOT NULL DEFAULT 0,
+        viewport_y REAL NOT NULL DEFAULT 0,
+        viewport_zoom REAL NOT NULL DEFAULT 0.85,
+        design_tokens_json TEXT NOT NULL DEFAULT '{}',
+        created_by TEXT NOT NULL DEFAULT 'winston',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX design_boards_project ON design_boards(project_id, updated_at DESC);
+      CREATE INDEX design_boards_job ON design_boards(job_id, updated_at DESC);
+
+      -- design_frames: individual phone/tablet/desktop UI frames positioned on a 2D board
+      CREATE TABLE design_frames (
+        id TEXT PRIMARY KEY,
+        board_id TEXT NOT NULL REFERENCES design_boards(id) ON DELETE CASCADE,
+        parent_frame_id TEXT,
+        title TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        device TEXT NOT NULL DEFAULT 'phone' CHECK (device IN ('phone','tablet','desktop','custom')),
+        width INTEGER NOT NULL DEFAULT 393,
+        height INTEGER NOT NULL DEFAULT 852,
+        x REAL NOT NULL DEFAULT 80,
+        y REAL NOT NULL DEFAULT 80,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','iterating','approved','archived')),
+        source_files_json TEXT NOT NULL DEFAULT '[]',
+        html_path TEXT,
+        html_content TEXT NOT NULL DEFAULT '',
+        notes TEXT,
+        author_id TEXT NOT NULL DEFAULT 'atlas',
+        approved_by TEXT,
+        approved_at TEXT,
+        evidence_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX design_frames_board ON design_frames(board_id, created_at ASC);
+
+      -- design_frame_versions: in-place version history (v1 -> v2 -> v3) per frame
+      CREATE TABLE design_frame_versions (
+        id TEXT PRIMARY KEY,
+        frame_id TEXT NOT NULL REFERENCES design_frames(id) ON DELETE CASCADE,
+        version INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        html_content TEXT NOT NULL,
+        notes TEXT,
+        author_id TEXT NOT NULL DEFAULT 'atlas',
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX design_frame_versions_frame ON design_frame_versions(frame_id, version DESC);
+    `,
+  },
 ];

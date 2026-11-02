@@ -221,8 +221,7 @@ export class Orchestrator {
             (!input.jobId || existing.jobId === input.jobId) &&
             (!input.taskId || existing.taskId === input.taskId);
           if (sameContext && existing.state !== 'failed') {
-            await this.sessions.prompt(existing.id, prompt);
-            session = this.repo.getSession(existing.id);
+            session = await this.sessions.prompt(existing.id, prompt, { taskId: input.taskId });
           }
         } catch {
           session = null;

@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   Check,
   GitMerge,
+  Palette,
   Play,
   Plus,
   RefreshCw,
@@ -222,6 +223,9 @@ export function JobScreen({
           <Tag tone="quiet">{job.costCents ?? 0}¢ spent</Tag>
           <a href={href({ name: 'council', jobId: job.id })} className={buttonVariants({ variant: 'default' })}>
             Convene Council
+          </a>
+          <a href={href({ name: 'design-studio' })} className={buttonVariants({ variant: 'glass' })}>
+            <Palette /> Design Studio
           </a>
           <a href={href({ name: 'dev', jobId: job.id })} className={buttonVariants({ variant: 'glass' })}>
             <Terminal /> Dev

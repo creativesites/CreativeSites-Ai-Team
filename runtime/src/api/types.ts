@@ -321,6 +321,11 @@ export interface Session {
   lastEventAt?: string | null;
   model?: string | null;
   turnCount?: number;
+  parentSessionId?: string | null;
+  supersededBySessionId?: string | null;
+  generation?: number;
+  contextTokens?: number;
+  batonCapsule?: string | null;
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -982,6 +987,9 @@ export interface RegisterSessionInput {
   mode?: Session['mode'];
   acpSessionId?: string | null;
   model?: string | null;
+  parentSessionId?: string | null;
+  generation?: number;
+  batonCapsule?: string | null;
 }
 
 export interface AppendTranscriptInput {
@@ -1172,4 +1180,167 @@ export interface ShipJobResult {
   commitSha: string;
   evidence: Evidence;
 }
+
+// --- Session Baton Relay & Token Efficiency ---
+
+export interface SessionRotationResult {
+  previousSession: Session;
+  newSession: Session;
+  batonCapsule: string;
+  estimatedSavedTokens: number;
+}
+
+// --- Design Studio (Infinite Multi-Frame Canvas) ---
+
+export type DesignBoardMode = 'greenfield' | 'extracted' | 'hybrid';
+export type DesignDeviceKind = 'phone' | 'tablet' | 'desktop' | 'custom';
+export type DesignFrameStatus = 'draft' | 'iterating' | 'approved' | 'archived';
+
+export interface DesignTokens {
+  brandName?: string;
+  fontSans?: string;
+  fontMono?: string;
+  colors?: Record<string, string>;
+  cssVariables?: Record<string, string>;
+}
+
+export interface DesignFrameVersion {
+  id: string;
+  frameId: string;
+  version: number;
+  title: string;
+  htmlContent: string;
+  notes: string | null;
+  authorId: string;
+  createdAt: string;
+}
+
+export interface DesignFrame {
+  id: string;
+  boardId: string;
+  parentFrameId: string | null;
+  title: string;
+  version: number;
+  device: DesignDeviceKind;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  status: DesignFrameStatus;
+  sourceFiles: string[];
+  htmlPath: string | null;
+  htmlContent: string;
+  notes: string | null;
+  authorId: string;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  evidenceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  versions?: DesignFrameVersion[];
+}
+
+export interface DesignBoard {
+  id: string;
+  projectId: string | null;
+  jobId: string | null;
+  roomId: string | null;
+  title: string;
+  description: string | null;
+  mode: DesignBoardMode;
+  viewportX: number;
+  viewportY: number;
+  viewportZoom: number;
+  designTokens: DesignTokens;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  frameCount?: number;
+  approvedCount?: number;
+  frames?: DesignFrame[];
+}
+
+export interface CreateDesignBoardInput {
+  projectId?: string | null;
+  jobId?: string | null;
+  roomId?: string | null;
+  title: string;
+  description?: string | null;
+  mode?: DesignBoardMode;
+  createdBy?: string;
+  seedStarterFrames?: boolean;
+}
+
+export interface UpdateDesignBoardInput {
+  title?: string;
+  description?: string | null;
+  viewportX?: number;
+  viewportY?: number;
+  viewportZoom?: number;
+}
+
+export interface CreateDesignFrameInput {
+  boardId: string;
+  parentFrameId?: string | null;
+  title: string;
+  device?: DesignDeviceKind;
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  sourceFiles?: string[];
+  htmlContent: string;
+  notes?: string | null;
+  authorId?: string;
+}
+
+export interface UpdateDesignFrameInput {
+  title?: string;
+  device?: DesignDeviceKind;
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  status?: DesignFrameStatus;
+  sourceFiles?: string[];
+  htmlContent?: string;
+  notes?: string | null;
+  authorId?: string;
+}
+
+export interface GenerateDesignInput {
+  prompt: string;
+  agentId?: string;
+  device?: DesignDeviceKind;
+  variantCount?: number;
+  targetFrameIds?: string[];
+  action?: 'create' | 'update' | 'fork';
+  pinnedElement?: string | null;
+  actorId?: string;
+}
+
+export interface ExtractDesignInput {
+  projectId?: string | null;
+  targetPaths?: string[];
+  device?: DesignDeviceKind;
+  prompt?: string | null;
+  agentId?: string;
+  actorId?: string;
+}
+
+export interface ApproveDesignFrameInput {
+  actorId: string;
+  note?: string | null;
+  dispatchBuildTask?: boolean;
+  assigneeId?: string | null;
+  targetFiles?: string[];
+}
+
+export interface ApproveDesignFrameResult {
+  frame: DesignFrame;
+  evidence: Evidence;
+  task: Task | null;
+  session: Session | null;
+}
+
 

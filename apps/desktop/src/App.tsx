@@ -14,6 +14,7 @@ import { DevScreen } from '@/screens/dev';
 import { HomeScreen, type StartJobRequest } from '@/screens/home';
 import { JobScreen } from '@/screens/job';
 import { CouncilRoomScreen } from '@/screens/council-room';
+import { DesignStudioScreen } from '@/screens/design-studio';
 import { RoomScreen } from '@/screens/room';
 
 const DEFAULT_OWNER_ID = 'winston';
@@ -141,6 +142,17 @@ function Screen({
       return <CouncilRoomScreen jobId={route.jobId} identities={identities} ownerId={ownerId} />;
     case 'verdict':
       return <CouncilRoomScreen jobId={route.jobId} initialOpenVerdict identities={identities} ownerId={ownerId} />;
+    case 'design-studio':
+      return (
+        <DesignStudioScreen
+          initialBoardId={route.boardId}
+          jobs={jobs}
+          rooms={rooms}
+          projects={projects}
+          identities={identities}
+          ownerId={ownerId}
+        />
+      );
     case 'dev':
       return <DevContainer jobId={route.jobId ?? jobs[0]?.id} jobs={jobs} identities={identities} sessions={sessions} />;
     case 'workspaces':

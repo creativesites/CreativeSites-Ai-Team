@@ -87,10 +87,12 @@ async function handlePrompt(message) {
       respond(message.id, { stopReason: 'end_turn', usage: { inputTokens: 120, outputTokens: 45, costCents: 3 } });
       return;
     }
-    // If prompt was prepended with a prior session summary, inspect the trailing active turn
-    const activeText = promptText.includes('Earlier in this session')
-      ? promptText.slice(promptText.lastIndexOf('\n\n')).trim() || promptText
-      : promptText;
+    // If prompt was prepended with a prior session summary or Baton Capsule, inspect the trailing active turn
+    const activeText = promptText.includes('=== END OF BATON CAPSULE')
+      ? promptText.slice(promptText.indexOf('=== END OF BATON CAPSULE')).split('\n').slice(1).join('\n').trim() || promptText
+      : promptText.includes('Earlier in this session')
+        ? promptText.slice(promptText.lastIndexOf('\n\n')).trim() || promptText
+        : promptText;
 
     if (/sleep/i.test(activeText)) {
       toolCall('t-sleep', 'Run sleep 20', 'pending', { command: 'sleep 20' });

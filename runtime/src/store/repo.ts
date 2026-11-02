@@ -1668,6 +1668,12 @@ export class Repo {
       if (!taskRow) throw new NotFoundError(`task ${input.taskId} not found`);
       if (!resolvedJobId) resolvedJobId = str(taskRow.job_id);
     }
+    let generation = input.generation ?? 1;
+    if (input.parentSessionId && input.generation == null) {
+      const parentRow = this.one('SELECT generation FROM sessions WHERE id = ?', input.parentSessionId);
+      if (parentRow) generation = Math.max(1, num(parentRow.generation) + 1);
+    }
+    const initialTokens = input.batonCapsule ? Math.ceil(input.batonCapsule.length / 3.8) : 0;
     const id = newId('sess');
     const t = now();
     this.write((events) => {
@@ -1675,15 +1681,19 @@ export class Repo {
         .prepare(
           `INSERT INTO sessions
             (id, agent_id, task_id, job_id, room_id, runtime_command, pid, worktree, state, last_seen_at, started_at, ended_at,
-             acp_session_id, adapter_id, mode, base_sha, base_branch, model)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'starting', ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
+             acp_session_id, adapter_id, mode, base_sha, base_branch, model, parent_session_id, generation, context_tokens, baton_capsule)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'starting', ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id, agentId, input.taskId ?? null, resolvedJobId, input.roomId ?? null,
           runtimeCommand, input.pid ?? null, input.worktree ?? null,
           t, t, input.acpSessionId ?? null, input.adapterId ?? null,
-          oneOf(input.mode, TASK_MODES, 'mode', 'build'), input.baseSha ?? null, input.baseBranch ?? null, input.model ?? null
+          oneOf(input.mode, TASK_MODES, 'mode', 'build'), input.baseSha ?? null, input.baseBranch ?? null, input.model ?? null,
+          input.parentSessionId ?? null, generation, initialTokens, input.batonCapsule ?? null
         );
+      if (input.parentSessionId) {
+        this.db.prepare('UPDATE sessions SET superseded_by_session_id = ? WHERE id = ?').run(id, input.parentSessionId);
+      }
       // Automatically capture the active session ID and ACP session ID on the agent identity record
       this.db
         .prepare(
@@ -1698,7 +1708,15 @@ export class Repo {
       this.recordEvent(events, {
         type: 'session.started',
         subjectId: id,
-        payload: { agentId, taskId: input.taskId ?? null, jobId: resolvedJobId, roomId: input.roomId ?? null, adapterId: input.adapterId ?? null },
+        payload: {
+          agentId,
+          taskId: input.taskId ?? null,
+          jobId: resolvedJobId,
+          roomId: input.roomId ?? null,
+          adapterId: input.adapterId ?? null,
+          parentSessionId: input.parentSessionId ?? null,
+          generation,
+        },
         actorId: agentId,
         actorKind: 'agent',
         subjectType: 'session',
@@ -1707,7 +1725,7 @@ export class Repo {
     return this.getSession(id);
   }
 
-  updateSession(id: string, input: { state?: T.SessionState; pid?: number | null; lastSeenAt?: string; exitCode?: number | null; error?: string | null; turnCount?: number; acpSessionId?: string | null; model?: string | null }): T.Session {
+  updateSession(id: string, input: { state?: T.SessionState; pid?: number | null; lastSeenAt?: string; exitCode?: number | null; error?: string | null; turnCount?: number; acpSessionId?: string | null; model?: string | null; supersededBySessionId?: string | null; contextTokens?: number; batonCapsule?: string | null }): T.Session {
     const session = this.getSession(id);
     this.write((events) => {
       const fields: [string, SQLInputValue][] = [];
@@ -1719,6 +1737,9 @@ export class Repo {
       if (input.turnCount !== undefined) fields.push(['turn_count', input.turnCount]);
       if (input.acpSessionId !== undefined) fields.push(['acp_session_id', input.acpSessionId]);
       if (input.model !== undefined) fields.push(['model', input.model]);
+      if (input.supersededBySessionId !== undefined) fields.push(['superseded_by_session_id', input.supersededBySessionId]);
+      if (input.contextTokens !== undefined) fields.push(['context_tokens', input.contextTokens]);
+      if (input.batonCapsule !== undefined) fields.push(['baton_capsule', input.batonCapsule]);
       if (input.state === 'stopped' || input.state === 'failed') fields.push(['ended_at', now()]);
       this.db.prepare(`UPDATE sessions SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
 
@@ -1769,13 +1790,22 @@ export class Repo {
   appendTranscript(sessionId: string, input: T.AppendTranscriptInput): T.TranscriptEntry {
     this.getSession(sessionId);
     const seq = input.seq == null ? this.nextTranscriptSeq(sessionId) : positiveInt(input.seq, 'seq');
+    const serialized = jsonText(input.payload ?? {});
+    const estimatedDelta =
+      input.kind === 'prompt' ||
+      input.kind === 'message' ||
+      input.kind === 'agent_message_chunk' ||
+      input.kind === 'thought' ||
+      input.kind === 'tool'
+        ? Math.max(1, Math.ceil(serialized.length / 3.8))
+        : 0;
     const id = this.write((events) => {
       const res = this.db
         .prepare('INSERT INTO transcript_entries (session_id, kind, payload, created_at, seq, turn_id, item_id, role, title) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(sessionId, required(input.kind, 'kind'), jsonText(input.payload ?? {}), now(), seq, input.turnId ?? null, input.itemId ?? null, input.role ?? null, input.title ?? null);
+        .run(sessionId, required(input.kind, 'kind'), serialized, now(), seq, input.turnId ?? null, input.itemId ?? null, input.role ?? null, input.title ?? null);
       this.db
-        .prepare('UPDATE sessions SET last_event_at = ?, turn_count = COALESCE(turn_count, 0) + 1 WHERE id = ?')
-        .run(now(), sessionId);
+        .prepare('UPDATE sessions SET last_event_at = ?, turn_count = COALESCE(turn_count, 0) + 1, context_tokens = COALESCE(context_tokens, 0) + ? WHERE id = ?')
+        .run(now(), estimatedDelta, sessionId);
       this.recordEvent(events, {
         type: 'session.transcript',
         subjectId: sessionId,
@@ -1850,6 +1880,8 @@ export class Repo {
   recordUsage(input: T.RecordUsageInput): T.Usage {
     const id = newId('use');
     const cost = positiveInt(input.costCents, 'costCents', 0);
+    const inTok = positiveInt(input.inputTokens, 'inputTokens', 0);
+    const outTok = positiveInt(input.outputTokens, 'outputTokens', 0);
     this.write((events) => {
       this.db
         .prepare(
@@ -1858,10 +1890,15 @@ export class Repo {
         )
         .run(
           id, input.jobId ?? null, input.sessionId ?? null, input.model ?? null,
-          positiveInt(input.inputTokens, 'inputTokens', 0),
-          positiveInt(input.outputTokens, 'outputTokens', 0),
+          inTok,
+          outTok,
           cost, input.source ?? null, now()
         );
+      if (input.sessionId && inTok > 0) {
+        this.db
+          .prepare('UPDATE sessions SET context_tokens = MAX(COALESCE(context_tokens, 0), ?) WHERE id = ?')
+          .run(inTok, input.sessionId);
+      }
       if (input.jobId) {
         this.db.prepare('UPDATE jobs SET cost_cents = cost_cents + ?, updated_at = ? WHERE id = ?').run(cost, now(), input.jobId);
       }
@@ -2772,6 +2809,271 @@ export class Repo {
     });
     return this.getJob(jobId);
   }
+
+  // ---------------------------------------------------------------- design studio (infinite canvas)
+
+  listDesignBoards(filter: { projectId?: string; jobId?: string; roomId?: string } = {}): T.DesignBoard[] {
+    const where: string[] = [];
+    const params: SQLInputValue[] = [];
+    if (filter.projectId) {
+      where.push('b.project_id = ?');
+      params.push(filter.projectId);
+    }
+    if (filter.jobId) {
+      where.push('b.job_id = ?');
+      params.push(filter.jobId);
+    }
+    if (filter.roomId) {
+      where.push('b.room_id = ?');
+      params.push(filter.roomId);
+    }
+    return this.all(
+      `SELECT b.*,
+        (SELECT COUNT(*) FROM design_frames f WHERE f.board_id = b.id AND f.status != 'archived') AS frame_count,
+        (SELECT COUNT(*) FROM design_frames f WHERE f.board_id = b.id AND f.status = 'approved') AS approved_count
+       FROM design_boards b
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+       ORDER BY b.updated_at DESC`,
+      ...params
+    ).map((r) => toDesignBoard(r));
+  }
+
+  getDesignBoard(id: string): T.DesignBoard {
+    const row = this.one(
+      `SELECT b.*,
+        (SELECT COUNT(*) FROM design_frames f WHERE f.board_id = b.id AND f.status != 'archived') AS frame_count,
+        (SELECT COUNT(*) FROM design_frames f WHERE f.board_id = b.id AND f.status = 'approved') AS approved_count
+       FROM design_boards b WHERE b.id = ?`,
+      id
+    );
+    if (!row) throw new NotFoundError(`design board ${id} not found`);
+    const frames = this.all('SELECT * FROM design_frames WHERE board_id = ? ORDER BY created_at ASC', id).map((f) => {
+      const versions = this.all('SELECT * FROM design_frame_versions WHERE frame_id = ? ORDER BY version DESC', String(f.id)).map(toDesignFrameVersion);
+      return toDesignFrame(f, versions);
+    });
+    return toDesignBoard(row, frames);
+  }
+
+  createDesignBoard(input: T.CreateDesignBoardInput & { designTokens?: T.DesignTokens }): T.DesignBoard {
+    const title = required(input.title, 'title');
+    const mode = oneOf(input.mode, ['greenfield', 'extracted', 'hybrid'] as const, 'mode', 'greenfield');
+    const id = newId('dboard');
+    const t = now();
+    this.write((events) => {
+      this.db
+        .prepare(
+          `INSERT INTO design_boards
+            (id, project_id, job_id, room_id, title, description, mode, viewport_x, viewport_y, viewport_zoom, design_tokens_json, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0.85, ?, ?, ?, ?)`
+        )
+        .run(
+          id,
+          input.projectId ?? null,
+          input.jobId ?? null,
+          input.roomId ?? null,
+          title,
+          optionalString(input.description, 'description'),
+          mode,
+          jsonText(input.designTokens ?? {}),
+          input.createdBy?.trim() || 'winston',
+          t,
+          t
+        );
+      this.recordEvent(events, {
+        type: 'design.board_created',
+        subjectId: id,
+        payload: { title, mode, projectId: input.projectId ?? null, jobId: input.jobId ?? null },
+        subjectType: 'design_board',
+      });
+    });
+    return this.getDesignBoard(id);
+  }
+
+  updateDesignBoard(id: string, input: T.UpdateDesignBoardInput & { designTokens?: T.DesignTokens }): T.DesignBoard {
+    this.getDesignBoard(id);
+    this.write((events) => {
+      const fields: [string, SQLInputValue][] = [['updated_at', now()]];
+      if (input.title !== undefined) fields.push(['title', required(input.title, 'title')]);
+      if (input.description !== undefined) fields.push(['description', optionalString(input.description, 'description')]);
+      if (input.viewportX !== undefined) fields.push(['viewport_x', Number(input.viewportX)]);
+      if (input.viewportY !== undefined) fields.push(['viewport_y', Number(input.viewportY)]);
+      if (input.viewportZoom !== undefined) fields.push(['viewport_zoom', Math.max(0.2, Math.min(2.5, Number(input.viewportZoom)))]);
+      if (input.designTokens !== undefined) fields.push(['design_tokens_json', jsonText(input.designTokens)]);
+      this.db.prepare(`UPDATE design_boards SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
+      this.recordEvent(events, { type: 'design.board_updated', subjectId: id, subjectType: 'design_board' });
+    });
+    return this.getDesignBoard(id);
+  }
+
+  deleteDesignBoard(id: string): void {
+    this.getDesignBoard(id);
+    this.write((events) => {
+      this.db.prepare('DELETE FROM design_boards WHERE id = ?').run(id);
+      this.recordEvent(events, { type: 'design.board_deleted', subjectId: id, subjectType: 'design_board' });
+    });
+  }
+
+  getDesignFrame(id: string): T.DesignFrame {
+    const row = this.one('SELECT * FROM design_frames WHERE id = ?', id);
+    if (!row) throw new NotFoundError(`design frame ${id} not found`);
+    const versions = this.all('SELECT * FROM design_frame_versions WHERE frame_id = ? ORDER BY version DESC', id).map(toDesignFrameVersion);
+    return toDesignFrame(row, versions);
+  }
+
+  createDesignFrame(input: T.CreateDesignFrameInput & { htmlPath?: string | null }): T.DesignFrame {
+    const board = this.getDesignBoard(input.boardId);
+    const title = required(input.title, 'title');
+    const device = oneOf(input.device, ['phone', 'tablet', 'desktop', 'custom'] as const, 'device', 'phone');
+    const defaultDims = device === 'desktop' ? { w: 1200, h: 780 } : device === 'tablet' ? { w: 834, h: 1080 } : { w: 393, h: 852 };
+    const width = input.width ? Math.max(240, Number(input.width)) : defaultDims.w;
+    const height = input.height ? Math.max(240, Number(input.height)) : defaultDims.h;
+
+    // Auto-layout horizontally on the canvas if coordinates not specified
+    let x = input.x;
+    let y = input.y;
+    if (x == null || y == null) {
+      const existing = board.frames ?? [];
+      if (input.parentFrameId) {
+        const parent = existing.find((f) => f.id === input.parentFrameId);
+        if (parent) {
+          const siblings = existing.filter((f) => f.parentFrameId === parent.id);
+          x = parent.x + parent.width + 64;
+          y = parent.y + siblings.length * (Math.min(height, 460) + 48);
+        }
+      }
+      if (x == null || y == null) {
+        const maxRight = existing.reduce((acc, f) => Math.max(acc, f.x + f.width), 20);
+        x = existing.length === 0 ? 64 : maxRight + 64;
+        y = 64;
+      }
+    }
+
+    const id = newId('dframe');
+    const verId = newId('dfver');
+    const t = now();
+    const authorId = input.authorId?.trim() || 'atlas';
+    const htmlContent = input.htmlContent ?? '';
+
+    this.write((events) => {
+      this.db
+        .prepare(
+          `INSERT INTO design_frames
+            (id, board_id, parent_frame_id, title, version, device, width, height, x, y, status, source_files_json, html_path, html_content, notes, author_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          id,
+          board.id,
+          input.parentFrameId ?? null,
+          title,
+          device,
+          width,
+          height,
+          x,
+          y,
+          jsonText(input.sourceFiles ?? []),
+          input.htmlPath ?? null,
+          htmlContent,
+          optionalString(input.notes, 'notes'),
+          authorId,
+          t,
+          t
+        );
+      this.db
+        .prepare(
+          `INSERT INTO design_frame_versions
+            (id, frame_id, version, title, html_content, notes, author_id, created_at)
+           VALUES (?, ?, 1, ?, ?, ?, ?, ?)`
+        )
+        .run(verId, id, title, htmlContent, optionalString(input.notes, 'notes'), authorId, t);
+      this.db.prepare('UPDATE design_boards SET updated_at = ? WHERE id = ?').run(t, board.id);
+      this.recordEvent(events, {
+        type: 'design.frame_created',
+        subjectId: id,
+        payload: { boardId: board.id, title, device, parentFrameId: input.parentFrameId ?? null },
+        actorId: authorId,
+        actorKind: 'agent',
+        subjectType: 'design_frame',
+      });
+    });
+    return this.getDesignFrame(id);
+  }
+
+  updateDesignFrame(
+    id: string,
+    input: T.UpdateDesignFrameInput & {
+      htmlPath?: string | null;
+      bumpVersion?: boolean;
+      approvedBy?: string | null;
+      approvedAt?: string | null;
+      evidenceId?: string | null;
+    }
+  ): T.DesignFrame {
+    const existing = this.getDesignFrame(id);
+    const t = now();
+    const contentChanged = input.htmlContent !== undefined && input.htmlContent !== existing.htmlContent;
+    const nextVersion = contentChanged && input.bumpVersion !== false ? existing.version + 1 : existing.version;
+
+    this.write((events) => {
+      const fields: [string, SQLInputValue][] = [['updated_at', t]];
+      if (input.title !== undefined) fields.push(['title', required(input.title, 'title')]);
+      if (input.device !== undefined) fields.push(['device', oneOf(input.device, ['phone', 'tablet', 'desktop', 'custom'] as const, 'device')]);
+      if (input.width !== undefined) fields.push(['width', Math.max(240, Number(input.width))]);
+      if (input.height !== undefined) fields.push(['height', Math.max(240, Number(input.height))]);
+      if (input.x !== undefined) fields.push(['x', Number(input.x)]);
+      if (input.y !== undefined) fields.push(['y', Number(input.y)]);
+      if (input.status !== undefined) fields.push(['status', oneOf(input.status, ['draft', 'iterating', 'approved', 'archived'] as const, 'status')]);
+      if (input.sourceFiles !== undefined) fields.push(['source_files_json', jsonText(input.sourceFiles)]);
+      if (input.htmlPath !== undefined) fields.push(['html_path', input.htmlPath]);
+      if (input.htmlContent !== undefined) {
+        fields.push(['html_content', input.htmlContent]);
+        fields.push(['version', nextVersion]);
+      }
+      if (input.notes !== undefined) fields.push(['notes', optionalString(input.notes, 'notes')]);
+      if (input.authorId !== undefined) fields.push(['author_id', input.authorId]);
+      if (input.approvedBy !== undefined) fields.push(['approved_by', input.approvedBy]);
+      if (input.approvedAt !== undefined) fields.push(['approved_at', input.approvedAt]);
+      if (input.evidenceId !== undefined) fields.push(['evidence_id', input.evidenceId]);
+
+      this.db.prepare(`UPDATE design_frames SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
+
+      if (contentChanged && input.bumpVersion !== false) {
+        this.db
+          .prepare(
+            `INSERT INTO design_frame_versions
+              (id, frame_id, version, title, html_content, notes, author_id, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            newId('dfver'),
+            id,
+            nextVersion,
+            input.title ?? existing.title,
+            input.htmlContent!,
+            input.notes !== undefined ? optionalString(input.notes, 'notes') : existing.notes,
+            input.authorId ?? existing.authorId,
+            t
+          );
+      }
+      this.db.prepare('UPDATE design_boards SET updated_at = ? WHERE id = ?').run(t, existing.boardId);
+      this.recordEvent(events, {
+        type: 'design.frame_updated',
+        subjectId: id,
+        payload: { boardId: existing.boardId, version: nextVersion, status: input.status ?? existing.status },
+        subjectType: 'design_frame',
+      });
+    });
+    return this.getDesignFrame(id);
+  }
+
+  deleteDesignFrame(id: string): void {
+    const existing = this.getDesignFrame(id);
+    this.write((events) => {
+      this.db.prepare('DELETE FROM design_frames WHERE id = ?').run(id);
+      this.db.prepare('UPDATE design_boards SET updated_at = ? WHERE id = ?').run(now(), existing.boardId);
+      this.recordEvent(events, { type: 'design.frame_deleted', subjectId: id, payload: { boardId: existing.boardId }, subjectType: 'design_frame' });
+    });
+  }
 }
 
 // ------------------------------------------------------------------ row mapping
@@ -3048,6 +3350,11 @@ const toSession = (r: Row): T.Session => {
     lastEventAt: str(r.last_event_at),
     model: str(r.model),
     turnCount: num(r.turn_count),
+    parentSessionId: str(r.parent_session_id),
+    supersededBySessionId: str(r.superseded_by_session_id),
+    generation: r.generation == null ? 1 : Math.max(1, num(r.generation)),
+    contextTokens: Math.max(num(r.context_tokens), inputTokens),
+    batonCapsule: str(r.baton_capsule),
     usage,
   };
 };
@@ -3170,3 +3477,60 @@ const toAgentSchedule = (r: Row): T.AgentSchedule => ({
   runCount: num(r.run_count),
   createdAt: String(r.created_at),
 });
+
+const toDesignFrameVersion = (r: Row): T.DesignFrameVersion => ({
+  id: String(r.id),
+  frameId: String(r.frame_id),
+  version: num(r.version),
+  title: String(r.title),
+  htmlContent: String(r.html_content ?? ''),
+  notes: str(r.notes),
+  authorId: String(r.author_id ?? 'atlas'),
+  createdAt: String(r.created_at),
+});
+
+const toDesignFrame = (r: Row, versions?: T.DesignFrameVersion[]): T.DesignFrame => ({
+  id: String(r.id),
+  boardId: String(r.board_id),
+  parentFrameId: str(r.parent_frame_id),
+  title: String(r.title),
+  version: Math.max(1, num(r.version)),
+  device: (str(r.device) ?? 'phone') as T.DesignDeviceKind,
+  width: num(r.width) || 393,
+  height: num(r.height) || 852,
+  x: Number(r.x ?? 80),
+  y: Number(r.y ?? 80),
+  status: (str(r.status) ?? 'draft') as T.DesignFrameStatus,
+  sourceFiles: parseJson<string[]>(r.source_files_json, []),
+  htmlPath: str(r.html_path),
+  htmlContent: String(r.html_content ?? ''),
+  notes: str(r.notes),
+  authorId: String(r.author_id ?? 'atlas'),
+  approvedBy: str(r.approved_by),
+  approvedAt: str(r.approved_at),
+  evidenceId: str(r.evidence_id),
+  createdAt: String(r.created_at),
+  updatedAt: String(r.updated_at),
+  versions,
+});
+
+const toDesignBoard = (r: Row, frames?: T.DesignFrame[]): T.DesignBoard => ({
+  id: String(r.id),
+  projectId: str(r.project_id),
+  jobId: str(r.job_id),
+  roomId: str(r.room_id),
+  title: String(r.title),
+  description: str(r.description),
+  mode: (str(r.mode) ?? 'greenfield') as T.DesignBoardMode,
+  viewportX: Number(r.viewport_x ?? 0),
+  viewportY: Number(r.viewport_y ?? 0),
+  viewportZoom: Number(r.viewport_zoom ?? 0.85),
+  designTokens: parseJson<T.DesignTokens>(r.design_tokens_json, {}),
+  createdBy: String(r.created_by ?? 'winston'),
+  createdAt: String(r.created_at),
+  updatedAt: String(r.updated_at),
+  frameCount: r.frame_count != null ? num(r.frame_count) : frames?.length ?? 0,
+  approvedCount: r.approved_count != null ? num(r.approved_count) : frames?.filter((f) => f.status === 'approved').length ?? 0,
+  frames,
+});
+
