@@ -12,6 +12,7 @@ import {
   SlidersHorizontal,
   Terminal,
   Users,
+  Workflow,
   Zap,
 } from 'lucide-react';
 import type { Identity, JobSummary, Room, SearchHit, SearchKind, Session } from '@runtime/types';
@@ -244,6 +245,14 @@ export function CommandPalette({
         run: startCouncil,
       },
       {
+        key: 'jump-team-org',
+        group: 'Navigation',
+        label: 'Team & Org Chart',
+        detail: 'Visual hierarchy, lane separation & governance',
+        icon: <Workflow />,
+        run: go({ name: 'team' }),
+      },
+      {
         key: 'action-toggle-mode',
         group: 'Quick actions',
         label: mode === 'work' ? 'Switch to Dev Mode' : 'Switch to Work Mode',
@@ -258,6 +267,7 @@ export function CommandPalette({
       'action-leader': 'tell team leader dispatch direct command instructions',
       'action-new-job': 'new job create start task issue brief work',
       'action-council': 'run council roast room convene deliberate review evaluate',
+      'jump-team-org': 'team org organization chart hierarchy governance lanes audit',
       'action-toggle-mode': 'toggle work dev mode developer switch view',
     };
 
