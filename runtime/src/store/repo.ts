@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type * as T from '../api/types.ts';
@@ -110,6 +111,7 @@ export class Repo {
     this.db = db;
     this.onEvent = onEvent;
     this.seedCommunicationHub(legacyDbPath);
+    this.seedOkrs(legacyDbPath);
   }
 
   // ---------------------------------------------------------------- plumbing
@@ -399,6 +401,26 @@ export class Repo {
       });
     }
 
+    for (const r of this.all(
+      `SELECT id, title, description, quarter, progress_percent, status, created_at FROM okr_objectives
+       WHERE title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\' OR id LIKE ? ESCAPE '\\'
+       ORDER BY created_at DESC LIMIT ?`,
+      pattern,
+      pattern,
+      pattern,
+      perKind
+    )) {
+      hits.push({
+        kind: 'okr',
+        id: String(r.id),
+        title: String(r.title),
+        detail: `${String(r.quarter)} · ${Number(r.progress_percent)}% · ${String(r.status)}`,
+        roomId: null,
+        jobId: null,
+        at: str(r.created_at),
+      });
+    }
+
     return hits;
   }
 
@@ -652,7 +674,9 @@ export class Repo {
     const rows = this.all(
       `SELECT p.*,
         (SELECT COUNT(*) FROM rooms r WHERE r.project_id = p.id AND r.archived = 0) AS room_count,
-        (SELECT COUNT(*) FROM jobs j WHERE j.project_id = p.id AND j.stage NOT IN ('done','cancelled')) AS open_job_count
+        (SELECT COUNT(*) FROM jobs j WHERE j.project_id = p.id AND j.stage NOT IN ('done','cancelled')) AS open_job_count,
+        (SELECT COUNT(*) FROM project_tasks pt WHERE pt.project_id = p.id) AS task_count,
+        (SELECT COUNT(*) FROM project_tasks pt WHERE pt.project_id = p.id AND pt.status = 'done') AS done_task_count
        FROM projects p ${includeArchived ? '' : 'WHERE p.archived = 0'} ORDER BY p.name`
     );
     return rows.map((row) => toProject(row, this.listRepos(String(row.id))));
@@ -662,7 +686,9 @@ export class Repo {
     const row = this.one(
       `SELECT p.*,
         (SELECT COUNT(*) FROM rooms r WHERE r.project_id = p.id AND r.archived = 0) AS room_count,
-        (SELECT COUNT(*) FROM jobs j WHERE j.project_id = p.id AND j.stage NOT IN ('done','cancelled')) AS open_job_count
+        (SELECT COUNT(*) FROM jobs j WHERE j.project_id = p.id AND j.stage NOT IN ('done','cancelled')) AS open_job_count,
+        (SELECT COUNT(*) FROM project_tasks pt WHERE pt.project_id = p.id) AS task_count,
+        (SELECT COUNT(*) FROM project_tasks pt WHERE pt.project_id = p.id AND pt.status = 'done') AS done_task_count
        FROM projects p WHERE p.id = ?`,
       id
     );
@@ -3477,6 +3503,577 @@ export class Repo {
     const row = this.one('SELECT * FROM standups WHERE id = ?', id);
     return toStandup(row!);
   }
+
+  // ---------------------------------------------------------------- Strategic OKRs
+
+  seedOkrs(legacyDbPath?: string): void {
+    try {
+      const row = this.one('SELECT COUNT(*) AS c FROM okr_objectives');
+      if (row && Number(row.c) > 0) return; // already seeded
+
+      const candidates: string[] = [];
+      if (legacyDbPath) candidates.push(legacyDbPath);
+      if (process.env.MYAOS_LEGACY_DB) candidates.push(process.env.MYAOS_LEGACY_DB);
+      candidates.push(
+        path.resolve('data/myaos.db'),
+        path.resolve('../data/myaos.db'),
+        path.resolve('../../data/myaos.db'),
+        path.join(os.homedir(), 'WebstormProjects/CreativeSites-Ai-Team/data/myaos.db')
+      );
+
+      let foundDb: DatabaseSync | null = null;
+      for (const cand of candidates) {
+        if (cand && fs.existsSync(cand)) {
+          try {
+            foundDb = new DatabaseSync(cand, { open: true, readOnly: true });
+            break;
+          } catch {
+            // try next candidate
+          }
+        }
+      }
+
+      if (foundDb) {
+        try {
+          const objs = foundDb.prepare('SELECT * FROM okr_objectives').all() as any[];
+          const krs = foundDb.prepare('SELECT * FROM okr_key_results').all() as any[];
+          if (objs && objs.length > 0) {
+            this.write(() => {
+              for (const o of objs) {
+                this.db.prepare(
+                  `INSERT OR IGNORE INTO okr_objectives (id, title, description, owner_id, quarter, progress_percent, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                ).run(
+                  String(o.id),
+                  String(o.title),
+                  o.description ? String(o.description) : null,
+                  o.owner_id ? String(o.owner_id) : 'astra',
+                  o.quarter ? String(o.quarter) : 'Q4-2026',
+                  Number(o.progress_percent) || 0,
+                  o.status ? String(o.status) : 'on_track',
+                  o.created_at ? String(o.created_at) : now(),
+                  o.updated_at ? String(o.updated_at) : now()
+                );
+              }
+              for (const k of krs) {
+                this.db.prepare(
+                  `INSERT OR IGNORE INTO okr_key_results (id, objective_id, title, metric_type, current_value, target_value, unit, progress_percent, telemetry_query, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                ).run(
+                  String(k.id),
+                  String(k.objective_id),
+                  String(k.title),
+                  k.metric_type ? String(k.metric_type) : 'percentage',
+                  Number(k.current_value) || 0,
+                  Number(k.target_value) || 100,
+                  k.unit ? String(k.unit) : '%',
+                  Number(k.progress_percent) || 0,
+                  k.telemetry_query ? String(k.telemetry_query) : null,
+                  k.created_at ? String(k.created_at) : now(),
+                  k.updated_at ? String(k.updated_at) : now()
+                );
+              }
+            });
+            foundDb.close();
+            return;
+          }
+        } catch {
+          // ignore error reading legacy db
+        } finally {
+          try { foundDb.close(); } catch {}
+        }
+      }
+
+      // Default seed if no legacy data found
+      this.write(() => {
+        const t = now();
+        this.db.prepare(
+          `INSERT OR IGNORE INTO okr_objectives (id, title, description, owner_id, quarter, progress_percent, status, created_at, updated_at)
+           VALUES
+           ('OBJ_1', 'Elevate Myavana Chatbot to Executive-Grade 0-Drop Quality', 'Flawless UI widget streaming, native audio chimes, and verified regression pipelines', 'astra', 'Q4-2026', 75, 'on_track', ?, ?),
+           ('OBJ_2', 'Complete Autonomous Substrate Verification & Reality Sync', 'Enforce un-mocked verification across all agent turns with 100% truthfulness in SQLite', 'kael', 'Q4-2026', 88, 'on_track', ?, ?)`
+        ).run(t, t, t, t);
+
+        this.db.prepare(
+          `INSERT OR IGNORE INTO okr_key_results (id, objective_id, title, metric_type, current_value, target_value, unit, progress_percent, telemetry_query, created_at, updated_at)
+           VALUES
+           ('KR_1_1', 'OBJ_1', 'Widget streaming latency below 200ms', 'numeric', 180.0, 200.0, 'ms', 85, 'SELECT AVG(latency) FROM turns', ?, ?),
+           ('KR_1_2', 'OBJ_1', 'Zero un-handled exceptions in Chatbot turns', 'percentage', 96.0, 100.0, '%', 96, 'SELECT (1 - errors/total)*100', ?, ?),
+           ('KR_2_1', 'OBJ_2', '100% of implementing agent turns audited by Lead Verifier Kael', 'percentage', 88.0, 100.0, '%', 88, 'SELECT COUNT(*) FROM evidence WHERE passed = 1', ?, ?),
+           ('KR_2_2', 'OBJ_2', 'Automated Reality Engine reconciliation run continuously', 'binary', 1.0, 1.0, 'status', 100, NULL, ?, ?)`
+        ).run(t, t, t, t, t, t, t, t);
+      });
+    } catch {
+      // best-effort
+    }
+  }
+
+  listOkrs(): { objectives: T.OkrObjective[]; keyResults: T.OkrKeyResult[] } {
+    const objectives = this.all('SELECT * FROM okr_objectives ORDER BY created_at DESC').map(toOkrObjective);
+    const keyResults = this.all('SELECT * FROM okr_key_results ORDER BY created_at ASC').map(toOkrKeyResult);
+    return { objectives, keyResults };
+  }
+
+  saveOkrObjective(input: T.SaveOkrObjectiveInput): T.OkrObjective {
+    const id = input.id?.trim() || `OBJ_${Date.now().toString(36).slice(-4).toUpperCase()}`;
+    const ts = now();
+    const existing = this.one('SELECT * FROM okr_objectives WHERE id = ?', id);
+
+    this.write((events) => {
+      this.db.prepare(
+        `INSERT INTO okr_objectives (id, title, description, owner_id, quarter, progress_percent, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           title = excluded.title,
+           description = excluded.description,
+           owner_id = excluded.owner_id,
+           quarter = excluded.quarter,
+           status = excluded.status,
+           updated_at = excluded.updated_at`
+      ).run(
+        id,
+        input.title.trim(),
+        input.description?.trim() || null,
+        input.owner_id?.trim() || 'astra',
+        input.quarter?.trim() || 'Q4-2026',
+        existing ? Number(existing.progress_percent) : 0,
+        input.status || (existing ? String(existing.status) : 'on_track'),
+        existing ? String(existing.created_at) : ts,
+        ts
+      );
+      this.recordEvent(events, {
+        type: existing ? 'okr.objective_updated' : 'okr.objective_created',
+        subjectId: id,
+        payload: { title: input.title, quarter: input.quarter },
+        subjectType: 'okr_objective',
+      });
+    });
+
+    const row = this.one('SELECT * FROM okr_objectives WHERE id = ?', id);
+    return toOkrObjective(row!);
+  }
+
+  deleteOkrObjective(id: string): void {
+    this.write((events) => {
+      this.db.prepare('DELETE FROM okr_key_results WHERE objective_id = ?').run(id);
+      this.db.prepare('DELETE FROM okr_objectives WHERE id = ?').run(id);
+      this.recordEvent(events, {
+        type: 'okr.objective_deleted',
+        subjectId: id,
+        payload: { id },
+        subjectType: 'okr_objective',
+      });
+    });
+  }
+
+  saveOkrKeyResult(input: T.SaveOkrKeyResultInput): T.OkrKeyResult {
+    const id = input.id?.trim() || `KR_${input.objective_id.replace(/^OBJ_/, '')}_${Date.now().toString(36).slice(-3).toUpperCase()}`;
+    const ts = now();
+    const existing = this.one('SELECT * FROM okr_key_results WHERE id = ?', id);
+    const curr = Number(input.current_value ?? (existing ? existing.current_value : 0));
+    const target = Number(input.target_value ?? (existing ? existing.target_value : 100));
+    const progress = target > 0 ? Math.round(Math.min(100, Math.max(0, (curr / target) * 100))) : 0;
+
+    this.write((events) => {
+      this.db.prepare(
+        `INSERT INTO okr_key_results (id, objective_id, title, metric_type, current_value, target_value, unit, progress_percent, telemetry_query, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           objective_id = excluded.objective_id,
+           title = excluded.title,
+           metric_type = excluded.metric_type,
+           current_value = excluded.current_value,
+           target_value = excluded.target_value,
+           unit = excluded.unit,
+           progress_percent = excluded.progress_percent,
+           telemetry_query = excluded.telemetry_query,
+           updated_at = excluded.updated_at`
+      ).run(
+        id,
+        input.objective_id,
+        input.title.trim(),
+        input.metric_type || (existing ? String(existing.metric_type) : 'percentage'),
+        curr,
+        target,
+        input.unit?.trim() || (existing ? String(existing.unit || '%') : '%'),
+        progress,
+        input.telemetry_query?.trim() || null,
+        existing ? String(existing.created_at) : ts,
+        ts
+      );
+
+      this.recomputeObjectiveProgress(input.objective_id);
+
+      this.recordEvent(events, {
+        type: existing ? 'okr.key_result_updated' : 'okr.key_result_created',
+        subjectId: id,
+        payload: { title: input.title, objectiveId: input.objective_id, progress },
+        subjectType: 'okr_key_result',
+      });
+    });
+
+    const row = this.one('SELECT * FROM okr_key_results WHERE id = ?', id);
+    return toOkrKeyResult(row!);
+  }
+
+  deleteOkrKeyResult(id: string): void {
+    const kr = this.one('SELECT * FROM okr_key_results WHERE id = ?', id);
+    if (!kr) return;
+    const objId = String(kr.objective_id);
+
+    this.write((events) => {
+      this.db.prepare('DELETE FROM okr_key_results WHERE id = ?').run(id);
+      this.recomputeObjectiveProgress(objId);
+      this.recordEvent(events, {
+        type: 'okr.key_result_deleted',
+        subjectId: id,
+        payload: { id, objectiveId: objId },
+        subjectType: 'okr_key_result',
+      });
+    });
+  }
+
+  updateOkrProgress(krId: string, currentValue: number): { keyResult: T.OkrKeyResult; objective: T.OkrObjective } {
+    const kr = this.one('SELECT * FROM okr_key_results WHERE id = ?', krId);
+    if (!kr) throw new Error(`Key result not found: ${krId}`);
+
+    const target = Number(kr.target_value) || 100;
+    const progress = target > 0 ? Math.round(Math.min(100, Math.max(0, (currentValue / target) * 100))) : 0;
+    const ts = now();
+    const objId = String(kr.objective_id);
+
+    this.write((events) => {
+      this.db.prepare(
+        'UPDATE okr_key_results SET current_value = ?, progress_percent = ?, updated_at = ? WHERE id = ?'
+      ).run(currentValue, progress, ts, krId);
+
+      this.recomputeObjectiveProgress(objId);
+
+      this.recordEvent(events, {
+        type: 'okr.progress_updated',
+        subjectId: krId,
+        payload: { currentValue, progress, objectiveId: objId },
+        subjectType: 'okr_key_result',
+      });
+    });
+
+    const updatedKr = this.one('SELECT * FROM okr_key_results WHERE id = ?', krId);
+    const updatedObj = this.one('SELECT * FROM okr_objectives WHERE id = ?', objId);
+    return { keyResult: toOkrKeyResult(updatedKr!), objective: toOkrObjective(updatedObj!) };
+  }
+
+  recomputeObjectiveProgress(objectiveId: string): T.OkrObjective | null {
+    const row = this.one('SELECT AVG(progress_percent) AS avg_prog FROM okr_key_results WHERE objective_id = ?', objectiveId);
+    const avg = row?.avg_prog !== null && row?.avg_prog !== undefined ? Math.round(Number(row.avg_prog)) : 0;
+    const status = avg >= 80 ? 'on_track' : avg >= 40 ? 'at_risk' : 'behind';
+    const ts = now();
+
+    this.db.prepare(
+      'UPDATE okr_objectives SET progress_percent = ?, status = ?, updated_at = ? WHERE id = ?'
+    ).run(avg, status, ts, objectiveId);
+
+    const obj = this.one('SELECT * FROM okr_objectives WHERE id = ?', objectiveId);
+    return obj ? toOkrObjective(obj) : null;
+  }
+
+  getRealityHealthScore(): T.RealityAuditSummary {
+    const objCount = Number(this.one('SELECT COUNT(*) AS c FROM okr_objectives')?.c || 0);
+    const krCount = Number(this.one('SELECT COUNT(*) AS c FROM okr_key_results')?.c || 0);
+    const avgProgRow = this.one('SELECT AVG(progress_percent) AS a FROM okr_objectives');
+    const avgOkrProgress = avgProgRow?.a ? Math.round(Number(avgProgRow.a)) : 0;
+
+    const totalEvidence = Number(this.one('SELECT COUNT(*) AS c FROM evidence')?.c || 0);
+    const verifiedEvidence = Number(this.one('SELECT COUNT(*) AS c FROM evidence WHERE exit_code = 0')?.c || 0);
+    const activeJobs = Number(this.one("SELECT COUNT(*) AS c FROM jobs WHERE stage NOT IN ('done', 'cancelled')")?.c || 0);
+
+    const evidenceRatio = totalEvidence > 0 ? (verifiedEvidence / totalEvidence) : 1;
+    const healthScore = Math.round(Math.min(100, Math.max(0, (evidenceRatio * 60) + (avgOkrProgress * 0.4))));
+
+    return {
+      healthScore,
+      totalObjectives: objCount,
+      totalKeyResults: krCount,
+      avgOkrProgress,
+      verifiedEvidenceCount: verifiedEvidence,
+      totalEvidenceCount: totalEvidence,
+      activeJobsCount: activeJobs,
+      lastAuditTs: now(),
+    };
+  }
+
+  // ---------------------------------------------------------------- Project Tasks & Sprint Management
+
+  seedProjectManagement(legacyDbPath?: string): void {
+    try {
+      const row = this.one('SELECT COUNT(*) AS c FROM project_tasks');
+      if (row && Number(row.c) > 0) return; // already seeded
+
+      const candidates: string[] = [];
+      if (legacyDbPath) candidates.push(legacyDbPath);
+      if (process.env.MYAOS_LEGACY_DB) candidates.push(process.env.MYAOS_LEGACY_DB);
+      candidates.push(
+        path.resolve('data/myaos.db'),
+        path.resolve('../data/myaos.db'),
+        path.resolve('../../data/myaos.db'),
+        path.join(os.homedir(), 'WebstormProjects/CreativeSites-Ai-Team/data/myaos.db')
+      );
+
+      let foundDb: DatabaseSync | null = null;
+      for (const cand of candidates) {
+        if (cand && fs.existsSync(cand)) {
+          try {
+            foundDb = new DatabaseSync(cand, { open: true, readOnly: true });
+            break;
+          } catch {
+            // try next candidate
+          }
+        }
+      }
+
+      if (!foundDb) return;
+
+      try {
+        const legacyProjects = foundDb.prepare('SELECT * FROM projects').all() as Row[];
+        const legacyTasks = foundDb.prepare('SELECT * FROM tasks').all() as Row[];
+        let legacyMilestones: Row[] = [];
+        try {
+          legacyMilestones = foundDb.prepare('SELECT * FROM milestones').all() as Row[];
+        } catch {}
+
+        this.write(() => {
+          // 1. Projects
+          for (const p of legacyProjects) {
+            const pId = String(p.id);
+            const pTitle = String(p.title || p.name || pId);
+            const pDesc = p.description ? String(p.description) : null;
+            const pRepo = p.repo ? String(p.repo) : null;
+            const pTargetDate = p.target_date ? String(p.target_date) : null;
+            const pStatus = p.status ? String(p.status) : 'active';
+            const pCreated = p.created_at ? String(p.created_at) : now();
+            const pUpdated = p.updated_at ? String(p.updated_at) : now();
+
+            const existing = this.one('SELECT id FROM projects WHERE id = ? OR name = ?', pId, pTitle);
+            if (existing) {
+              this.db.prepare(
+                `UPDATE projects SET
+                   target_date = COALESCE(?, target_date),
+                   status = COALESCE(status, ?),
+                   repo = COALESCE(repo, root_path, ?),
+                   updated_at = ?
+                 WHERE id = ?`
+              ).run(pTargetDate, pStatus, pRepo, pUpdated, existing.id as string);
+            } else {
+              this.db.prepare(
+                `INSERT INTO projects (id, name, slug, description, root_path, repo, status, target_date, team_id, settings, archived, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creativesites', '{}', 0, ?, ?)`
+              ).run(
+                pId,
+                pTitle,
+                slugify(pTitle),
+                pDesc,
+                pRepo,
+                pRepo,
+                pStatus,
+                pTargetDate,
+                pCreated,
+                pUpdated
+              );
+            }
+          }
+
+          // 2. Milestones
+          for (const m of legacyMilestones) {
+            this.db.prepare(
+              `INSERT OR IGNORE INTO milestones (id, project_id, title, description, status, due_at, completed_at, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+            ).run(
+              String(m.id),
+              m.project_id ? String(m.project_id) : null,
+              String(m.title),
+              m.description ? String(m.description) : null,
+              m.status ? String(m.status) : 'pending',
+              m.due_at ? String(m.due_at) : null,
+              m.completed_at ? String(m.completed_at) : null,
+              m.created_at ? String(m.created_at) : now()
+            );
+          }
+
+          // 3. Tasks -> project_tasks
+          for (const t of legacyTasks) {
+            this.db.prepare(
+              `INSERT OR IGNORE INTO project_tasks (
+                 id, project_id, milestone_id, okr_kr_id, title, description, creator,
+                 assignee_id, required_capabilities, priority, status, dependencies,
+                 acceptance_criteria, repo, branch, artifacts, original_source,
+                 original_file_path, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            ).run(
+              String(t.id),
+              t.project_id ? String(t.project_id) : null,
+              t.milestone_id ? String(t.milestone_id) : null,
+              t.okr_kr_id ? String(t.okr_kr_id) : null,
+              String(t.title),
+              t.description ? String(t.description) : null,
+              t.creator ? String(t.creator) : null,
+              t.assignee_id ? String(t.assignee_id) : null,
+              t.required_capabilities ? String(t.required_capabilities) : '[]',
+              t.priority ? String(t.priority) : 'medium',
+              t.status ? String(t.status) : 'open',
+              t.dependencies ? String(t.dependencies) : '[]',
+              t.acceptance_criteria ? String(t.acceptance_criteria) : '[]',
+              t.repo ? String(t.repo) : null,
+              t.branch ? String(t.branch) : null,
+              t.artifacts ? String(t.artifacts) : '[]',
+              t.original_source ? String(t.original_source) : null,
+              t.original_file_path ? String(t.original_file_path) : null,
+              t.created_at ? String(t.created_at) : now(),
+              t.updated_at ? String(t.updated_at) : now()
+            );
+          }
+        });
+      } finally {
+        try { foundDb.close(); } catch {}
+      }
+    } catch (err) {
+      console.warn('[runtime] seedProjectManagement notice:', (err as Error).message);
+    }
+  }
+
+  listProjectTasks(filter?: { projectId?: string; status?: string; priority?: string; assigneeId?: string; limit?: number }): T.ProjectTask[] {
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+
+    if (filter?.projectId && filter.projectId !== 'all') {
+      conditions.push('project_id = ?');
+      params.push(filter.projectId);
+    }
+    if (filter?.status && filter.status !== 'all') {
+      conditions.push('status = ?');
+      params.push(filter.status);
+    }
+    if (filter?.priority && filter.priority !== 'all') {
+      conditions.push('priority = ?');
+      params.push(filter.priority);
+    }
+    if (filter?.assigneeId && filter.assigneeId !== 'all') {
+      conditions.push('LOWER(assignee_id) = LOWER(?)');
+      params.push(filter.assigneeId);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const limit = Math.max(1, filter?.limit ?? 150);
+    params.push(limit);
+
+    const rows = this.all(
+      `SELECT * FROM project_tasks ${where} ORDER BY created_at DESC LIMIT ?`,
+      ...params
+    );
+    return rows.map(toProjectTask);
+  }
+
+  getProjectTask(id: string): T.ProjectTask {
+    const row = this.one('SELECT * FROM project_tasks WHERE id = ?', id);
+    if (!row) throw new NotFoundError(`project task ${id} not found`);
+    return toProjectTask(row);
+  }
+
+  createProjectTask(input: T.CreateProjectTaskInput): T.ProjectTask {
+    const title = required(input.title, 'title');
+    const id = input.id?.trim() || `TASK_${Date.now().toString(36).slice(-4).toUpperCase()}`;
+    const t = now();
+
+    this.write((events) => {
+      this.db.prepare(
+        `INSERT INTO project_tasks (
+           id, project_id, milestone_id, okr_kr_id, title, description, creator,
+           assignee_id, required_capabilities, priority, status, repo, branch,
+           dependencies, acceptance_criteria, artifacts, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, '[]', '[]', '[]', ?, ?)`
+      ).run(
+        id,
+        input.projectId?.trim() || null,
+        input.milestoneId?.trim() || null,
+        input.okrKrId?.trim() || null,
+        title,
+        input.description?.trim() || null,
+        input.creator?.trim() || 'winston',
+        input.assigneeId?.trim() || null,
+        input.priority || 'medium',
+        input.status || 'open',
+        input.repo?.trim() || null,
+        input.branch?.trim() || null,
+        t,
+        t
+      );
+
+      this.recordEvent(events, {
+        type: 'project_task.created',
+        subjectId: id,
+        payload: { title, priority: input.priority || 'medium', status: input.status || 'open' },
+        subjectType: 'project_task',
+      });
+    });
+
+    return this.getProjectTask(id);
+  }
+
+  updateProjectTask(id: string, input: T.UpdateProjectTaskInput): T.ProjectTask {
+    const existing = this.one('SELECT * FROM project_tasks WHERE id = ?', id);
+    if (!existing) throw new NotFoundError(`project task ${id} not found`);
+    const t = now();
+
+    const title = input.title !== undefined ? input.title.trim() : String(existing.title);
+    const description = input.description !== undefined ? input.description?.trim() || null : (existing.description ? String(existing.description) : null);
+    const projectId = input.projectId !== undefined ? input.projectId?.trim() || null : (existing.project_id ? String(existing.project_id) : null);
+    const assigneeId = input.assigneeId !== undefined ? input.assigneeId?.trim() || null : (existing.assignee_id ? String(existing.assignee_id) : null);
+    const priority = input.priority !== undefined ? input.priority : String(existing.priority);
+    const status = input.status !== undefined ? input.status : String(existing.status);
+    const repo = input.repo !== undefined ? input.repo?.trim() || null : (existing.repo ? String(existing.repo) : null);
+    const branch = input.branch !== undefined ? input.branch?.trim() || null : (existing.branch ? String(existing.branch) : null);
+
+    this.write((events) => {
+      this.db.prepare(
+        `UPDATE project_tasks SET
+           title = ?, description = ?, project_id = ?, assignee_id = ?,
+           priority = ?, status = ?, repo = ?, branch = ?, updated_at = ?
+         WHERE id = ?`
+      ).run(
+        title, description, projectId, assigneeId,
+        priority, status, repo, branch, t,
+        id
+      );
+
+      this.recordEvent(events, {
+        type: 'project_task.updated',
+        subjectId: id,
+        payload: { title, priority, status, assigneeId },
+        subjectType: 'project_task',
+      });
+    });
+
+    return this.getProjectTask(id);
+  }
+
+  deleteProjectTask(id: string): void {
+    const existing = this.one('SELECT id FROM project_tasks WHERE id = ?', id);
+    if (!existing) throw new NotFoundError(`project task ${id} not found`);
+
+    this.write((events) => {
+      this.db.prepare('DELETE FROM project_tasks WHERE id = ?').run(id);
+      this.recordEvent(events, {
+        type: 'project_task.deleted',
+        subjectId: id,
+        subjectType: 'project_task',
+      });
+    });
+  }
+
+  listMilestones(projectId?: string): T.Milestone[] {
+    const rows = projectId
+      ? this.all('SELECT * FROM milestones WHERE project_id = ? ORDER BY due_at ASC, created_at ASC', projectId)
+      : this.all('SELECT * FROM milestones ORDER BY due_at ASC, created_at ASC');
+    return rows.map(toMilestone);
+  }
 }
 
 // ------------------------------------------------------------------ row mapping
@@ -3563,6 +4160,12 @@ const toProject = (r: Row, repos: T.Repo[]): T.Project => ({
   repos,
   roomCount: num(r.room_count),
   openJobCount: num(r.open_job_count),
+  status: str(r.status) || 'active',
+  repo: str(r.repo) || str(r.root_path),
+  targetDate: str(r.target_date),
+  updatedAt: str(r.updated_at),
+  taskCount: num(r.task_count),
+  doneTaskCount: num(r.done_task_count),
 });
 
 const toRoom = (r: Row): T.Room => ({
@@ -3994,5 +4597,64 @@ const toStandup = (r: Row): T.Standup => ({
   ts: String(r.ts),
   original_file_path: str(r.original_file_path),
 });
+
+const toOkrObjective = (r: Row): T.OkrObjective => ({
+  id: String(r.id),
+  title: String(r.title),
+  description: str(r.description),
+  owner_id: str(r.owner_id),
+  quarter: String(r.quarter),
+  progress_percent: num(r.progress_percent),
+  status: (str(r.status) ?? 'on_track') as T.OkrObjective['status'],
+  created_at: String(r.created_at),
+  updated_at: String(r.updated_at),
+});
+
+const toOkrKeyResult = (r: Row): T.OkrKeyResult => ({
+  id: String(r.id),
+  objective_id: String(r.objective_id),
+  title: String(r.title),
+  metric_type: (str(r.metric_type) ?? 'percentage') as T.OkrKeyResult['metric_type'],
+  current_value: Number(r.current_value) || 0,
+  target_value: Number(r.target_value) || 0,
+  unit: str(r.unit),
+  progress_percent: num(r.progress_percent),
+  telemetry_query: str(r.telemetry_query),
+  created_at: String(r.created_at),
+  updated_at: String(r.updated_at),
+});
+
+const toProjectTask = (r: Row): T.ProjectTask => ({
+  id: String(r.id),
+  projectId: str(r.project_id),
+  milestoneId: str(r.milestone_id),
+  okrKrId: str(r.okr_kr_id),
+  title: String(r.title),
+  description: str(r.description),
+  creator: str(r.creator),
+  assigneeId: str(r.assignee_id),
+  requiredCapabilities: parseJson<string[]>(r.required_capabilities, []),
+  priority: (str(r.priority) ?? 'medium') as T.ProjectTaskPriority,
+  status: (str(r.status) ?? 'open') as T.ProjectTaskStatus,
+  repo: str(r.repo),
+  branch: str(r.branch),
+  dependencies: parseJson<string[]>(r.dependencies, []),
+  acceptanceCriteria: parseJson<string[]>(r.acceptance_criteria, []),
+  artifacts: parseJson<string[]>(r.artifacts, []),
+  createdAt: String(r.created_at),
+  updatedAt: String(r.updated_at),
+});
+
+const toMilestone = (r: Row): T.Milestone => ({
+  id: String(r.id),
+  projectId: str(r.project_id),
+  title: String(r.title),
+  description: str(r.description),
+  status: (str(r.status) ?? 'pending') as T.Milestone['status'],
+  dueAt: str(r.due_at),
+  completedAt: str(r.completed_at),
+  createdAt: String(r.created_at),
+});
+
 
 

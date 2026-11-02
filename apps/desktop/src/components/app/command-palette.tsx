@@ -4,12 +4,14 @@ import {
   Briefcase,
   Crown,
   Hash,
+  Kanban,
   MessageSquare,
   PlusCircle,
   Scale,
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  Target,
   Terminal,
   Users,
   Workflow,
@@ -40,6 +42,8 @@ function routeFor(hit: SearchHit): Route {
       return hit.jobId ? { name: 'dev', jobId: hit.jobId } : { name: 'dev' };
     case 'evidence':
       return hit.jobId ? { name: 'job', jobId: hit.jobId } : { name: 'home' };
+    case 'okr':
+      return { name: 'okrs' };
   }
 }
 
@@ -50,6 +54,7 @@ const KIND_GROUP: Record<SearchKind, { label: string; icon: React.ReactNode }> =
   identity: { label: 'Coworkers', icon: <Users /> },
   session: { label: 'Sessions', icon: <Terminal /> },
   evidence: { label: 'Evidence', icon: <ShieldCheck /> },
+  okr: { label: 'Strategic OKRs', icon: <Target /> },
 };
 
 type Pending =
@@ -253,6 +258,22 @@ export function CommandPalette({
         run: go({ name: 'team' }),
       },
       {
+        key: 'jump-projects',
+        group: 'Navigation',
+        label: 'Project Management & Sprint Board',
+        detail: 'Sprint tasks, kanban lanes, project portfolio & dispatch',
+        icon: <Kanban />,
+        run: go({ name: 'projects' }),
+      },
+      {
+        key: 'jump-okrs',
+        group: 'Navigation',
+        label: 'Strategic OKRs',
+        detail: 'Executive goals, telemetry key results & reality health',
+        icon: <Target />,
+        run: go({ name: 'okrs' }),
+      },
+      {
         key: 'action-toggle-mode',
         group: 'Quick actions',
         label: mode === 'work' ? 'Switch to Dev Mode' : 'Switch to Work Mode',
@@ -268,6 +289,7 @@ export function CommandPalette({
       'action-new-job': 'new job create start task issue brief work',
       'action-council': 'run council roast room convene deliberate review evaluate',
       'jump-team-org': 'team org organization chart hierarchy governance lanes audit',
+      'jump-okrs': 'okr strategic objectives key results target goals metrics reality audit north star',
       'action-toggle-mode': 'toggle work dev mode developer switch view',
     };
 

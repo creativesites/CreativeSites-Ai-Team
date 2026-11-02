@@ -449,7 +449,7 @@ export function DesignStudioScreen({
   const frameMap = new Map(frames.map((f) => [f.id, f]));
 
   return (
-    <div className="flex h-[calc(100vh-48px)] min-h-[640px] flex-col gap-2.5 overflow-hidden">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-2.5 overflow-hidden">
       {statusBanner && (
         <div
           role="status"

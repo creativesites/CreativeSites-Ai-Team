@@ -5,8 +5,8 @@ import { EmptyState } from '@/components/app/status';
 import { Toaster } from '@/components/app/toaster';
 import { href, useRoute, type Route } from '@/lib/route';
 import { RuntimeProvider, useRuntime, useRuntimeData, type Loadable } from '@/lib/runtime-context';
+import { cn } from '@/lib/utils';
 import { ApprovalsScreen } from '@/screens/approvals';
-import { CoworkersScreen } from '@/screens/coworkers';
 import { TeamScreen } from '@/screens/team';
 import { JobsScreen } from '@/screens/jobs';
 import { SettingsScreen } from '@/screens/settings';
@@ -18,6 +18,8 @@ import { CouncilRoomScreen } from '@/screens/council-room';
 import { DesignStudioScreen } from '@/screens/design-studio';
 import { CommunicationScreen } from '@/screens/communication';
 import { RoomScreen } from '@/screens/room';
+import { OkrsScreen } from '@/screens/okrs';
+import { ProjectsScreen } from '@/screens/projects';
 
 const DEFAULT_OWNER_ID = 'winston';
 const DEFAULT_OWNER_NAME = 'Winston';
@@ -64,6 +66,8 @@ function Workspace({ route }: { route: Route }) {
     DEFAULT_OWNER_ID;
   const ownerName = ownerIdentity?.name || DEFAULT_OWNER_NAME;
 
+  const isFullWindowRoute = route.name === 'council' || route.name === 'verdict' || route.name === 'design-studio';
+
   return (
     <div className="flex h-screen flex-col gap-3 overflow-hidden p-3 md:flex-row">
       <Sidebar
@@ -77,7 +81,12 @@ function Workspace({ route }: { route: Route }) {
         identities={idList}
         sessions={list(sessions)}
       />
-      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+      <div
+        className={cn(
+          'flex h-full min-h-0 min-w-0 flex-1 flex-col',
+          isFullWindowRoute ? 'overflow-hidden gap-0 pr-0' : 'gap-3 overflow-y-auto pr-1'
+        )}
+      >
         <RuntimeBanner />
         <Screen
           route={route}
@@ -174,6 +183,32 @@ function Screen({
           onStartJob={client ? startJob : undefined}
         />
       );
+    case 'projects':
+      return (
+        <ProjectsScreen
+          projects={projects}
+          identities={identities}
+          jobs={jobs}
+          rooms={rooms}
+          initialSubpage={route.subpage}
+          initialProjectId={route.projectId}
+          ownerId={ownerId}
+          ownerName={ownerName}
+          onStartJob={client ? startJob : undefined}
+        />
+      );
+    case 'okrs':
+      return (
+        <OkrsScreen
+          identities={identities}
+          jobs={jobs}
+          rooms={rooms}
+          initialQuarter={route.quarter}
+          ownerId={ownerId}
+          ownerName={ownerName}
+          onStartJob={client ? async (r) => void (await startJob({ text: r.text, roomId: r.roomId ?? null, newRoomName: null, projectId: null })) : undefined}
+        />
+      );
     case 'settings':
       return <SettingsScreen identities={identities} adapters={adapters} projects={projects} />;
     case 'team':
@@ -181,11 +216,15 @@ function Screen({
         <TeamScreen
           identities={identities}
           sessions={sessions}
+          adapters={adapters}
           teams={teams}
           jobs={jobs}
           selectedAgentId={route.agentId}
           ownerName={ownerName}
           ownerId={ownerId}
+          defaultTab="all"
+          onCreate={client ? async (i) => void (await client.createIdentity(i)) : undefined}
+          onUpdate={client ? async (id, i) => void (await client.updateIdentity(id, i)) : undefined}
         />
       );
     case 'communication':
@@ -200,10 +239,16 @@ function Screen({
       );
     case 'coworkers':
       return (
-        <CoworkersScreen
+        <TeamScreen
           identities={identities}
           sessions={sessions}
           adapters={adapters}
+          teams={teams}
+          jobs={jobs}
+          selectedAgentId={undefined}
+          ownerName={ownerName}
+          ownerId={ownerId}
+          defaultTab="all"
           onCreate={client ? async (i) => void (await client.createIdentity(i)) : undefined}
           onUpdate={client ? async (id, i) => void (await client.updateIdentity(id, i)) : undefined}
         />

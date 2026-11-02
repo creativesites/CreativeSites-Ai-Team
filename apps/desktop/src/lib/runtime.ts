@@ -62,18 +62,28 @@ import type {
   JobStageHistory,
   JobSummary,
   Message,
+  OkrKeyResult,
+  OkrObjective,
   PickFolderResult,
   PostMessageInput,
   PostThreadReplyInput,
+  Milestone,
   Project,
   ProjectFileContent,
   ProjectFileItem,
+  ProjectTask,
+  CreateProjectTaskInput,
+  UpdateProjectTaskInput,
   RateLimitReportInput,
+  RealityAuditSummary,
   Repo,
   Room,
   RoomMember,
   RunCouncilInput,
   RuntimeEvent,
+  SaveOkrKeyResultInput,
+  SaveOkrObjectiveInput,
+  UpdateOkrProgressInput,
   SearchHit,
   SendInboxMessageInput,
   Session,
@@ -116,6 +126,19 @@ export type ConnectionState =
   | { status: 'connecting' }
   | { status: 'connected'; connection: RuntimeConnection; health: Health }
   | { status: 'unavailable'; reason: string };
+
+export type {
+  Milestone,
+  ProjectTask,
+  CreateProjectTaskInput,
+  UpdateProjectTaskInput,
+  OkrObjective,
+  OkrKeyResult,
+  RealityAuditSummary,
+  SaveOkrKeyResultInput,
+  SaveOkrObjectiveInput,
+  UpdateOkrProgressInput,
+};
 
 /**
  * Finds the running runtime. In the desktop app the Rust side reads
@@ -287,6 +310,31 @@ export class RuntimeClient {
   addRepo = (projectId: string, input: CreateRepoInput) =>
     this.request<Repo>('POST', `/v1/projects/${encodeURIComponent(projectId)}/repos`, input);
   removeRepo = (repoId: string) => this.request<unknown>('DELETE', `/v1/repos/${encodeURIComponent(repoId)}`);
+
+  // ---- project tasks & sprint management
+  projectTasks = (filter: { projectId?: string; status?: string; priority?: string; assigneeId?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filter)) if (v !== undefined && v !== '') q.set(k, String(v));
+    const suffix = q.toString() ? `?${q}` : '';
+    return this.request<ProjectTask[]>('GET', `/v1/project-tasks${suffix}`);
+  };
+  projectTask = (id: string) => this.request<ProjectTask>('GET', `/v1/project-tasks/${encodeURIComponent(id)}`);
+  createProjectTask = (input: CreateProjectTaskInput) => this.request<ProjectTask>('POST', '/v1/project-tasks', input);
+  updateProjectTask = (id: string, input: UpdateProjectTaskInput) =>
+    this.request<ProjectTask>('PATCH', `/v1/project-tasks/${encodeURIComponent(id)}`, input);
+  deleteProjectTask = (id: string) => this.request<unknown>('DELETE', `/v1/project-tasks/${encodeURIComponent(id)}`);
+  milestones = (projectId?: string) =>
+    this.request<Milestone[]>('GET', `/v1/milestones${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`);
+
+  // ---- strategic okrs
+  okrs = () => this.request<{ objectives: OkrObjective[]; keyResults: OkrKeyResult[] }>('GET', '/v1/okrs');
+  saveOkrObjective = (input: SaveOkrObjectiveInput) => this.request<OkrObjective>('POST', '/v1/okrs/objectives', input);
+  deleteOkrObjective = (id: string) => this.request<unknown>('DELETE', `/v1/okrs/objectives/${encodeURIComponent(id)}`);
+  saveOkrKeyResult = (input: SaveOkrKeyResultInput) => this.request<OkrKeyResult>('POST', '/v1/okrs/key-results', input);
+  deleteOkrKeyResult = (id: string) => this.request<unknown>('DELETE', `/v1/okrs/key-results/${encodeURIComponent(id)}`);
+  updateOkrProgress = (krId: string, currentValue: number) =>
+    this.request<{ keyResult: OkrKeyResult; objective: OkrObjective }>('POST', `/v1/okrs/key-results/${encodeURIComponent(krId)}/progress`, { current_value: currentValue });
+  realityAudit = () => this.request<RealityAuditSummary>('GET', '/v1/okrs/reality-audit');
 
   room = (id: string) => this.request<Room>('GET', `/v1/rooms/${encodeURIComponent(id)}`);
   updateRoom = (id: string, input: { name?: string; projectId?: string | null; teamId?: string | null; archived?: boolean }) =>

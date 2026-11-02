@@ -164,6 +164,12 @@ export interface Project {
   repos: Repo[];
   roomCount: number;
   openJobCount: number;
+  status?: string;
+  repo?: string | null;
+  targetDate?: string | null;
+  updatedAt?: string | null;
+  taskCount?: number;
+  doneTaskCount?: number;
 }
 
 export interface Workspace {
@@ -754,7 +760,7 @@ export interface Summary {
   liveSessions: number;
 }
 
-export type SearchKind = 'job' | 'room' | 'message' | 'identity' | 'session' | 'evidence';
+export type SearchKind = 'job' | 'room' | 'message' | 'identity' | 'session' | 'evidence' | 'okr';
 
 /** One match from GET /v1/search. `roomId` and `jobId` say where to jump when the hit is opened. */
 export interface SearchHit {
@@ -1557,5 +1563,132 @@ export interface AiGenerateResponse {
   text: string;
   model: string;
 }
+
+// ---------------------------------------------------------------- Strategic OKRs
+
+export interface OkrObjective {
+  id: string;
+  title: string;
+  description: string | null;
+  owner_id: string | null;
+  quarter: string;
+  progress_percent: number;
+  status: 'on_track' | 'at_risk' | 'behind' | 'completed';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OkrKeyResult {
+  id: string;
+  objective_id: string;
+  title: string;
+  metric_type: 'percentage' | 'numeric' | 'boolean' | 'binary';
+  current_value: number;
+  target_value: number;
+  unit: string | null;
+  progress_percent: number;
+  telemetry_query: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SaveOkrObjectiveInput {
+  id?: string;
+  title: string;
+  description?: string;
+  owner_id?: string;
+  quarter?: string;
+  status?: 'on_track' | 'at_risk' | 'behind' | 'completed';
+}
+
+export interface SaveOkrKeyResultInput {
+  id?: string;
+  objective_id: string;
+  title: string;
+  metric_type?: 'percentage' | 'numeric' | 'boolean' | 'binary';
+  current_value?: number;
+  target_value?: number;
+  unit?: string;
+  telemetry_query?: string;
+}
+
+export interface UpdateOkrProgressInput {
+  current_value: number;
+}
+
+export interface RealityAuditSummary {
+  healthScore: number;
+  totalObjectives: number;
+  totalKeyResults: number;
+  avgOkrProgress: number;
+  verifiedEvidenceCount: number;
+  totalEvidenceCount: number;
+  activeJobsCount: number;
+  lastAuditTs: string;
+}
+
+// ---------------------------------------------------------------- Project Tasks & Sprint Management
+
+export type ProjectTaskStatus = 'open' | 'claimed' | 'in_progress' | 'blocked' | 'in_review' | 'done' | 'failed' | 'unresolved';
+export type ProjectTaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface ProjectTask {
+  id: string;
+  projectId: string | null;
+  milestoneId: string | null;
+  okrKrId: string | null;
+  title: string;
+  description: string | null;
+  creator: string | null;
+  assigneeId: string | null;
+  requiredCapabilities: string[];
+  priority: ProjectTaskPriority;
+  status: ProjectTaskStatus;
+  repo: string | null;
+  branch: string | null;
+  dependencies: string[];
+  acceptanceCriteria: string[];
+  artifacts: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProjectTaskInput {
+  id?: string;
+  projectId?: string | null;
+  milestoneId?: string | null;
+  okrKrId?: string | null;
+  title: string;
+  description?: string | null;
+  creator?: string | null;
+  assigneeId?: string | null;
+  priority?: ProjectTaskPriority;
+  status?: ProjectTaskStatus;
+  repo?: string | null;
+  branch?: string | null;
+}
+
+export interface UpdateProjectTaskInput {
+  title?: string;
+  description?: string | null;
+  projectId?: string | null;
+  assigneeId?: string | null;
+  priority?: ProjectTaskPriority;
+  status?: ProjectTaskStatus;
+  repo?: string | null;
+  branch?: string | null;
+}
+
+export interface Milestone {
+  id: string;
+  projectId: string | null;
+  title: string;
+  description: string | null;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  dueAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
 
 

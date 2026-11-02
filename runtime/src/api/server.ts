@@ -417,6 +417,39 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('GET', '/v1/projects/:id', (ctx) => ({ status: 200, body: repo.getProject(ctx.params.id!) })),
     route('POST', '/v1/projects/:id', (ctx) => ({ status: 200, body: repo.updateProject(ctx.params.id!, ctx.body as T.UpdateProjectInput) })),
     route('GET', '/v1/projects/:id/status', (ctx) => ({ status: 200, body: projectStatus(ctx.params.id!) })),
+
+    // project tasks & sprint management
+    route('GET', '/v1/project-tasks', (ctx) => {
+      const projectId = ctx.query.get('projectId') ?? undefined;
+      const status = ctx.query.get('status') ?? undefined;
+      const priority = ctx.query.get('priority') ?? undefined;
+      const assigneeId = ctx.query.get('assigneeId') ?? undefined;
+      const limit = Number(ctx.query.get('limit') ?? 150);
+      return {
+        status: 200,
+        body: repo.listProjectTasks({ projectId, status, priority, assigneeId, limit }),
+      };
+    }),
+    route('POST', '/v1/project-tasks', (ctx) => ({
+      status: 201,
+      body: repo.createProjectTask(ctx.body as unknown as T.CreateProjectTaskInput),
+    })),
+    route('GET', '/v1/project-tasks/:id', (ctx) => ({
+      status: 200,
+      body: repo.getProjectTask(ctx.params.id!),
+    })),
+    route('PATCH', '/v1/project-tasks/:id', (ctx) => ({
+      status: 200,
+      body: repo.updateProjectTask(ctx.params.id!, ctx.body as T.UpdateProjectTaskInput),
+    })),
+    route('DELETE', '/v1/project-tasks/:id', (ctx) => {
+      repo.deleteProjectTask(ctx.params.id!);
+      return { status: 204, body: null };
+    }),
+    route('GET', '/v1/milestones', (ctx) => ({
+      status: 200,
+      body: repo.listMilestones(ctx.query.get('projectId') ?? undefined),
+    })),
     route('GET', '/v1/projects/:id/branches', (ctx) => {
       const project = repo.getProject(ctx.params.id!);
       const root = ctx.query.get('root') || project.rootPath || project.repos[0]?.path;
@@ -1007,6 +1040,39 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         },
       };
     }),
+
+    // Strategic OKRs
+    route('GET', '/v1/okrs', () => ({
+      status: 200,
+      body: repo.listOkrs(),
+    })),
+    route('POST', '/v1/okrs/objectives', (ctx) => ({
+      status: 200,
+      body: repo.saveOkrObjective(ctx.body as unknown as T.SaveOkrObjectiveInput),
+    })),
+    route('DELETE', '/v1/okrs/objectives/:id', (ctx) => {
+      repo.deleteOkrObjective(ctx.params.id!);
+      return { status: 204 };
+    }),
+    route('POST', '/v1/okrs/key-results', (ctx) => ({
+      status: 200,
+      body: repo.saveOkrKeyResult(ctx.body as unknown as T.SaveOkrKeyResultInput),
+    })),
+    route('DELETE', '/v1/okrs/key-results/:id', (ctx) => {
+      repo.deleteOkrKeyResult(ctx.params.id!);
+      return { status: 204 };
+    }),
+    route('POST', '/v1/okrs/key-results/:id/progress', (ctx) => {
+      const input = ctx.body as unknown as T.UpdateOkrProgressInput;
+      return {
+        status: 200,
+        body: repo.updateOkrProgress(ctx.params.id!, Number(input?.current_value ?? 0)),
+      };
+    }),
+    route('GET', '/v1/okrs/reality-audit', () => ({
+      status: 200,
+      body: repo.getRealityHealthScore(),
+    })),
   ];
 
   // ------------------------------------------------------------------ per-route helpers

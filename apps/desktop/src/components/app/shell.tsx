@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Briefcase, ChevronDown, ChevronRight, FolderGit2, Hash, Home, Inbox, MessageSquare, Palette, RefreshCw, Search, Settings, ShieldCheck, Terminal, Users, Workflow } from 'lucide-react';
+import { Briefcase, ChevronDown, ChevronRight, FolderGit2, Hash, Home, Inbox, Kanban, MessageSquare, Palette, RefreshCw, Search, Settings, ShieldCheck, Target, Terminal, Users, Workflow } from 'lucide-react';
 import type { Identity, JobSummary, Room, Session } from '@runtime/types';
 import { Avatar, OwnerAvatar } from '@/components/app/avatar';
 import { CommandPalette } from '@/components/app/command-palette';
@@ -190,6 +190,9 @@ export function Sidebar({
         <NavLink to={{ name: 'team' }} active={route.name === 'team'} icon={<Workflow />} trailing={<Tag tone="quiet">Org</Tag>}>
           Team &amp; Org
         </NavLink>
+        <NavLink to={{ name: 'okrs' }} active={route.name === 'okrs'} icon={<Target />} trailing={<Tag tone="quiet">Goals</Tag>}>
+          Strategic OKRs
+        </NavLink>
         <NavLink to={{ name: 'communication' }} active={route.name === 'communication'} icon={<MessageSquare />}>
           Communication Hub
         </NavLink>
@@ -215,6 +218,9 @@ export function Sidebar({
         </NavLink>
         <NavLink to={{ name: 'workspaces' }} active={route.name === 'workspaces'} icon={<FolderGit2 />}>
           Workspaces
+        </NavLink>
+        <NavLink to={{ name: 'projects' }} active={route.name === 'projects'} icon={<Kanban />}>
+          Project Management
         </NavLink>
         <NavLink to={{ name: 'settings' }} active={route.name === 'settings'} icon={<Settings />}>
           Settings

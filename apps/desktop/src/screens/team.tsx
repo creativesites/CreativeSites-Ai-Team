@@ -5,6 +5,7 @@ import {
   Bookmark,
   CheckCircle2,
   Cpu,
+  Crown,
   Edit3,
   ExternalLink,
   FolderGit2,
@@ -16,26 +17,40 @@ import {
   Sparkles,
   Target,
   Terminal as TerminalIcon,
+  Users,
   Workflow,
   X,
 } from 'lucide-react';
-import type { Identity, JobSummary, Session, Team } from '@runtime/types';
-import { Avatar, OwnerAvatar } from '@/components/app/avatar';
+import type {
+  AdapterInfo,
+  AgentSchedule,
+  CreateIdentityInput,
+  Identity,
+  JobSummary,
+  Session,
+  Team,
+  UpdateIdentityInput,
+} from '@runtime/types';
+import { Avatar, AVATAR_COLORS, AVATAR_MARKS, OwnerAvatar } from '@/components/app/avatar';
 import { isLive } from '@/components/app/shell';
-import { Tag } from '@/components/app/status';
+import { EmptyState, SectionTitle, Tag } from '@/components/app/status';
 import { buttonVariants } from '@/components/ui/button';
 import { href } from '@/lib/route';
-import { useRuntime } from '@/lib/runtime-context';
+import { useRuntime, useRuntimeData } from '@/lib/runtime-context';
 import { cn } from '@/lib/utils';
 
 export interface TeamScreenProps {
   identities: Identity[];
   sessions: Session[];
+  adapters?: AdapterInfo[];
   teams?: Team[];
   jobs?: JobSummary[];
   selectedAgentId?: string;
   ownerName?: string;
   ownerId?: string;
+  defaultTab?: 'all' | 'chart' | 'registry' | 'workspace';
+  onCreate?: (input: CreateIdentityInput) => Promise<void>;
+  onUpdate?: (id: string, input: UpdateIdentityInput) => Promise<void>;
 }
 
 export interface TeamAuditResult {
@@ -52,6 +67,13 @@ export interface TeamAuditResult {
 }
 
 export type WorkspaceTab = 'workspace' | 'performance' | 'tasks' | 'evidence' | 'contract';
+
+const RUNTIMES = [
+  { name: 'Claude Code', command: 'claude-agent-acp', adapterId: 'claude' },
+  { name: 'Codex', command: 'codex-acp', adapterId: 'codex' },
+  { name: 'Gemini CLI', command: 'gemini --acp', adapterId: 'gemini' },
+  { name: 'Custom agent', command: 'any command that speaks ACP over stdio', adapterId: 'claude' },
+];
 
 const fmtTime = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
@@ -70,29 +92,75 @@ function parseArrayField(val: unknown): string[] {
   return [];
 }
 
+function authTag(auth: AdapterInfo['auth']): { tone: 'observed' | 'verified' | 'needs-you' | 'claimed' | 'risk' | 'quiet'; label: string } {
+  switch (auth?.state) {
+    case 'ready':
+      return { tone: 'verified', label: 'Ready' };
+    case 'configured':
+      return { tone: 'observed', label: 'Configured' };
+    case 'needs_login':
+      return { tone: 'needs-you', label: 'Needs login' };
+    case 'missing_binary':
+      return { tone: 'claimed', label: 'Not installed' };
+    case 'unsupported':
+      return { tone: 'risk', label: 'Unsupported' };
+    default:
+      return { tone: 'quiet', label: 'Unknown' };
+  }
+}
+
+function identityStatusBadge(i: Identity, isRunning: boolean): { tone: 'observed' | 'verified' | 'needs-you' | 'claimed' | 'risk' | 'quiet'; label: string } {
+  if (i.statusState === 'rate_limited' && i.rateLimitResetAt && new Date(i.rateLimitResetAt).getTime() > Date.now()) {
+    return { tone: 'needs-you', label: `Limit · resets ${fmtTime(i.rateLimitResetAt)}` };
+  }
+  if (isRunning || i.statusState === 'working') {
+    return { tone: 'observed', label: 'Working' };
+  }
+  if (i.activeSessionId) {
+    return { tone: 'verified', label: 'Session ready' };
+  }
+  return { tone: 'quiet', label: 'Idle' };
+}
+
 export function TeamScreen({
   identities,
   sessions,
+  adapters = [],
   teams = [],
   jobs = [],
   selectedAgentId,
   ownerName = 'Winston Zulu',
   ownerId = 'winston',
+  defaultTab = 'all',
+  onCreate,
+  onUpdate,
 }: TeamScreenProps) {
   const { client } = useRuntime();
 
-  // Mode: 'chart' or 'workspace' (profile view)
-  const [viewMode, setViewMode] = React.useState<'chart' | 'workspace'>(() =>
-    selectedAgentId ? 'workspace' : 'chart'
+  const schedulesData = useRuntimeData((c) => c.schedules());
+  const schedules: AgentSchedule[] = schedulesData.status === 'ready' ? schedulesData.data : [];
+
+  // Active view: 'all' | 'chart' | 'registry' | 'workspace'
+  const [activeView, setActiveView] = React.useState<'all' | 'chart' | 'registry' | 'workspace'>(() =>
+    selectedAgentId ? 'workspace' : defaultTab
   );
 
-  // Selection
+  // Selected Agent for detail/editor
   const [selectedId, setSelectedId] = React.useState<string | null>(
     selectedAgentId ?? identities.find((i) => !i.isOwner && i.id !== 'winston')?.id ?? identities[0]?.id ?? null
   );
 
   // Workspace subtab
   const [workspaceTab, setWorkspaceTab] = React.useState<WorkspaceTab>('workspace');
+
+  // Inline adding toggle for registry view
+  const [addingInline, setAddingInline] = React.useState(false);
+
+  // Team Leader dispatch state
+  const [teamGoal, setTeamGoal] = React.useState('');
+  const [leaderId, setLeaderId] = React.useState('atlas');
+  const [dispatching, setDispatching] = React.useState(false);
+  const [dispatchStatus, setDispatchStatus] = React.useState<string | null>(null);
 
   // Executive Header Edit state
   const [executiveName, setExecutiveName] = React.useState<string>(() => {
@@ -121,16 +189,44 @@ export function TeamScreen({
   const [auditResult, setAuditResult] = React.useState<TeamAuditResult | null>(null);
   const [isAuditing, setIsAuditing] = React.useState(false);
 
-  // Synchronize when selectedAgentId changes from routing
+  // Synchronize when selectedAgentId changes from URL hash
   React.useEffect(() => {
     if (selectedAgentId) {
       setSelectedId(selectedAgentId);
-      setViewMode('workspace');
+      setActiveView('workspace');
     }
   }, [selectedAgentId]);
 
   const selectedAgent = identities.find((i) => i.id === selectedId) ?? null;
   const liveAgentIds = new Set(sessions.filter(isLive).map((s) => s.agentId));
+  const rateLimitedIdentities = identities.filter(
+    (i) => i.statusState === 'rate_limited' && i.rateLimitResetAt && new Date(i.rateLimitResetAt).getTime() > Date.now()
+  );
+
+  // Team Leader Dispatch handler
+  const handleLeaderDispatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client || !teamGoal.trim() || dispatching) return;
+    setDispatching(true);
+    setDispatchStatus(null);
+    try {
+      const res = await client.dispatchTeamLeader({
+        leaderId,
+        fromActorId: ownerId,
+        goal: teamGoal.trim(),
+      });
+      setTeamGoal('');
+      if (res.session?.id) {
+        setDispatchStatus(`Team Leader ${leaderId} woken (session ${res.session.id}) — coordinating team.`);
+      } else if (res.deferredUntil) {
+        setDispatchStatus(`Leader rate-limited until ${fmtTime(res.deferredUntil)}; auto-resume scheduled.`);
+      }
+    } catch (err) {
+      setDispatchStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDispatching(false);
+    }
+  };
 
   // Executive save
   const handleSaveExecutive = () => {
@@ -146,13 +242,13 @@ export function TeamScreen({
   // Open full Agent Workspace profile
   const handleOpenAgentWorkspace = (agentId: string) => {
     setSelectedId(agentId);
-    setViewMode('workspace');
+    setActiveView('workspace');
     window.location.hash = href({ name: 'team', agentId });
   };
 
   // Return to Org Chart view
   const handleReturnToChart = () => {
-    setViewMode('chart');
+    setActiveView('chart');
     window.location.hash = href({ name: 'team' });
   };
 
@@ -317,8 +413,10 @@ export function TeamScreen({
     }, 400);
   };
 
-  // If in Agent Workspace Profile View
-  if (viewMode === 'workspace' && selectedAgent) {
+  // -------------------------------------------------------------------------
+  // Agent Workspace Profile Mode
+  // -------------------------------------------------------------------------
+  if (activeView === 'workspace' && selectedAgent) {
     const isAgentLive = liveAgentIds.has(selectedAgent.id) || selectedAgent.statusState === 'working';
     const agentTasks = jobs.filter((j) => j.createdBy === selectedAgent.id);
 
@@ -534,7 +632,7 @@ export function TeamScreen({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <span className="size-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-sm">
-                  <Sparkles className="size-4.5" />
+                  <Sparkles className="size-4" />
                 </span>
                 <div>
                   <h2 className="text-sm font-bold text-foreground">AI Performance Synthesis &amp; Substrate Audit</h2>
@@ -737,33 +835,73 @@ export function TeamScreen({
   }
 
   // -------------------------------------------------------------------------
-  // Main Org Chart View
+  // Unified Team & Coworkers Page (Org Chart + Fleet Registry)
   // -------------------------------------------------------------------------
   return (
-    <div className="flex flex-col gap-6 py-2 pb-12 select-none animate-fade-in">
-      {/* Top Banner & AI Architect Bar */}
+    <div className="flex flex-col gap-5 py-2 pb-16 select-none animate-fade-in">
+      {/* 1. Header Bar with Mode Switcher & Global Actions */}
       <header className="glass-panel flex flex-col md:flex-row justify-between items-start md:items-center gap-4 rounded-2xl p-5 shadow-xs">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <span className="flex size-7 items-center justify-center rounded-lg bg-foreground/10 text-foreground">
-              <Workflow className="size-4" />
+              {activeView === 'chart' ? <Workflow className="size-4" /> : <Users className="size-4" />}
             </span>
-            <h1 className="text-base font-bold tracking-tight">Autonomous AI Team Org Chart &amp; Governance</h1>
+            <h1 className="text-base font-bold tracking-tight">Autonomous Team &amp; Coworkers</h1>
             <span className="rounded-full bg-foreground/[0.06] px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
-              {nonOwnerIdentities.length} active agents
+              {nonOwnerIdentities.length} agents
             </span>
             {teams.length > 0 && (
               <span className="rounded-full bg-foreground/[0.06] px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
                 {teams.length} teams
               </span>
             )}
+            {rateLimitedIdentities.length > 0 && (
+              <Tag tone="risk">{rateLimitedIdentities.length} paused</Tag>
+            )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Visual hierarchy, lane separation, dynamic role contracts, and AI Team Architect powered by Substrate Truth
+            Visual hierarchy, autonomous coworkers, scheduled wakeups, session IDs &amp; rate-limit awareness
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* View Mode Toggle: All-in-One vs Org Chart vs Fleet Registry */}
+          <div role="group" aria-label="View Mode" className="glass-panel inline-flex rounded-lg p-0.5">
+            <button
+              type="button"
+              onClick={() => setActiveView('all')}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer',
+                activeView === 'all' ? 'glass-chosen text-foreground shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Workflow className="size-3.5" />
+              <span>All in One</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('chart')}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer',
+                activeView === 'chart' ? 'glass-chosen text-foreground shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Workflow className="size-3.5" />
+              <span>Org Chart</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('registry')}
+              className={cn(
+                'rounded-md px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer',
+                activeView === 'registry' ? 'glass-chosen text-foreground shadow-2xs' : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <Users className="size-3.5" />
+              <span>Fleet Registry</span>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={handleRunAudit}
@@ -783,12 +921,64 @@ export function TeamScreen({
             className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'cursor-pointer')}
           >
             <Plus className="size-3.5" />
-            <span>Spawn New Agent</span>
+            <span>Spawn / Add Coworker</span>
           </button>
         </div>
       </header>
 
-      {/* AI Team Architect Audit Card */}
+      {/* 2. Cross-Agent Session Limit Notice (if any agent is paused) */}
+      {rateLimitedIdentities.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-needs-you/40 bg-needs-you/10 px-4 py-2.5 text-xs text-needs-you">
+          <div>
+            <strong>Cross-Agent Session Limit Notice:</strong>{' '}
+            {rateLimitedIdentities
+              .map((i) => `${i.name} (${i.runtime ?? 'adapter'}) waiting for reset at ${fmtTime(i.rateLimitResetAt)} (${i.rateLimitReason ?? 'session limit'})`)
+              .join(' · ')}.
+            {' '}Other agents (Antigravity / Gemini / Codex / Claude) are automatically informed of this reset window and auto-resume is scheduled.
+          </div>
+        </div>
+      )}
+
+      {/* 3. Tell Team Leader Dispatch Form (Always Available) */}
+      {client && (
+        <form onSubmit={handleLeaderDispatch} className="bg-card flex flex-wrap items-center gap-2.5 rounded-xl px-4 py-3 border border-border/60">
+          <span className="text-xs font-semibold flex items-center gap-1.5">
+            <Crown className="size-3.5 text-amber-500" />
+            <span>Tell Team Leader:</span>
+          </span>
+          <select
+            value={leaderId}
+            onChange={(e) => setLeaderId(e.target.value)}
+            aria-label="Team leader"
+            className="glass-panel h-8 rounded-md px-2 text-xs"
+          >
+            {identities
+              .filter((i) => !i.isOwner)
+              .map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name} ({i.role ?? i.runtime ?? 'Leader'})
+                </option>
+              ))}
+          </select>
+          <input
+            value={teamGoal}
+            onChange={(e) => setTeamGoal(e.target.value)}
+            placeholder="Tell the Team Leader what needs to be done (they can wake coworkers, schedule checks, or spawn specialists)…"
+            aria-label="Team leader goal"
+            className="glass-panel h-8 min-w-64 flex-1 rounded-md px-3 text-xs outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!teamGoal.trim() || dispatching}
+            className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'cursor-pointer')}
+          >
+            {dispatching ? 'Dispatching…' : 'Dispatch to Leader'}
+          </button>
+          {dispatchStatus && <span className="w-full text-xs text-muted-foreground font-mono">{dispatchStatus}</span>}
+        </form>
+      )}
+
+      {/* 4. AI Team Architect Audit Card */}
       {auditResult && (
         <div className="glass-panel border-amber-500/30 bg-amber-500/[0.04] p-5 rounded-2xl space-y-4 shadow-xs">
           <div className="flex items-center justify-between">
@@ -854,528 +1044,740 @@ export function TeamScreen({
         </div>
       )}
 
-      {/* Visual Org Hierarchy Chart */}
-      <div className="glass-panel border-border/60 rounded-3xl p-6 md:p-8 space-y-8 shadow-xs">
-        {/* Tier 1: Human Executive Leadership */}
-        <div className="flex flex-col items-center">
-          <div className="glass-panel group relative w-80 rounded-2xl p-4 text-center shadow-lg transition-all border border-border/80 hover:border-foreground/30">
-            <div className="absolute top-3 right-3">
-              <button
-                type="button"
-                onClick={() => setIsEditingExecutive(!isEditingExecutive)}
-                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition cursor-pointer"
-                title="Edit Executive Details"
-              >
-                <Edit3 className="size-3.5" />
-              </button>
-            </div>
-
-            <div className="mb-2 flex justify-center">
-              <OwnerAvatar name={executiveName} size={48} />
-            </div>
-
-            {isEditingExecutive ? (
-              <div className="space-y-2 mt-2 px-1">
-                <input
-                  type="text"
-                  value={executiveName}
-                  onChange={(e) => setExecutiveName(e.target.value)}
-                  placeholder="Executive Name"
-                  className="glass-panel w-full px-2 py-1 text-xs text-center font-bold outline-none rounded-md"
-                />
-                <input
-                  type="text"
-                  value={executiveTitle}
-                  onChange={(e) => setExecutiveTitle(e.target.value)}
-                  placeholder="Executive Title"
-                  className="glass-panel w-full px-2 py-1 text-[11px] text-center text-muted-foreground outline-none rounded-md"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveExecutive}
-                  className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'w-full text-[11px] cursor-pointer')}
-                >
-                  Done
-                </button>
-              </div>
-            ) : (
-              <div>
-                <h3 className="text-sm font-bold tracking-tight text-foreground">{executiveName}</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">{executiveTitle}</p>
-                <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-                  <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>SUPREME OPERATOR</span>
+      {/* 5. VIEW A: Visual Org Hierarchy Chart */}
+      {(activeView === 'all' || activeView === 'chart') && (
+        <div className="space-y-6">
+          <div className="glass-panel border-border/60 rounded-3xl p-6 md:p-8 space-y-8 shadow-xs">
+            {/* Tier 1: Human Executive Leadership */}
+            <div className="flex flex-col items-center">
+              <div className="glass-panel group relative w-80 rounded-2xl p-4 text-center shadow-lg transition-all border border-border/80 hover:border-foreground/30">
+                <div className="absolute top-3 right-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingExecutive(!isEditingExecutive)}
+                    className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition cursor-pointer"
+                    title="Edit Executive Details"
+                  >
+                    <Edit3 className="size-3.5" />
+                  </button>
                 </div>
-              </div>
-            )}
-          </div>
 
-          {/* Stem downwards */}
-          <div className="w-0.5 h-8 bg-border/80 mt-2" />
-        </div>
-
-        {/* Tier 2: Strategic & Bridge Coordination */}
-        <div className="space-y-3">
-          <div className="text-center">
-            <span className="px-3 py-1 glass-panel rounded-full text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">
-              Strategic Orchestration &amp; Planning Bridge
-            </span>
-          </div>
-
-          <div className="flex flex-wrap justify-center gap-4">
-            {strategicAgents.length === 0 ? (
-              <div className="p-4 text-xs text-muted-foreground italic">No strategic bridge agents registered.</div>
-            ) : (
-              strategicAgents.map((agent) => {
-                const isSelected = selectedId === agent.id;
-                const isAgentLive = liveAgentIds.has(agent.id) || agent.statusState === 'working';
-                return (
-                  <div
-                    key={agent.id}
-                    onClick={() => setSelectedId(agent.id)}
-                    onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
-                    title="Click to select · double-click to open workspace"
-                    className={cn(
-                      'glass-panel w-72 p-4 rounded-2xl cursor-pointer transition-all duration-200 shadow-2xs hover:shadow-md border group relative',
-                      isSelected
-                        ? 'border-foreground/80 ring-2 ring-foreground/20'
-                        : 'border-border/60 hover:border-foreground/40'
-                    )}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="size-9 rounded-xl bg-foreground/[0.06] flex items-center justify-center text-lg shadow-2xs">
-                          {agent.symbol || <Avatar who={agent} size={28} />}
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-foreground">{agent.name}</div>
-                          <div className="text-[10px] font-mono text-muted-foreground">{agent.id}</div>
-                        </div>
-                      </div>
-                      <Tag tone={isAgentLive ? 'observed' : 'quiet'}>
-                        {isAgentLive ? 'Live' : agent.lane || 'bridge'}
-                      </Tag>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
-                      {agent.role || 'Strategic planning, job delegation & substrate coordination'}
-                    </p>
-
-                    {/* Quick action buttons on card */}
-                    <div className="flex items-center justify-end gap-1.5 mt-3 pt-2 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleOpenTerminal(agent);
-                        }}
-                        title="Terminal"
-                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
-                      >
-                        <TerminalIcon className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenAgentWorkspace(agent.id);
-                        }}
-                        title="Open Workspace"
-                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
-                      >
-                        <ExternalLink className="size-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Stem downwards */}
-          <div className="flex justify-center">
-            <div className="w-0.5 h-8 bg-border/80" />
-          </div>
-        </div>
-
-        {/* Tier 3: Functional Lanes (3 Columns) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-border/60">
-          {/* Column A: Engineering Fleet */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-border/60">
-              <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <Cpu className="size-4 text-indigo-500" />
-                <span>Engineering Fleet</span>
-              </div>
-              <span className="text-[10px] font-mono text-muted-foreground">{engineeringAgents.length} agents</span>
-            </div>
-
-            <div className="space-y-3">
-              {engineeringAgents.map((agent) => {
-                const isSelected = selectedId === agent.id;
-                const isAgentLive = liveAgentIds.has(agent.id) || agent.statusState === 'working';
-                return (
-                  <div
-                    key={agent.id}
-                    onClick={() => setSelectedId(agent.id)}
-                    onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
-                    title="Click to select · double-click to open workspace"
-                    className={cn(
-                      'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border group',
-                      isSelected
-                        ? 'border-indigo-500 ring-2 ring-indigo-500/20'
-                        : 'border-border/60 hover:border-foreground/40'
-                    )}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-base">{agent.symbol || '💻'}</span>
-                        <div>
-                          <div className="text-xs font-bold text-foreground">{agent.name}</div>
-                          <div className="text-[10px] text-muted-foreground font-mono">{agent.id}</div>
-                        </div>
-                      </div>
-                      <Tag tone={isAgentLive ? 'observed' : agent.statusState === 'rate_limited' ? 'risk' : 'quiet'}>
-                        {agent.statusState === 'rate_limited'
-                          ? 'Rate Limited'
-                          : isAgentLive
-                          ? 'Working'
-                          : agent.lane || 'engineering'}
-                      </Tag>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-2 truncate">
-                      {agent.role || 'Autonomous code & runtime implementation'}
-                    </div>
-
-                    <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-1.5 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleOpenTerminal(agent);
-                        }}
-                        title="Terminal"
-                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
-                      >
-                        <TerminalIcon className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenAgentWorkspace(agent.id);
-                        }}
-                        title="Open Workspace"
-                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
-                      >
-                        <ExternalLink className="size-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {engineeringAgents.length === 0 && (
-                <p className="text-xs text-muted-foreground italic p-2">No engineering agents found.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Column B: Independent Quality & Verification */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-border/60">
-              <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <ShieldCheck className="size-4 text-emerald-500" />
-                <span>Verification &amp; Quality</span>
-              </div>
-              <span className="text-[10px] font-mono text-muted-foreground">{qualityAgents.length} agents</span>
-            </div>
-
-            <div className="space-y-3">
-              {qualityAgents.map((agent) => {
-                const isSelected = selectedId === agent.id;
-                const isAgentLive = liveAgentIds.has(agent.id) || agent.statusState === 'working';
-                return (
-                  <div
-                    key={agent.id}
-                    onClick={() => setSelectedId(agent.id)}
-                    onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
-                    title="Click to select · double-click to open workspace"
-                    className={cn(
-                      'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border group',
-                      isSelected
-                        ? 'border-emerald-500 ring-2 ring-emerald-500/20'
-                        : 'border-border/60 hover:border-foreground/40'
-                    )}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-base">{agent.symbol || '🛡️'}</span>
-                        <div>
-                          <div className="text-xs font-bold text-foreground">{agent.name}</div>
-                          <div className="text-[10px] text-muted-foreground font-mono">{agent.id}</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {isAgentLive && <Tag tone="observed">Live</Tag>}
-                        <Tag tone="verified">VERIFIER</Tag>
-                      </div>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-2 truncate">
-                      {agent.role || 'Independent verification, test harness & epistemic truth'}
-                    </div>
-
-                    <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-1.5 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleOpenTerminal(agent);
-                        }}
-                        title="Terminal"
-                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
-                      >
-                        <TerminalIcon className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenAgentWorkspace(agent.id);
-                        }}
-                        title="Open Workspace"
-                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
-                      >
-                        <ExternalLink className="size-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {qualityAgents.length === 0 && (
-                <div className="p-3 rounded-xl border border-risk/40 bg-risk/10 text-risk text-xs">
-                  No independent verifiers found! Rule #2 requires an independent verifier distinct from the author.
+                <div className="mb-2 flex justify-center">
+                  <OwnerAvatar name={executiveName} size={48} />
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* Column C: Infrastructure & Substrate */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-border/60">
-              <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <Layers className="size-4 text-amber-500" />
-                <span>Infrastructure &amp; CLI</span>
-              </div>
-              <span className="text-[10px] font-mono text-muted-foreground">
-                {infraAgents.length + otherAgents.length} agents
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {[...infraAgents, ...otherAgents].map((agent) => {
-                const isSelected = selectedId === agent.id;
-                const isAgentLive = liveAgentIds.has(agent.id) || agent.statusState === 'working';
-                return (
-                  <div
-                    key={agent.id}
-                    onClick={() => setSelectedId(agent.id)}
-                    onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
-                    title="Click to select · double-click to open workspace"
-                    className={cn(
-                      'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border group',
-                      isSelected
-                        ? 'border-amber-500 ring-2 ring-amber-500/20'
-                        : 'border-border/60 hover:border-foreground/40'
-                    )}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-base">{agent.symbol || '⚙️'}</span>
-                        <div>
-                          <div className="text-xs font-bold text-foreground">{agent.name}</div>
-                          <div className="text-[10px] text-muted-foreground font-mono">{agent.id}</div>
-                        </div>
-                      </div>
-                      <Tag tone={isAgentLive ? 'observed' : 'quiet'}>{agent.lane || 'infrastructure'}</Tag>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-2 truncate">
-                      {agent.role || 'Substrate maintenance, git sync & runtime host'}
-                    </div>
-
-                    <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-1.5 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleOpenTerminal(agent);
-                        }}
-                        title="Terminal"
-                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
-                      >
-                        <TerminalIcon className="size-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenAgentWorkspace(agent.id);
-                        }}
-                        title="Open Workspace"
-                        className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground"
-                      >
-                        <ExternalLink className="size-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-              {infraAgents.length + otherAgents.length === 0 && (
-                <p className="text-xs text-muted-foreground italic p-2">No infrastructure agents found.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Selected Agent Details Pane (v1 parity + quick actions) */}
-      {selectedAgent && (
-        <div className="glass-panel border-border/80 p-6 rounded-2xl shadow-sm space-y-4">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="size-12 rounded-2xl bg-foreground/[0.06] border border-border flex items-center justify-center text-2xl shadow-2xs">
-                {selectedAgent.symbol || <Avatar who={selectedAgent} size={36} />}
-              </div>
-              <div>
-                <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-                  <span>{selectedAgent.name}</span>
-                  <span className="text-xs font-mono text-muted-foreground font-normal">({selectedAgent.id})</span>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase glass-panel">
-                    Lane: {selectedAgent.lane || (qualityIds.has(selectedAgent.id) ? 'verification' : 'engineering')}
-                  </span>
-                  {selectedAgent.statusState === 'rate_limited' && (
-                    <Tag tone="risk">Paused: rate limited</Tag>
-                  )}
-                </h2>
-                <p className="text-xs text-muted-foreground font-medium mt-0.5">
-                  {selectedAgent.role || 'Autonomous Team Member'}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                type="button"
-                onClick={() => handleOpenAgentWorkspace(selectedAgent.id)}
-                className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
-              >
-                <ExternalLink className="size-3.5" />
-                <span>Open Agent Workspace</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingAgent(selectedAgent);
-                  setIsEditModalOpen(true);
-                }}
-                className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
-              >
-                <Edit3 className="size-3.5" />
-                <span>Edit Role</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleOpenTerminal(selectedAgent)}
-                className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
-              >
-                <TerminalIcon className="size-3.5" />
-                <span>Terminal</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsWakeModalOpen(true)}
-                className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
-              >
-                <Send className="size-3.5" />
-                <span>Wake / Prompt</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-3 border-t border-border/60">
-            {/* Declared Capabilities */}
-            <div>
-              <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                Declared Capabilities
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {parseArrayField(selectedAgent.capabilities).length === 0 ? (
-                  <span className="text-xs text-muted-foreground italic">No declared capabilities recorded.</span>
-                ) : (
-                  parseArrayField(selectedAgent.capabilities).map((cap, i) => (
-                    <span
-                      key={i}
-                      className="px-2 py-0.5 rounded-md bg-foreground/[0.05] border border-border/40 font-mono text-[11px] text-foreground/80"
+                {isEditingExecutive ? (
+                  <div className="space-y-2 mt-2 px-1">
+                    <input
+                      type="text"
+                      value={executiveName}
+                      onChange={(e) => setExecutiveName(e.target.value)}
+                      placeholder="Executive Name"
+                      className="glass-panel w-full px-2 py-1 text-xs text-center font-bold outline-none rounded-md"
+                    />
+                    <input
+                      type="text"
+                      value={executiveTitle}
+                      onChange={(e) => setExecutiveTitle(e.target.value)}
+                      placeholder="Executive Title"
+                      className="glass-panel w-full px-2 py-1 text-[11px] text-center text-muted-foreground outline-none rounded-md"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveExecutive}
+                      className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'w-full text-[11px] cursor-pointer')}
                     >
-                      {cap}
-                    </span>
-                  ))
+                      Done
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <h3 className="text-sm font-bold tracking-tight text-foreground">{executiveName}</h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">{executiveTitle}</p>
+                    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>SUPREME OPERATOR</span>
+                    </div>
+                  </div>
                 )}
+              </div>
+
+              {/* Stem downwards */}
+              <div className="w-0.5 h-8 bg-border/80 mt-2" />
+            </div>
+
+            {/* Tier 2: Strategic & Bridge Coordination */}
+            <div className="space-y-3">
+              <div className="text-center">
+                <span className="px-3 py-1 glass-panel rounded-full text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">
+                  Strategic Orchestration &amp; Planning Bridge
+                </span>
+              </div>
+
+              <div className="flex flex-wrap justify-center gap-4">
+                {strategicAgents.length === 0 ? (
+                  <div className="p-4 text-xs text-muted-foreground italic">No strategic bridge agents registered.</div>
+                ) : (
+                  strategicAgents.map((agent) => {
+                    const isSelected = selectedId === agent.id;
+                    const isAgentLive = liveAgentIds.has(agent.id) || agent.statusState === 'working';
+                    return (
+                      <div
+                        key={agent.id}
+                        onClick={() => setSelectedId(agent.id)}
+                        onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
+                        title="Click to select · double-click to open workspace"
+                        className={cn(
+                          'glass-panel w-72 p-4 rounded-2xl cursor-pointer transition-all duration-200 shadow-2xs hover:shadow-md border group relative',
+                          isSelected
+                            ? 'border-foreground/80 ring-2 ring-foreground/20'
+                            : 'border-border/60 hover:border-foreground/40'
+                        )}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="size-9 rounded-xl bg-foreground/[0.06] flex items-center justify-center text-lg shadow-2xs">
+                              {agent.symbol || <Avatar who={agent} size={28} />}
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold text-foreground">{agent.name}</div>
+                              <div className="text-[10px] font-mono text-muted-foreground">{agent.id}</div>
+                            </div>
+                          </div>
+                          <Tag tone={isAgentLive ? 'observed' : 'quiet'}>
+                            {isAgentLive ? 'Live' : agent.lane || 'bridge'}
+                          </Tag>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
+                          {agent.role || 'Strategic planning, job delegation & substrate coordination'}
+                        </p>
+
+                        <div className="flex items-center justify-end gap-1.5 mt-3 pt-2 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleOpenTerminal(agent);
+                            }}
+                            title="Terminal"
+                            className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            <TerminalIcon className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAgentWorkspace(agent.id);
+                            }}
+                            title="Open Workspace"
+                            className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Stem downwards */}
+              <div className="flex justify-center">
+                <div className="w-0.5 h-8 bg-border/80" />
               </div>
             </div>
 
-            {/* Substrate Responsibilities */}
-            <div>
-              <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                Substrate Responsibilities
-              </div>
-              <ul className="space-y-1 text-xs text-foreground/80 list-disc list-inside">
-                <li>Execute tasks within {selectedAgent.lane || 'assigned'} domain.</li>
-                <li>Preserve substrate truth and relational database integrity.</li>
-                {qualityIds.has(selectedAgent.id) && (
-                  <li className="text-emerald-600 dark:text-emerald-400 font-medium">
-                    Independently re-run verification commands (cannot self-verify authored code).
-                  </li>
-                )}
-                {selectedAgent.runtime && <li>Runs on adapter: {selectedAgent.runtime}</li>}
-              </ul>
-            </div>
-
-            {/* Runtime & Telemetry */}
-            <div>
-              <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-muted-foreground mb-2">
-                Runtime Telemetry
-              </div>
-              <div className="space-y-1 text-xs text-muted-foreground font-mono">
-                <div>
-                  Engine: <span className="text-foreground">{selectedAgent.runtime || 'Default ACP'}</span>
+            {/* Tier 3: Functional Lanes (3 Columns) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-border/60">
+              {/* Column A: Engineering Fleet */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                  <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Cpu className="size-4 text-indigo-500" />
+                    <span>Engineering Fleet</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-muted-foreground">{engineeringAgents.length} agents</span>
                 </div>
-                {selectedAgent.activeSessionId && (
-                  <div className="truncate">
-                    Active Session: <span className="text-foreground">{selectedAgent.activeSessionId}</span>
+
+                <div className="space-y-3">
+                  {engineeringAgents.map((agent) => {
+                    const isSelected = selectedId === agent.id;
+                    const isAgentLive = liveAgentIds.has(agent.id) || agent.statusState === 'working';
+                    return (
+                      <div
+                        key={agent.id}
+                        onClick={() => setSelectedId(agent.id)}
+                        onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
+                        title="Click to select · double-click to open workspace"
+                        className={cn(
+                          'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border group',
+                          isSelected
+                            ? 'border-indigo-500 ring-2 ring-indigo-500/20'
+                            : 'border-border/60 hover:border-foreground/40'
+                        )}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">{agent.symbol || '💻'}</span>
+                            <div>
+                              <div className="text-xs font-bold text-foreground">{agent.name}</div>
+                              <div className="text-[10px] text-muted-foreground font-mono">{agent.id}</div>
+                            </div>
+                          </div>
+                          <Tag tone={isAgentLive ? 'observed' : agent.statusState === 'rate_limited' ? 'risk' : 'quiet'}>
+                            {agent.statusState === 'rate_limited'
+                              ? 'Rate Limited'
+                              : isAgentLive
+                              ? 'Working'
+                              : agent.lane || 'engineering'}
+                          </Tag>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-2 truncate">
+                          {agent.role || 'Autonomous code & runtime implementation'}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-1.5 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleOpenTerminal(agent);
+                            }}
+                            title="Terminal"
+                            className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            <TerminalIcon className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAgentWorkspace(agent.id);
+                            }}
+                            title="Open Workspace"
+                            className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {engineeringAgents.length === 0 && (
+                    <p className="text-xs text-muted-foreground italic p-2">No engineering agents found.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Column B: Independent Quality & Verification */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                  <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <ShieldCheck className="size-4 text-emerald-500" />
+                    <span>Verification &amp; Quality</span>
                   </div>
-                )}
-                {selectedAgent.acpSessionId && (
-                  <div className="truncate">
-                    ACP Session: <span className="text-foreground">{selectedAgent.acpSessionId}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground">{qualityAgents.length} agents</span>
+                </div>
+
+                <div className="space-y-3">
+                  {qualityAgents.map((agent) => {
+                    const isSelected = selectedId === agent.id;
+                    const isAgentLive = liveAgentIds.has(agent.id) || agent.statusState === 'working';
+                    return (
+                      <div
+                        key={agent.id}
+                        onClick={() => setSelectedId(agent.id)}
+                        onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
+                        title="Click to select · double-click to open workspace"
+                        className={cn(
+                          'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border group',
+                          isSelected
+                            ? 'border-emerald-500 ring-2 ring-emerald-500/20'
+                            : 'border-border/60 hover:border-foreground/40'
+                        )}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">{agent.symbol || '🛡️'}</span>
+                            <div>
+                              <div className="text-xs font-bold text-foreground">{agent.name}</div>
+                              <div className="text-[10px] text-muted-foreground font-mono">{agent.id}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {isAgentLive && <Tag tone="observed">Live</Tag>}
+                            <Tag tone="verified">VERIFIER</Tag>
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-2 truncate">
+                          {agent.role || 'Independent verification, test harness & epistemic truth'}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-1.5 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleOpenTerminal(agent);
+                            }}
+                            title="Terminal"
+                            className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            <TerminalIcon className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAgentWorkspace(agent.id);
+                            }}
+                            title="Open Workspace"
+                            className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {qualityAgents.length === 0 && (
+                    <div className="p-3 rounded-xl border border-risk/40 bg-risk/10 text-risk text-xs">
+                      No independent verifiers found! Rule #2 requires an independent verifier distinct from the author.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Column C: Infrastructure & Substrate */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-border/60">
+                  <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Layers className="size-4 text-amber-500" />
+                    <span>Infrastructure &amp; CLI</span>
                   </div>
-                )}
-                {selectedAgent.lastWokenAt && (
-                  <div>Last Woken: {fmtTime(selectedAgent.lastWokenAt)}</div>
-                )}
-                {selectedAgent.rateLimitResetAt && (
-                  <div className="text-needs-you">
-                    Reset Window: {fmtTime(selectedAgent.rateLimitResetAt)}
-                  </div>
-                )}
+                  <span className="text-[10px] font-mono text-muted-foreground">
+                    {infraAgents.length + otherAgents.length} agents
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {[...infraAgents, ...otherAgents].map((agent) => {
+                    const isSelected = selectedId === agent.id;
+                    const isAgentLive = liveAgentIds.has(agent.id) || agent.statusState === 'working';
+                    return (
+                      <div
+                        key={agent.id}
+                        onClick={() => setSelectedId(agent.id)}
+                        onDoubleClick={() => handleOpenAgentWorkspace(agent.id)}
+                        title="Click to select · double-click to open workspace"
+                        className={cn(
+                          'glass-panel p-3.5 rounded-xl cursor-pointer transition-all shadow-2xs hover:shadow-md border group',
+                          isSelected
+                            ? 'border-amber-500 ring-2 ring-amber-500/20'
+                            : 'border-border/60 hover:border-foreground/40'
+                        )}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-base">{agent.symbol || '⚙️'}</span>
+                            <div>
+                              <div className="text-xs font-bold text-foreground">{agent.name}</div>
+                              <div className="text-[10px] text-muted-foreground font-mono">{agent.id}</div>
+                            </div>
+                          </div>
+                          <Tag tone={isAgentLive ? 'observed' : 'quiet'}>{agent.lane || 'infrastructure'}</Tag>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-2 truncate">
+                          {agent.role || 'Substrate maintenance, git sync & runtime host'}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-1.5 mt-2.5 pt-1.5 border-t border-border/40 opacity-80 group-hover:opacity-100 transition">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleOpenTerminal(agent);
+                            }}
+                            title="Terminal"
+                            className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            <TerminalIcon className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenAgentWorkspace(agent.id);
+                            }}
+                            title="Open Workspace"
+                            className="p-1 rounded hover:bg-foreground/[0.06] text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {infraAgents.length + otherAgents.length === 0 && (
+                    <p className="text-xs text-muted-foreground italic p-2">No infrastructure agents found.</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
+
+          {/* Selected Agent Details Pane */}
+          {selectedAgent && (
+            <div className="glass-panel border-border/80 p-6 rounded-2xl shadow-sm space-y-4">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="size-12 rounded-2xl bg-foreground/[0.06] border border-border flex items-center justify-center text-2xl shadow-2xs">
+                    {selectedAgent.symbol || <Avatar who={selectedAgent} size={36} />}
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                      <span>{selectedAgent.name}</span>
+                      <span className="text-xs font-mono text-muted-foreground font-normal">({selectedAgent.id})</span>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase glass-panel">
+                        Lane: {selectedAgent.lane || (qualityIds.has(selectedAgent.id) ? 'verification' : 'engineering')}
+                      </span>
+                      {selectedAgent.statusState === 'rate_limited' && (
+                        <Tag tone="risk">Paused: rate limited</Tag>
+                      )}
+                    </h2>
+                    <p className="text-xs text-muted-foreground font-medium mt-0.5">
+                      {selectedAgent.role || 'Autonomous Team Member'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAgentWorkspace(selectedAgent.id)}
+                    className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
+                  >
+                    <ExternalLink className="size-3.5" />
+                    <span>Open Agent Workspace</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingAgent(selectedAgent);
+                      setIsEditModalOpen(true);
+                    }}
+                    className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
+                  >
+                    <Edit3 className="size-3.5" />
+                    <span>Edit Role</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleOpenTerminal(selectedAgent)}
+                    className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
+                  >
+                    <TerminalIcon className="size-3.5" />
+                    <span>Terminal</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsWakeModalOpen(true)}
+                    className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer flex items-center gap-1.5')}
+                  >
+                    <Send className="size-3.5" />
+                    <span>Wake / Prompt</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-3 border-t border-border/60">
+                <div>
+                  <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                    Declared Capabilities
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {parseArrayField(selectedAgent.capabilities).length === 0 ? (
+                      <span className="text-xs text-muted-foreground italic">No declared capabilities recorded.</span>
+                    ) : (
+                      parseArrayField(selectedAgent.capabilities).map((cap, i) => (
+                        <span
+                          key={i}
+                          className="px-2 py-0.5 rounded-md bg-foreground/[0.05] border border-border/40 font-mono text-[11px] text-foreground/80"
+                        >
+                          {cap}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                    Substrate Responsibilities
+                  </div>
+                  <ul className="space-y-1 text-xs text-foreground/80 list-disc list-inside">
+                    <li>Execute tasks within {selectedAgent.lane || 'assigned'} domain.</li>
+                    <li>Preserve substrate truth and relational database integrity.</li>
+                    {qualityIds.has(selectedAgent.id) && (
+                      <li className="text-emerald-600 dark:text-emerald-400 font-medium">
+                        Independently re-run verification commands (cannot self-verify authored code).
+                      </li>
+                    )}
+                    {selectedAgent.runtime && <li>Runs on adapter: {selectedAgent.runtime}</li>}
+                  </ul>
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                    Runtime Telemetry
+                  </div>
+                  <div className="space-y-1 text-xs text-muted-foreground font-mono">
+                    <div>
+                      Engine: <span className="text-foreground">{selectedAgent.runtime || 'Default ACP'}</span>
+                    </div>
+                    {selectedAgent.activeSessionId && (
+                      <div className="truncate">
+                        Active Session: <span className="text-foreground">{selectedAgent.activeSessionId}</span>
+                      </div>
+                    )}
+                    {selectedAgent.acpSessionId && (
+                      <div className="truncate">
+                        ACP Session: <span className="text-foreground">{selectedAgent.acpSessionId}</span>
+                      </div>
+                    )}
+                    {selectedAgent.lastWokenAt && (
+                      <div>Last Woken: {fmtTime(selectedAgent.lastWokenAt)}</div>
+                    )}
+                    {selectedAgent.rateLimitResetAt && (
+                      <div className="text-needs-you">
+                        Reset Window: {fmtTime(selectedAgent.rateLimitResetAt)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Spawn Agent Modal */}
+      {/* 6. VIEW B: Coworkers Fleet Registry & Autonomy Panel (The complete previous page!) */}
+      {(activeView === 'all' || activeView === 'registry') && (
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start pt-2">
+          <main className="flex min-w-0 flex-1 flex-col gap-4">
+            {addingInline && (onCreate || client) && (
+              <AddForm
+                onCreate={async (i, prompt) => {
+                  if (client) {
+                    await client.spawnAgent({
+                      id: i.id,
+                      name: i.name,
+                      role: i.role ?? undefined,
+                      runtime: i.runtime ?? undefined,
+                      avatarMark: i.avatarMark ?? 'diamond',
+                      avatarColor: i.avatarColor ?? 'graphite',
+                      prompt: prompt?.trim() || undefined,
+                      spawnedBy: ownerId,
+                    });
+                  } else if (onCreate) {
+                    await onCreate(i);
+                  }
+                  setAddingInline(false);
+                  setSelectedId(i.id.toLowerCase());
+                }}
+                onCancel={() => setAddingInline(false)}
+              />
+            )}
+
+            {identities.length === 0 && !addingInline ? (
+              <EmptyState title="No coworkers yet">
+                Add or spawn the agents you work with.
+              </EmptyState>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <SectionTitle aside="active session IDs, rate limits &amp; council seats">Coworkers</SectionTitle>
+                <section aria-label="Coworkers" className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {identities.map((i) => {
+                  const badge = identityStatusBadge(i, liveAgentIds.has(i.id));
+                  return (
+                    <button
+                      type="button"
+                      key={i.id}
+                      onClick={() => setSelectedId(i.id)}
+                      className={cn(
+                        'bg-card flex flex-col gap-2.5 rounded-xl p-3.5 text-left transition-colors border border-border/50 cursor-pointer',
+                        selectedId === i.id && 'ring-2 ring-foreground/40'
+                      )}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Avatar who={i} size={44} />
+                        <div className="flex min-w-0 flex-1 flex-col leading-tight">
+                          <span className="font-semibold text-foreground">{i.name}</span>
+                          <span className="truncate text-xs text-muted-foreground">{i.role ?? 'No role set'}</span>
+                        </div>
+                        <Tag tone={badge.tone}>{badge.label}</Tag>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex flex-col">
+                          <span className="text-[11px] text-muted-foreground">Runs on</span>
+                          <span className="font-mono text-xs text-foreground">{i.runtime ?? 'Not configured'}</span>
+                        </div>
+                        {i.activeSessionId && (
+                          <div className="flex flex-col items-end">
+                            <span className="text-[11px] text-muted-foreground">Session ID</span>
+                            <span className="font-mono text-[11px] text-foreground/85">{i.activeSessionId}</span>
+                          </div>
+                        )}
+                      </div>
+                      {i.acpSessionId && (
+                        <div className="truncate rounded bg-foreground/[0.04] px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                          ACP session: {i.acpSessionId}
+                        </div>
+                      )}
+                      {i.statusState === 'rate_limited' && i.rateLimitResetAt && (
+                        <div className="rounded border border-needs-you/30 bg-needs-you/10 px-2 py-1 text-[11px] text-needs-you">
+                          Waiting for session reset at {fmtTime(i.rateLimitResetAt)}
+                          {i.rateLimitReason ? ` · ${i.rateLimitReason}` : ''}
+                        </div>
+                      )}
+                      <div className="flex flex-wrap gap-1.5">
+                        {i.seats.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">No council seats</span>
+                        ) : (
+                          i.seats.map((s) => <Tag key={s}>{s}</Tag>)
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </section>
+            </div>
+          )}
+
+            {/* Scheduled Wakeups & Cron (Restored from previous page) */}
+            {schedules.length > 0 && (
+              <section aria-label="Active Agent Schedules" className="bg-card flex flex-col gap-2 rounded-xl p-4.5 border border-border/50">
+                <SectionTitle aside="self-wake timers &amp; cron jobs">Scheduled Wakeups &amp; Cron</SectionTitle>
+                <div className="flex flex-col divide-y divide-border/50">
+                  {schedules.map((sch) => {
+                    const target = identities.find((i) => i.id === sch.targetAgentId);
+                    return (
+                      <div key={sch.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-foreground">{target?.name ?? sch.targetAgentId}</span>
+                            <Tag tone={sch.enabled ? 'observed' : 'quiet'}>
+                              {sch.cronExpr ? `cron: ${sch.cronExpr}` : sch.intervalSeconds ? `every ${sch.intervalSeconds}s` : 'one-shot timer'}
+                            </Tag>
+                            <span className="font-mono text-[11px] text-muted-foreground">
+                              next: {sch.nextRunAt ? fmtTime(sch.nextRunAt) : 'done'} · runs: {sch.runCount}
+                            </span>
+                          </div>
+                          <span className="truncate text-muted-foreground">{sch.prompt}</span>
+                        </div>
+                        {client && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => void client.updateSchedule(sch.id, { enabled: !sch.enabled })}
+                              className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}
+                            >
+                              {sch.enabled ? 'Pause' : 'Resume'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void client.deleteSchedule(sch.id)}
+                              className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* Agent Runtimes & Adapters (Restored from previous page) */}
+            <section aria-label="Agent runtimes" className="bg-card flex flex-col gap-1 rounded-xl p-4.5 border border-border/50">
+              <SectionTitle aside="probed on this Mac · shared rate-limit awareness">Agent runtimes</SectionTitle>
+              {adapters.length === 0 && <p className="py-2 text-sm text-muted-foreground">The runtime has not reported its adapters yet.</p>}
+              {adapters.map((a) => {
+                const status = authTag(a.auth);
+                const isLimited = Boolean(a.rateLimitResetAt && new Date(a.rateLimitResetAt).getTime() > Date.now());
+                return (
+                  <div key={a.id} className="flex flex-wrap items-center gap-3 border-t border-border/50 py-2.5 first:border-t-0">
+                    <span className="flex-1 basis-32 font-medium text-foreground">{a.name}</span>
+                    <span className="flex-1 basis-40 font-mono text-xs text-muted-foreground">
+                      {a.command}
+                      {a.version ? ` · ${a.version}` : ''}
+                    </span>
+                    <span className="flex-1 basis-56 text-xs text-muted-foreground">
+                      {isLimited
+                        ? `Session limit active — resets at ${fmtTime(a.rateLimitResetAt)} (${a.rateLimitReason ?? 'usage limit'})`
+                        : (a.auth?.detail ?? 'Not probed')}
+                    </span>
+                    {isLimited ? (
+                      <Tag tone="needs-you">Resets {fmtTime(a.rateLimitResetAt)}</Tag>
+                    ) : (
+                      <Tag tone={status.tone}>{status.label}</Tag>
+                    )}
+                    {client && (
+                      <div className="flex items-center gap-1">
+                        {isLimited ? (
+                          <button
+                            type="button"
+                            onClick={() => void client.clearAdapterRateLimit(a.id)}
+                            className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}
+                          >
+                            Mark Resumed
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void client.setAdapterRateLimit(a.id, {
+                                resetAt: new Date(Date.now() + 2 * 3600_000).toISOString(),
+                                reason: `${a.name} session limit reached`,
+                              })
+                            }
+                            className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}
+                          >
+                            Flag Limit (2h)
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <p className="pt-1 text-xs text-muted-foreground">
+                When any adapter hits a session limit, MyaOS broadcasts the exact reset timestamp to all other agents so Antigravity/Gemini/Codex coworkers can cover or wait and auto-resume.
+              </p>
+            </section>
+          </main>
+
+          {/* Autonomy Panel & Avatar Picker (Restored from previous page) */}
+          {selectedAgent && (
+            <div className="flex w-full flex-col gap-4 lg:w-96">
+              <AgentAutonomyPanel key={`auto-${selectedAgent.id}`} identity={selectedAgent} ownerId={ownerId} />
+              <AvatarPicker
+                key={selectedAgent.id}
+                identity={selectedAgent}
+                onSave={onUpdate ? (input) => onUpdate(selectedAgent.id, input) : undefined}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modals */}
       {isSpawnModalOpen && (
         <SpawnAgentModal
           isOpen={isSpawnModalOpen}
@@ -1389,7 +1791,6 @@ export function TeamScreen({
         />
       )}
 
-      {/* Edit Role Modal */}
       {isEditModalOpen && editingAgent && (
         <EditRoleModal
           isOpen={isEditModalOpen}
@@ -1405,7 +1806,6 @@ export function TeamScreen({
         />
       )}
 
-      {/* Wake Agent Modal */}
       {isWakeModalOpen && selectedAgent && (
         <WakeAgentModal
           isOpen={isWakeModalOpen}
@@ -1419,7 +1819,372 @@ export function TeamScreen({
 }
 
 // ---------------------------------------------------------------------------
-// Spawn Agent Modal
+// Agent Autonomy Panel (Restored from Coworkers screen)
+// ---------------------------------------------------------------------------
+
+function AgentAutonomyPanel({ identity, ownerId }: { identity: Identity; ownerId: string }) {
+  const { client } = useRuntime();
+  const [wakePrompt, setWakePrompt] = React.useState('');
+  const [allowFallback, setAllowFallback] = React.useState(true);
+  const [schedulePrompt, setSchedulePrompt] = React.useState('');
+  const [scheduleSpec, setScheduleSpec] = React.useState('15m');
+  const [limitMinutes, setLimitMinutes] = React.useState('60');
+  const [statusMsg, setStatusMsg] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+
+  if (!client) return null;
+
+  const isLimited = Boolean(
+    identity.statusState === 'rate_limited' &&
+      identity.rateLimitResetAt &&
+      new Date(identity.rateLimitResetAt).getTime() > Date.now()
+  );
+
+  const handleWake = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wakePrompt.trim() || busy) return;
+    setBusy(true);
+    setStatusMsg(null);
+    try {
+      const res = await client.wakeAgent(identity.id, {
+        fromActorId: ownerId,
+        fromActorKind: 'human',
+        prompt: wakePrompt.trim(),
+        reason: 'Manual wake from Coworkers panel',
+        allowFallbackAdapter: allowFallback,
+      });
+      setWakePrompt('');
+      if (res.session?.id) {
+        setStatusMsg(`Woke ${identity.name} in session ${res.session.id}`);
+      } else if (res.deferredUntil) {
+        setStatusMsg(`Session limit active — scheduled wakeup at ${fmtTime(res.deferredUntil)}`);
+      }
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSchedule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!schedulePrompt.trim() || busy) return;
+    setBusy(true);
+    setStatusMsg(null);
+    try {
+      const spec = scheduleSpec.trim();
+      const durMatch = spec.match(/^(\d+)\s*(s|m|h)$/i);
+      const delaySeconds = durMatch
+        ? Number(durMatch[1]) * (durMatch[2]!.toLowerCase() === 'h' ? 3600 : durMatch[2]!.toLowerCase() === 'm' ? 60 : 1)
+        : undefined;
+      const cronExpr = !durMatch && spec.includes(' ') ? spec : undefined;
+      await client.createSchedule({
+        targetAgentId: identity.id,
+        createdBy: ownerId,
+        prompt: schedulePrompt.trim(),
+        delaySeconds: delaySeconds ?? (!cronExpr ? 300 : undefined),
+        cronExpr,
+      });
+      setSchedulePrompt('');
+      setStatusMsg(`Scheduled wakeup (${spec}) for ${identity.name}`);
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReportLimit = async () => {
+    setBusy(true);
+    setStatusMsg(null);
+    try {
+      const mins = Math.max(1, Number(limitMinutes) || 60);
+      const resetAt = new Date(Date.now() + mins * 60_000).toISOString();
+      await client.setAgentRateLimit(identity.id, {
+        resetAt,
+        reason: `Waiting for ${identity.runtime ?? 'session'} limit reset`,
+      });
+      setStatusMsg(`Marked ${identity.name} rate-limited until ${fmtTime(resetAt)}`);
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleClearLimit = async () => {
+    setBusy(true);
+    setStatusMsg(null);
+    try {
+      await client.clearAgentRateLimit(identity.id);
+      setStatusMsg(`${identity.name} marked ready & resumed.`);
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <aside aria-label="Autonomous controls" className="bg-card flex flex-col gap-3.5 rounded-xl p-5 border border-border/50">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold">{identity.name} · Autonomy &amp; Session</h2>
+          <p className="text-xs text-muted-foreground">
+            {identity.activeSessionId ? `Captured session: ${identity.activeSessionId}` : 'No session spawned yet — wake to capture'}
+          </p>
+        </div>
+        {identity.activeSessionId && (
+          <a href={href({ name: 'dev' })} className={buttonVariants({ variant: 'glass', size: 'sm' })}>
+            Terminal
+          </a>
+        )}
+      </div>
+
+      {identity.acpSessionId && (
+        <div className="rounded-lg border border-border/50 bg-foreground/[0.03] px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
+          ACP Session ID: {identity.acpSessionId}
+          {identity.lastWokenAt ? ` · Last woken ${fmtTime(identity.lastWokenAt)}` : ''}
+        </div>
+      )}
+
+      <form onSubmit={handleWake} className="flex flex-col gap-2 border-t border-border/50 pt-3">
+        <span className="text-xs font-medium">1. Wake {identity.name}</span>
+        <textarea
+          value={wakePrompt}
+          onChange={(e) => setWakePrompt(e.target.value)}
+          placeholder={`Send instruction to wake ${identity.name}…`}
+          aria-label={`Wake ${identity.name}`}
+          className="min-h-16 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-xs outline-none"
+        />
+        <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={allowFallback}
+            onChange={(e) => setAllowFallback(e.target.checked)}
+          />
+          Use fallback adapter if primary runtime is waiting for session reset
+        </label>
+        <button type="submit" disabled={!wakePrompt.trim() || busy} className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'cursor-pointer')}>
+          Wake {identity.name} Now
+        </button>
+      </form>
+
+      <form onSubmit={handleSchedule} className="flex flex-col gap-2 border-t border-border/50 pt-3">
+        <span className="text-xs font-medium">2. Self-Schedule / Cron Wakeup</span>
+        <div className="flex gap-2">
+          <input
+            value={scheduleSpec}
+            onChange={(e) => setScheduleSpec(e.target.value)}
+            placeholder="15m, 1h, or */15 * * * *"
+            aria-label="Schedule delay or cron"
+            className="glass-panel h-8 w-36 rounded-md px-2 font-mono text-xs outline-none"
+          />
+          <input
+            value={schedulePrompt}
+            onChange={(e) => setSchedulePrompt(e.target.value)}
+            placeholder="Check progress on build / tests…"
+            aria-label="Schedule prompt"
+            className="glass-panel h-8 flex-1 rounded-md px-2 text-xs outline-none"
+          />
+        </div>
+        <button type="submit" disabled={!schedulePrompt.trim() || busy} className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}>
+          Schedule Wakeup
+        </button>
+      </form>
+
+      <div className="flex flex-col gap-2 border-t border-border/50 pt-3">
+        <span className="text-xs font-medium">3. Session Limit &amp; Reset Awareness</span>
+        {isLimited ? (
+          <div className="flex flex-col gap-2 rounded-lg border border-needs-you/40 bg-needs-you/10 p-2.5 text-xs text-needs-you">
+            <span>
+              Waiting for session reset until <strong>{fmtTime(identity.rateLimitResetAt)}</strong> ({identity.rateLimitReason ?? 'rate limit'})
+            </span>
+            <button type="button" onClick={handleClearLimit} disabled={busy} className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}>
+              Session Resumed · Clear Limit
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input
+              value={limitMinutes}
+              onChange={(e) => setLimitMinutes(e.target.value)}
+              aria-label="Reset minutes"
+              className="glass-panel h-8 w-20 rounded-md px-2 font-mono text-xs outline-none"
+            />
+            <span className="text-xs text-muted-foreground">min until reset</span>
+            <button type="button" onClick={handleReportLimit} disabled={busy} className={cn(buttonVariants({ variant: 'glass', size: 'sm' }), 'cursor-pointer')}>
+              Flag Session Limit
+            </button>
+          </div>
+        )}
+      </div>
+
+      {statusMsg && <p className="text-xs text-verified">{statusMsg}</p>}
+    </aside>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AvatarPicker (Restored from Coworkers screen)
+// ---------------------------------------------------------------------------
+
+function AvatarPicker({ identity, onSave }: { identity: Identity; onSave?: (input: UpdateIdentityInput) => Promise<void> }) {
+  const [mark, setMark] = React.useState(identity.avatarMark ?? 'diamond');
+  const [color, setColor] = React.useState(identity.avatarColor ?? 'graphite');
+  const [name, setName] = React.useState(identity.name);
+  const [state, setState] = React.useState<'idle' | 'saving' | 'saved' | string>('idle');
+  const preview = { name, avatarMark: mark, avatarColor: color };
+  const dirty = mark !== identity.avatarMark || color !== identity.avatarColor || name !== identity.name;
+
+  const save = async () => {
+    if (!onSave) return;
+    setState('saving');
+    try {
+      await onSave({ avatarMark: mark, avatarColor: color, name });
+      setState('saved');
+    } catch (e) {
+      setState(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  return (
+    <aside aria-label="Avatar picker" className="bg-card flex w-full flex-col gap-4.5 rounded-xl p-5 border border-border/50">
+      <div>
+        <h2 className="text-base font-semibold">{identity.name}’s Avatar &amp; Profile</h2>
+        <p className="text-xs text-muted-foreground">Pick a mark and a colour. Avatars are yours to choose; nothing is a real face.</p>
+      </div>
+      <div className="flex items-center gap-4">
+        <Avatar who={preview} size={88} />
+        <div className="flex flex-col gap-2 text-[13px]">
+          <span className="flex items-center gap-2"><Avatar who={preview} size={28} /> {name} <span className="text-xs text-muted-foreground">in a thread</span></span>
+          <span className="flex items-center gap-2"><Avatar who={preview} size={18} /> <span className="text-xs text-muted-foreground">in lists</span></span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <span className="text-xs text-muted-foreground">Mark</span>
+        <div className="grid grid-cols-6 gap-2">
+          {Object.entries(AVATAR_MARKS).map(([id, m]) => (
+            <button
+              key={id}
+              type="button"
+              aria-label={m.name}
+              aria-pressed={mark === id}
+              onClick={() => setMark(id)}
+              className={cn('glass-panel inline-flex aspect-square items-center justify-center rounded-xl cursor-pointer', mark === id && 'ring-1 ring-foreground')}
+            >
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d={m.d} />
+              </svg>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <span className="text-xs text-muted-foreground">Colour</span>
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(AVATAR_COLORS).map(([id, c]) => (
+            <button
+              key={id}
+              type="button"
+              aria-label={c.name}
+              aria-pressed={color === id}
+              onClick={() => setColor(id)}
+              className={cn('inline-flex size-11 items-center justify-center rounded-full border-2 cursor-pointer', color === id ? 'border-foreground' : 'border-transparent')}
+              style={{ background: c.bg }}
+            >
+              <span className="size-3 rounded-full" style={{ background: c.fg }} />
+            </button>
+          ))}
+        </div>
+      </div>
+      <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+        Display name
+        <input value={name} onChange={(e) => setName(e.target.value)} className="glass-panel h-10 rounded-md px-3 text-sm text-foreground outline-none" />
+      </label>
+      <div className="mt-auto flex items-center gap-3">
+        <button type="button" disabled={!onSave || !dirty || state === 'saving'} onClick={save} className={cn(buttonVariants({ variant: 'default' }), 'flex-1 cursor-pointer')}>
+          {state === 'saving' ? 'Saving…' : 'Save Profile'}
+        </button>
+        {state === 'saved' && !dirty && <span className="text-xs text-verified">Saved</span>}
+        {!['idle', 'saving', 'saved'].includes(state) && <span className="text-xs text-risk">Not saved: {state}</span>}
+      </div>
+    </aside>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AddForm (Inline add from Coworkers screen)
+// ---------------------------------------------------------------------------
+
+function AddForm({ onCreate, onCancel }: { onCreate: (i: CreateIdentityInput, initialPrompt?: string) => Promise<void>; onCancel: () => void }) {
+  const [name, setName] = React.useState('');
+  const [role, setRole] = React.useState('');
+  const [runtime, setRuntime] = React.useState(RUNTIMES[0].name);
+  const [initialPrompt, setInitialPrompt] = React.useState('');
+  const [error, setError] = React.useState<string | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    try {
+      await onCreate(
+        {
+          id: name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+          name: name.trim(),
+          role: role.trim() || undefined,
+          runtime,
+          avatarMark: 'diamond',
+          avatarColor: 'graphite',
+        },
+        initialPrompt.trim() || undefined
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const field = 'glass-panel h-9 rounded-md px-2.5 text-sm outline-none placeholder:text-muted-foreground';
+  return (
+    <form onSubmit={submit} className="bg-card flex flex-wrap items-end gap-3 rounded-xl p-4 border border-border/50">
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Name
+        <input value={name} onChange={(e) => setName(e.target.value)} className={field} placeholder="Nova" required />
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Role
+        <input value={role} onChange={(e) => setRole(e.target.value)} className={field} placeholder="Platform and backend" />
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Runs on
+        <select value={runtime} onChange={(e) => setRuntime(e.target.value)} className={field}>
+          {RUNTIMES.slice(0, 3).map((r) => (
+            <option key={r.name}>{r.name}</option>
+          ))}
+        </select>
+      </label>
+      <label className="flex min-w-60 flex-1 flex-col gap-1 text-xs text-muted-foreground">
+        Immediate wakeup instruction (optional)
+        <input
+          value={initialPrompt}
+          onChange={(e) => setInitialPrompt(e.target.value)}
+          className={field}
+          placeholder="Start working on… (spawns session immediately)"
+        />
+      </label>
+      <button type="submit" className={cn(buttonVariants({ variant: 'default' }), 'cursor-pointer')}>
+        Spawn / Add
+      </button>
+      <button type="button" onClick={onCancel} className={cn(buttonVariants({ variant: 'glass' }), 'cursor-pointer')}>
+        Cancel
+      </button>
+      {error && <p className="w-full text-xs text-risk">{error}</p>}
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SpawnAgentModal (AI intent generator & manual controls)
 // ---------------------------------------------------------------------------
 
 interface SpawnAgentModalProps {
@@ -1455,7 +2220,6 @@ function SpawnAgentModal({
 
   if (!isOpen) return null;
 
-  // AI Architect instant generator
   const handleGenerateRole = () => {
     if (!intent.trim()) return;
     const clean = intent.trim().toLowerCase();
@@ -1572,7 +2336,6 @@ function SpawnAgentModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs font-sans select-none animate-fade-in">
       <div className="glass-panel w-full max-w-xl rounded-2xl border border-border/80 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Modal Header */}
         <div className="px-6 py-4 border-b border-border/60 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-xl bg-foreground/10 text-foreground">
@@ -1592,7 +2355,6 @@ function SpawnAgentModal({
           </button>
         </div>
 
-        {/* Modal Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
           {error && (
             <div className="p-3 rounded-xl border border-risk/40 bg-risk/10 text-risk text-xs flex items-center gap-2">
@@ -1601,7 +2363,6 @@ function SpawnAgentModal({
             </div>
           )}
 
-          {/* Natural intent role generator */}
           <div className="space-y-1.5 p-3 rounded-xl bg-foreground/[0.03] border border-border/50">
             <label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
               <Sparkles className="size-3 text-amber-500" />
@@ -1734,7 +2495,6 @@ function SpawnAgentModal({
             </label>
           </div>
 
-          {/* Modal Actions */}
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-border/60">
             <button
               type="button"
@@ -1758,7 +2518,7 @@ function SpawnAgentModal({
 }
 
 // ---------------------------------------------------------------------------
-// Edit Role Modal
+// EditRoleModal
 // ---------------------------------------------------------------------------
 
 interface EditRoleModalProps {
@@ -1817,7 +2577,6 @@ function EditRoleModal({ isOpen, onClose, identity, onSaved }: EditRoleModalProp
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs font-sans select-none animate-fade-in">
       <div className="glass-panel w-full max-w-lg rounded-2xl border border-border/80 shadow-2xl overflow-hidden flex flex-col">
-        {/* Header */}
         <div className="px-6 py-4 border-b border-border/60 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-xl bg-foreground/10 text-foreground">
@@ -1837,7 +2596,6 @@ function EditRoleModal({ isOpen, onClose, identity, onSaved }: EditRoleModalProp
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSave} className="p-6 space-y-4">
           {error && (
             <div className="p-3 rounded-xl border border-risk/40 bg-risk/10 text-risk text-xs">
@@ -1936,7 +2694,7 @@ function EditRoleModal({ isOpen, onClose, identity, onSaved }: EditRoleModalProp
 }
 
 // ---------------------------------------------------------------------------
-// Wake Agent Modal
+// WakeAgentModal
 // ---------------------------------------------------------------------------
 
 interface WakeAgentModalProps {

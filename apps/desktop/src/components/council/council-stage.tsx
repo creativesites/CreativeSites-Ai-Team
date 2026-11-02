@@ -194,10 +194,10 @@ export function CouncilStage({
     });
 
     const innerPlateY = n ? Math.min(...xs.map((x) => edge(x) + H * 0.01)) : cy - ry;
-    const topY = innerPlateY + 26;
-    const botY = H - 56;
+    const topY = Math.max(48, innerPlateY + 16);
+    const botY = H - (speakingSeat || queueCount > 0 ? 56 : 28);
     const centerTop = Math.round((topY + botY) / 2);
-    const centerMaxH = Math.max(160, Math.round(botY - topY));
+    const centerMaxH = Math.max(260, Math.round(botY - topY));
 
     return {
       W,
@@ -400,7 +400,7 @@ export function CouncilStage({
                 </div>
               </div>
               <textarea
-                rows={4}
+                rows={3}
                 value={prompt}
                 onChange={(e) => onPromptChange(e.target.value)}
                 placeholder="What are you deciding? Include your options, constraints, numbers, and what you're leaning toward."

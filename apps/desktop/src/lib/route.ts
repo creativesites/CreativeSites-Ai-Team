@@ -17,7 +17,9 @@ export type Route =
   | { name: 'communication'; tab?: CommunicationSubpage }
   | { name: 'approvals' }
   | { name: 'jobs' }
+  | { name: 'projects'; subpage?: 'board' | 'list' | 'projects' | 'okrs'; projectId?: string }
   | { name: 'workspaces' }
+  | { name: 'okrs'; quarter?: string }
   | { name: 'settings' }
   | { name: 'preview'; screen: string };
 
@@ -47,8 +49,18 @@ export function parseRoute(hash: string): Route {
       return { name: 'approvals' };
     case 'jobs':
       return { name: 'jobs' };
+    case 'projects':
+    case 'project':
+    case 'board':
+      return {
+        name: 'projects',
+        subpage: (parts[1] === 'board' || parts[1] === 'list' || parts[1] === 'projects' || parts[1] === 'okrs') ? parts[1] : undefined,
+        projectId: (parts[1] && !['board', 'list', 'projects', 'okrs'].includes(parts[1])) ? parts[1] : undefined,
+      };
     case 'workspaces':
       return { name: 'workspaces' };
+    case 'okrs':
+      return { name: 'okrs', quarter: parts[1] };
     case 'settings':
       return { name: 'settings' };
     case 'preview':
@@ -84,12 +96,20 @@ export function href(route: Route): string {
       return '#/approvals';
     case 'jobs':
       return '#/jobs';
+    case 'projects':
+      if (route.subpage) return `#/projects/${e(route.subpage)}`;
+      if (route.projectId) return `#/projects/${e(route.projectId)}`;
+      return '#/projects';
     case 'workspaces':
       return '#/workspaces';
+    case 'okrs':
+      return route.quarter ? `#/okrs/${e(route.quarter)}` : '#/okrs';
     case 'settings':
       return '#/settings';
     case 'preview':
       return `#/preview/${e(route.screen)}`;
+    default:
+      return '#/home';
   }
 }
 
