@@ -40,6 +40,8 @@ import type {
   Evidence,
   ExtractDesignInput,
   GenerateDesignInput,
+  GitCommitItem,
+  GitDiffSummary,
   Health,
   Identity,
   IdentityStatusState,
@@ -52,6 +54,7 @@ import type {
   Message,
   PostMessageInput,
   Project,
+  ProjectFileItem,
   RateLimitReportInput,
   Repo,
   Room,
@@ -198,6 +201,15 @@ export class RuntimeClient {
     this.request<{ project: Project; repos: { repo: Repo; state: WorkspaceState }[] }>(
       'GET',
       `/v1/projects/${encodeURIComponent(id)}/status`
+    );
+  projectCommits = (projectId: string, limit = 15) =>
+    this.request<GitCommitItem[]>('GET', `/v1/projects/${encodeURIComponent(projectId)}/commits?limit=${limit}`);
+  projectDiff = (projectId: string) =>
+    this.request<GitDiffSummary>('GET', `/v1/projects/${encodeURIComponent(projectId)}/diff`);
+  projectFiles = (projectId: string, subPath = '', limit = 100) =>
+    this.request<ProjectFileItem[]>(
+      'GET',
+      `/v1/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(subPath)}&limit=${limit}`
     );
   createProject = (input: CreateProjectInput) => this.request<Project>('POST', '/v1/projects', input);
   updateProject = (id: string, input: UpdateProjectInput) =>

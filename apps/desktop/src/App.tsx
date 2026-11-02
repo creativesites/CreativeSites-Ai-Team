@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { AdapterInfo, Identity, JobSummary, Project, Room, Session } from '@runtime/types';
+import type { AdapterInfo, Identity, JobSummary, Project, Room, Session, Team } from '@runtime/types';
 import { RuntimeBanner, Sidebar, useMode } from '@/components/app/shell';
 import { EmptyState } from '@/components/app/status';
 import { Toaster } from '@/components/app/toaster';
@@ -51,6 +51,7 @@ function Workspace({ route }: { route: Route }) {
   const sessions = useRuntimeData((c) => c.sessions());
   const adapters = useRuntimeData((c) => c.adapters());
   const projects = useRuntimeData((c) => c.projects());
+  const teams = useRuntimeData((c) => c.teams());
   const settings = useRuntimeData((c) => c.settings());
 
   const idList = list(identities);
@@ -84,6 +85,7 @@ function Workspace({ route }: { route: Route }) {
           sessions={list(sessions)}
           adapters={list(adapters)}
           projects={list(projects)}
+          teams={list(teams)}
           ownerId={ownerId}
           ownerName={ownerName}
         />
@@ -101,6 +103,7 @@ function Screen({
   sessions,
   adapters,
   projects,
+  teams,
   ownerId,
   ownerName,
 }: {
@@ -111,6 +114,7 @@ function Screen({
   sessions: Session[];
   adapters: AdapterInfo[];
   projects: Project[];
+  teams: Team[];
   ownerId: string;
   ownerName: string;
 }) {
@@ -156,7 +160,18 @@ function Screen({
     case 'dev':
       return <DevContainer jobId={route.jobId ?? jobs[0]?.id} jobs={jobs} identities={identities} sessions={sessions} />;
     case 'workspaces':
-      return <WorkspacesScreen projects={projects} rooms={rooms} identities={identities} />;
+      return (
+        <WorkspacesScreen
+          projects={projects}
+          rooms={rooms}
+          teams={teams}
+          jobs={jobs}
+          sessions={sessions}
+          identities={identities}
+          ownerId={ownerId}
+          onStartJob={client ? startJob : undefined}
+        />
+      );
     case 'settings':
       return <SettingsScreen identities={identities} adapters={adapters} projects={projects} />;
     case 'coworkers':

@@ -24,6 +24,26 @@ export interface WorkspaceState {
   error: string | null;
 }
 
+export interface GitCommitItem {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  date: string;
+}
+
+export interface GitDiffSummary {
+  diff: string;
+  files: { path: string; status: string }[];
+}
+
+export interface ProjectFileItem {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size?: number;
+}
+
 export interface Health {
   ok: boolean;
   version: string;

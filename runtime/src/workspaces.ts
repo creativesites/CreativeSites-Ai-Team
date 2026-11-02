@@ -206,3 +206,88 @@ export function removeWorktree(repoPath: string, worktreePath: string): void {
     fs.rmSync(worktreePath, { recursive: true, force: true });
   }
 }
+
+export interface GitCommitItem {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  date: string;
+}
+
+export function gitCommits(dir: string, limit = 15): GitCommitItem[] {
+  const resolved = path.resolve(expand(dir));
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) return [];
+  try {
+    const raw = git(resolved, ['log', `-n`, String(limit), '--format=%H|%h|%s|%an|%cI']);
+    if (!raw) return [];
+    return raw
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [hash, shortHash, subject, author, date] = line.split('|');
+        return {
+          hash: hash || '',
+          shortHash: shortHash || '',
+          subject: subject || '',
+          author: author || '',
+          date: date || '',
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
+export function gitDiff(dir: string): { diff: string; files: { path: string; status: string }[] } {
+  const resolved = path.resolve(expand(dir));
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) return { diff: '', files: [] };
+  try {
+    const diff = git(resolved, ['diff', 'HEAD']);
+    const statusRaw = git(resolved, ['status', '--porcelain=v1']);
+    const files = statusRaw
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => ({
+        status: line.slice(0, 2).trim(),
+        path: line.slice(3).trim(),
+      }));
+    return { diff, files };
+  } catch {
+    return { diff: '', files: [] };
+  }
+}
+
+export interface ProjectFileItem {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size?: number;
+}
+
+export function listProjectFiles(dir: string, subPath = '', maxEntries = 100): ProjectFileItem[] {
+  const resolvedRoot = path.resolve(expand(dir));
+  const targetDir = subPath ? path.resolve(resolvedRoot, subPath) : resolvedRoot;
+  if (!isInside(resolvedRoot, targetDir) || !fs.existsSync(targetDir) || !fs.statSync(targetDir).isDirectory()) return [];
+  try {
+    const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+    const items: ProjectFileItem[] = [];
+    for (const e of entries) {
+      if (e.name === '.git' || e.name === 'node_modules' || e.name === '.DS_Store') continue;
+      const full = path.join(targetDir, e.name);
+      const isDir = e.isDirectory();
+      let size: number | undefined;
+      try {
+        if (!isDir) size = fs.statSync(full).size;
+      } catch {
+        /* ignore */
+      }
+      const rel = path.relative(resolvedRoot, full);
+      items.push({ name: e.name, path: rel, isDirectory: isDir, size });
+      if (items.length >= maxEntries) break;
+    }
+    return items.sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1));
+  } catch {
+    return [];
+  }
+}

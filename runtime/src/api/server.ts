@@ -406,6 +406,24 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('GET', '/v1/projects/:id', (ctx) => ({ status: 200, body: repo.getProject(ctx.params.id!) })),
     route('POST', '/v1/projects/:id', (ctx) => ({ status: 200, body: repo.updateProject(ctx.params.id!, ctx.body as T.UpdateProjectInput) })),
     route('GET', '/v1/projects/:id/status', (ctx) => ({ status: 200, body: projectStatus(ctx.params.id!) })),
+    route('GET', '/v1/projects/:id/commits', (ctx) => {
+      const project = repo.getProject(ctx.params.id!);
+      const root = project.rootPath || project.repos[0]?.path;
+      return { status: 200, body: root ? workspaces.gitCommits(root, Number(ctx.query.get('limit') ?? 15)) : [] };
+    }),
+    route('GET', '/v1/projects/:id/diff', (ctx) => {
+      const project = repo.getProject(ctx.params.id!);
+      const root = project.rootPath || project.repos[0]?.path;
+      return { status: 200, body: root ? workspaces.gitDiff(root) : { diff: '', files: [] } };
+    }),
+    route('GET', '/v1/projects/:id/files', (ctx) => {
+      const project = repo.getProject(ctx.params.id!);
+      const root = project.rootPath || project.repos[0]?.path;
+      return {
+        status: 200,
+        body: root ? workspaces.listProjectFiles(root, ctx.query.get('path') ?? '', Number(ctx.query.get('limit') ?? 100)) : [],
+      };
+    }),
     route('POST', '/v1/projects/:id/repos', (ctx) => ({ status: 201, body: repo.addRepo(ctx.params.id!, ctx.body as unknown as T.CreateRepoInput) })),
     route('DELETE', '/v1/repos/:id', (ctx) => {
       repo.removeRepo(ctx.params.id!);
