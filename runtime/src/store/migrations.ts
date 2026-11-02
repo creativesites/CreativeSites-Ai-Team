@@ -525,4 +525,77 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE councils ADD COLUMN session_dir TEXT;
     `,
   },
+  {
+    version: 5,
+    name: 'autonomous wake, schedules, rate limits, and phase 2 ship actions',
+    sql: `
+      -- identities: active session tracking and rate-limit / session-limit awareness
+      ALTER TABLE identities ADD COLUMN active_session_id TEXT;
+      ALTER TABLE identities ADD COLUMN acp_session_id TEXT;
+      ALTER TABLE identities ADD COLUMN status_state TEXT NOT NULL DEFAULT 'idle';
+      ALTER TABLE identities ADD COLUMN rate_limit_reset_at TEXT;
+      ALTER TABLE identities ADD COLUMN rate_limit_reason TEXT;
+      ALTER TABLE identities ADD COLUMN last_woken_at TEXT;
+
+      -- adapters: cross-agent rate-limit / session-limit awareness
+      ALTER TABLE adapters ADD COLUMN rate_limit_reset_at TEXT;
+      ALTER TABLE adapters ADD COLUMN rate_limit_reason TEXT;
+
+      -- jobs: Phase 2 non-code job kinds and ship action state
+      ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'code';
+      ALTER TABLE jobs ADD COLUMN ship_status TEXT NOT NULL DEFAULT 'none';
+      ALTER TABLE jobs ADD COLUMN ship_payload TEXT NOT NULL DEFAULT '{}';
+
+      -- sessions: bind directly to job_id and room_id as well as task_id so room/team-leader wakes work without requiring a task
+      ALTER TABLE sessions ADD COLUMN job_id TEXT;
+      ALTER TABLE sessions ADD COLUMN room_id TEXT;
+
+      -- agent_wakes: audit & queue for agent-to-agent and human-to-agent wakeups
+      CREATE TABLE agent_wakes (
+        id TEXT PRIMARY KEY,
+        target_agent_id TEXT NOT NULL,
+        from_actor_id TEXT NOT NULL,
+        from_actor_kind TEXT NOT NULL DEFAULT 'agent',
+        job_id TEXT,
+        room_id TEXT,
+        task_id TEXT,
+        session_id TEXT,
+        adapter_id TEXT,
+        reason TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending','dispatched','deferred_rate_limit','completed','failed')),
+        scheduled_for TEXT,
+        created_at TEXT NOT NULL,
+        dispatched_at TEXT,
+        completed_at TEXT,
+        error TEXT
+      );
+      CREATE INDEX agent_wakes_target ON agent_wakes(target_agent_id, created_at DESC);
+      CREATE INDEX agent_wakes_status ON agent_wakes(status, scheduled_for);
+
+      -- agent_schedules: cron & one-shot self-wake and cross-agent timers
+      CREATE TABLE agent_schedules (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_by_kind TEXT NOT NULL DEFAULT 'agent',
+        job_id TEXT,
+        room_id TEXT,
+        task_id TEXT,
+        kind TEXT NOT NULL CHECK (kind IN ('timer','cron','interval')),
+        cron_expr TEXT,
+        interval_seconds INTEGER,
+        next_run_at TEXT NOT NULL,
+        last_run_at TEXT,
+        prompt TEXT NOT NULL,
+        reason TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        max_runs INTEGER,
+        run_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX agent_schedules_due ON agent_schedules(enabled, next_run_at);
+    `,
+  },
 ];

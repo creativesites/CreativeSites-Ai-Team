@@ -121,6 +121,21 @@ async function handlePrompt(message) {
       return;
     }
 
+    if (/simulate rate limit/i.test(promptText)) {
+      process.stderr.write('Claude AI usage limit reached. Your session limit resets in 45m.\n');
+      respondError(message.id, -32000, 'Session limit reached · resets in 45m');
+      return;
+    }
+
+    if (/emit directive:/i.test(promptText)) {
+      const m = promptText.match(/emit directive:\s*([^\n]+)/i);
+      if (m) {
+        agentText(`\nExecuting requested action:\n${m[1].trim()}\n`);
+      }
+      respond(message.id, { stopReason: 'end_turn' });
+      return;
+    }
+
     if (/echo ok/i.test(promptText)) {
       toolCall('t-echo', 'Run echo ok', 'pending', { command: 'echo ok' });
       const terminal = await runTerminal('echo', ['ok']);

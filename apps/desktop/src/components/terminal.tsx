@@ -1,295 +1,514 @@
 import * as React from 'react';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { invoke, isTauri } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import '@xterm/xterm/css/xterm.css';
+import { useRuntime } from '@/lib/runtime-context';
 import { cn } from '@/lib/utils';
 
-// Global history buffer to preserve terminal output across view/tab switches
-const globalTerminalBuffers = new Map<string, string>();
+interface TerminalOutputPayload {
+  id: number;
+  data: string;
+}
 
-export const appendTerminalBuffer = (sessionId: string, data: string) => {
-  const current = globalTerminalBuffers.get(sessionId) || '';
-  // Cap at 256KB to avoid unbounded memory growth
-  globalTerminalBuffers.set(sessionId, (current + data).slice(-262144));
-};
-
-export const getTerminalBuffer = (sessionId: string): string => {
-  return globalTerminalBuffers.get(sessionId) || '';
-};
-
-export const clearTerminalBuffer = (sessionId: string) => {
-  globalTerminalBuffers.delete(sessionId);
-};
+interface TerminalExitPayload {
+  id: number;
+  exitCode: number | null;
+}
 
 export interface TerminalProps {
-  /** Working directory for the spawned shell (e.g. job worktree or project root). */
-  cwd?: string;
-  /** Existing session ID to connect to, or omit to spawn a new login shell. */
-  sessionId?: string;
+  /** Initial working directory for the shell (e.g. a job worktree). */
+  cwd?: string | null;
   className?: string;
-  /** Called when the terminal session is active and ready. */
-  onReady?: (sessionId: string) => void;
-  /** Called when the shell process exits. */
-  onExit?: (exitCode: number | null) => void;
-  /** Called on user input keystrokes. */
-  onData?: (data: string) => void;
 }
 
-export interface TerminalSessionInfo {
-  session_id: string;
-  command: string;
-  args: string[];
-  cwd: string;
-  cols: u16;
-  rows: u16;
-  is_alive: boolean;
-}
+const XTERM_THEME = {
+  background: '#0f1012',
+  foreground: '#e5e7eb',
+  cursor: '#e5e7eb',
+  cursorAccent: '#0f1012',
+  selectionBackground: 'rgba(255, 255, 255, 0.16)',
+  black: '#181a1f',
+  red: '#f87171',
+  green: '#4ade80',
+  yellow: '#facc15',
+  blue: '#60a5fa',
+  magenta: '#c084fc',
+  cyan: '#22d3ee',
+  white: '#e5e7eb',
+  brightBlack: '#6b7280',
+  brightRed: '#fca5a5',
+  brightGreen: '#86efac',
+  brightYellow: '#fde047',
+  brightBlue: '#93c5fd',
+  brightMagenta: '#d8b4fe',
+  brightCyan: '#67e8f9',
+  brightWhite: '#ffffff',
+};
 
-type u16 = number;
+/**
+ * Interactive PTY shell terminal backed by `xterm.js`.
+ * Uses Tauri's native `portable-pty` when running inside the Tauri shell, and
+ * automatically falls back to the runtime's `/v1/terminals` PTY endpoint when
+ * opened in a standard browser so it always works everywhere.
+ */
+export function Terminal({ cwd, className }: TerminalProps) {
+  const { client } = useRuntime();
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const xtermRef = React.useRef<XTerm | null>(null);
+  const fitRef = React.useRef<FitAddon | null>(null);
+  const tauriIdRef = React.useRef<number | null>(null);
+  const runtimeTermIdRef = React.useRef<string | null>(null);
 
-export function Terminal({
-  cwd,
-  sessionId: initialSessionId,
-  className,
-  onReady,
-  onExit,
-  onData,
-}: TerminalProps) {
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const termRef = React.useRef<XTerm | null>(null);
-  const fitAddonRef = React.useRef<FitAddon | null>(null);
-  const [activeSessionId, setActiveSessionId] = React.useState<string | null>(initialSessionId ?? null);
+  const [status, setStatus] = React.useState<'starting' | 'running' | 'exited' | 'error'>('starting');
   const [error, setError] = React.useState<string | null>(null);
+  const [exitCode, setExitCode] = React.useState<number | null>(null);
+  const [restartNonce, setRestartNonce] = React.useState(0);
 
-  const onDataRef = React.useRef(onData);
-  onDataRef.current = onData;
-  const onReadyRef = React.useRef(onReady);
-  onReadyRef.current = onReady;
-  const onExitRef = React.useRef(onExit);
-  onExitRef.current = onExit;
-
-  // 1. Spawn or bind session
   React.useEffect(() => {
-    let cancelled = false;
+    const container = containerRef.current;
+    if (!container) return;
 
-    if (!isTauri()) {
-      setError('Terminal requires the MyaOS Desktop application (native PTY).');
-      return;
-    }
+    let disposed = false;
+    const abort = new AbortController();
+    let unlistenOutput: UnlistenFn | null = null;
+    let unlistenExit: UnlistenFn | null = null;
 
-    if (initialSessionId) {
-      setActiveSessionId(initialSessionId);
-      onReadyRef.current?.(initialSessionId);
-      return;
-    }
-
-    // Spawn a new login shell session
-    const spawnSession = async () => {
-      try {
-        const info = await invoke<TerminalSessionInfo>('terminal_spawn', {
-          cwd: cwd || null,
-        }).catch(() => {
-          // Fallback alias if terminal_spawn isn't available
-          return invoke<TerminalSessionInfo>('pty_spawn_shell', { cwd: cwd || null });
-        });
-
-        if (cancelled) return;
-        setActiveSessionId(info.session_id);
-        onReadyRef.current?.(info.session_id);
-      } catch (err) {
-        if (cancelled) return;
-        const msg = err instanceof Error ? err.message : String(err);
-        setError(`Failed to spawn terminal: ${msg}`);
-      }
-    };
-
-    spawnSession();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [cwd, initialSessionId]);
-
-  // 2. Initialize XTerm and FitAddon once activeSessionId is known
-  React.useEffect(() => {
-    if (!activeSessionId || !containerRef.current) return;
+    setStatus('starting');
+    setError(null);
+    setExitCode(null);
 
     const term = new XTerm({
       cursorBlink: true,
-      fontFamily: '"Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      fontSize: 13,
-      lineHeight: 1.25,
-      convertEol: true,
+      fontSize: 12.5,
+      lineHeight: 1.35,
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+      theme: XTERM_THEME,
       allowProposedApi: true,
-      cursorStyle: 'block',
       scrollback: 5000,
-      theme: {
-        background: '#121214',
-        foreground: '#f8fafc',
-        cursor: '#8db8ff',
-        cursorAccent: '#121214',
-        selectionBackground: 'rgba(141, 184, 255, 0.25)',
-        selectionForeground: '#ffffff',
-        black: '#1a1a1e',
-        red: '#f87171',
-        green: '#4ade80',
-        yellow: '#facc15',
-        blue: '#60a5fa',
-        magenta: '#c084fc',
-        cyan: '#38bdf8',
-        white: '#f1f5f9',
-        brightBlack: '#475569',
-        brightRed: '#ef4444',
-        brightGreen: '#22c55e',
-        brightYellow: '#eab308',
-        brightBlue: '#3b82f6',
-        brightMagenta: '#a855f7',
-        brightCyan: '#0ea5e9',
-        brightWhite: '#ffffff',
-      },
     });
 
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-    term.open(containerRef.current);
-
-    termRef.current = term;
-    fitAddonRef.current = fitAddon;
-
-    // Replay buffer history
-    const history = getTerminalBuffer(activeSessionId);
-    if (history) {
-      term.write(history);
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(container);
+    try {
+      fit.fit();
+    } catch {
+      /* container may not be sized on first tick */
     }
 
-    const fitAndResize = () => {
+    xtermRef.current = term;
+    fitRef.current = fit;
+
+    const inputDisposable = term.onData((data) => {
+      const tauriId = tauriIdRef.current;
+      if (tauriId !== null) {
+        void invoke('terminal_write', { id: tauriId, data }).catch(() => {});
+        return;
+      }
+      const rtId = runtimeTermIdRef.current;
+      if (rtId && client) {
+        void client.writeTerminalInput(rtId, data).catch(() => {});
+      }
+    });
+
+    const resizeObserver = new ResizeObserver(() => {
+      if (disposed) return;
       try {
-        if (!fitAddonRef.current || !termRef.current) return;
-        fitAddonRef.current.fit();
-        const cols = termRef.current.cols;
-        const rows = termRef.current.rows;
-        if (cols && rows && cols >= 10 && rows >= 3) {
-          invoke('terminal_resize', { sessionId: activeSessionId, cols, rows }).catch(() => {
-            invoke('pty_resize', { sessionId: activeSessionId, cols, rows }).catch(() => {});
-          });
+        fit.fit();
+        const tauriId = tauriIdRef.current;
+        if (tauriId !== null && term.cols > 0 && term.rows > 0) {
+          void invoke('terminal_resize', {
+            id: tauriId,
+            cols: term.cols,
+            rows: term.rows,
+          }).catch(() => {});
         }
-      } catch (e) {
-        console.error('Terminal resize fit error:', e);
+      } catch {
+        /* ignore transient layout errors */
       }
-    };
-
-    // Initial fit
-    const timer = setTimeout(() => {
-      fitAndResize();
-      term.focus();
-    }, 40);
-
-    // Stream listener: pty_output or terminal_output
-    const unlistenOutputPromise = listen<{ session_id: string; data: string }>(
-      'pty_output',
-      (event) => {
-        if (event.payload.session_id === activeSessionId) {
-          term.write(event.payload.data);
-          appendTerminalBuffer(activeSessionId, event.payload.data);
-        }
-      }
-    );
-
-    const unlistenTerminalOutputPromise = listen<{ session_id: string; data: string }>(
-      'terminal_output',
-      (event) => {
-        if (event.payload.session_id === activeSessionId) {
-          term.write(event.payload.data);
-          appendTerminalBuffer(activeSessionId, event.payload.data);
-        }
-      }
-    );
-
-    // Exit listener
-    const unlistenExitPromise = listen<{ session_id: string; exit_code?: number | null }>(
-      'pty_exit',
-      (event) => {
-        if (event.payload.session_id === activeSessionId) {
-          onExitRef.current?.(event.payload.exit_code ?? null);
-        }
-      }
-    );
-
-    const unlistenTerminalExitPromise = listen<{ session_id: string; exit_code?: number | null }>(
-      'terminal_exit',
-      (event) => {
-        if (event.payload.session_id === activeSessionId) {
-          onExitRef.current?.(event.payload.exit_code ?? null);
-        }
-      }
-    );
-
-    // Keyboard input
-    const disposable = term.onData((data) => {
-      onDataRef.current?.(data);
-      invoke('terminal_write', { sessionId: activeSessionId, data }).catch(() => {
-        invoke('pty_write', { sessionId: activeSessionId, data }).catch((err) => {
-          console.error('Failed to write to terminal:', err);
-        });
-      });
     });
+    resizeObserver.observe(container);
 
-    // Resize listeners
-    const handleResize = () => {
-      fitAndResize();
-    };
+    void (async () => {
+      // 1. Try native Tauri PTY first when inside Tauri
+      if (isTauri()) {
+        try {
+          unlistenOutput = await listen<TerminalOutputPayload>('terminal://output', (event) => {
+            if (disposed) return;
+            if (event.payload.id === tauriIdRef.current) {
+              term.write(event.payload.data);
+            }
+          });
 
-    window.addEventListener('resize', handleResize);
+          unlistenExit = await listen<TerminalExitPayload>('terminal://exit', (event) => {
+            if (disposed) return;
+            if (event.payload.id === tauriIdRef.current) {
+              setExitCode(event.payload.exitCode);
+              setStatus('exited');
+              term.writeln(
+                `\r\n\x1b[90m[process exited${
+                  event.payload.exitCode !== null ? ` with code ${event.payload.exitCode}` : ''
+                }]\x1b[0m`
+              );
+            }
+          });
 
-    let resizeObserver: ResizeObserver | null = null;
-    if (containerRef.current && window.ResizeObserver) {
-      resizeObserver = new ResizeObserver(() => {
-        requestAnimationFrame(fitAndResize);
-      });
-      resizeObserver.observe(containerRef.current);
-    }
+          const cols = term.cols || 80;
+          const rows = term.rows || 24;
+          const id = await invoke<number>('terminal_spawn', {
+            cwd: cwd ?? null,
+            cols,
+            rows,
+          });
+
+          if (disposed) {
+            void invoke('terminal_kill', { id }).catch(() => {});
+            return;
+          }
+
+          tauriIdRef.current = id;
+          setStatus('running');
+          term.focus();
+          return;
+        } catch {
+          // Fall through to runtime PTY if native spawn fails
+        }
+      }
+
+      // 2. Runtime-backed PTY shell (works in both Browser and Tauri)
+      if (!client) {
+        setStatus('error');
+        setError('Waiting for the MyaOS runtime connection.');
+        return;
+      }
+
+      try {
+        const created = await client.createTerminal(cwd ?? null, term.cols || 100, term.rows || 30);
+        if (disposed) {
+          void client.killTerminal(created.id).catch(() => {});
+          return;
+        }
+        runtimeTermIdRef.current = created.id;
+        setStatus('running');
+        term.focus();
+        await client.streamTerminal(
+          created.id,
+          (ev) => {
+            if (disposed) return;
+            if (ev.type === 'data' && ev.data) {
+              term.write(ev.data);
+            } else if (ev.type === 'exit') {
+              setExitCode(ev.exitCode ?? 0);
+              setStatus('exited');
+            } else if (ev.type === 'error' && ev.message) {
+              setError(ev.message);
+              setStatus('error');
+            }
+          },
+          abort.signal
+        );
+      } catch (e) {
+        if (disposed || abort.signal.aborted) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg);
+        setStatus('error');
+        term.writeln(`\r\n\x1b[31mFailed to spawn shell: ${msg}\x1b[0m`);
+      }
+    })();
 
     return () => {
-      clearTimeout(timer);
-      window.removeEventListener('resize', handleResize);
-      if (resizeObserver) {
-        resizeObserver.disconnect();
+      disposed = true;
+      abort.abort();
+      resizeObserver.disconnect();
+      inputDisposable.dispose();
+      unlistenOutput?.();
+      unlistenExit?.();
+      const tauriId = tauriIdRef.current;
+      tauriIdRef.current = null;
+      if (tauriId !== null) {
+        void invoke('terminal_kill', { id: tauriId }).catch(() => {});
       }
-      disposable.dispose();
-      unlistenOutputPromise.then((u) => u());
-      unlistenTerminalOutputPromise.then((u) => u());
-      unlistenExitPromise.then((u) => u());
-      unlistenTerminalExitPromise.then((u) => u());
+      const rtId = runtimeTermIdRef.current;
+      runtimeTermIdRef.current = null;
+      if (rtId && client) {
+        void client.killTerminal(rtId).catch(() => {});
+      }
       term.dispose();
-      termRef.current = null;
-      fitAddonRef.current = null;
+      xtermRef.current = null;
+      fitRef.current = null;
     };
-  }, [activeSessionId]);
-
-  if (error) {
-    return (
-      <div
-        className={cn(
-          'flex h-full w-full items-center justify-center rounded-xl border border-destructive/30 bg-card p-6 text-sm text-destructive',
-          className
-        )}
-      >
-        {error}
-      </div>
-    );
-  }
+  }, [cwd, restartNonce, client]);
 
   return (
-    <div
-      ref={containerRef}
-      className={cn(
-        'relative h-full w-full overflow-hidden rounded-xl bg-[#121214] p-3 shadow-inner ring-1 ring-white/10',
-        className
+    <div className={cn('flex flex-col overflow-hidden rounded-xl border border-border/60 bg-[#0f1012]', className)}>
+      <div className="flex items-center justify-between gap-2 border-b border-border/50 px-3 py-1.5 text-xs">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden="true"
+            className={cn(
+              'size-2 shrink-0 rounded-full',
+              status === 'running'
+                ? 'bg-emerald-400'
+                : status === 'starting'
+                  ? 'bg-amber-400'
+                  : 'bg-zinc-500'
+            )}
+          />
+          <span className="truncate font-mono text-[11px] text-zinc-400">
+            {cwd ? `zsh — ${cwd}` : 'zsh — ~'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {status === 'exited' && (
+            <span className="font-mono text-[11px] text-zinc-400">
+              exited{exitCode !== null ? ` (${exitCode})` : ''}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => xtermRef.current?.clear()}
+            className="rounded px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-white/10"
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => setRestartNonce((n) => n + 1)}
+            className="rounded px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-white/10"
+          >
+            Restart shell
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="border-b border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
+          {error}
+        </div>
       )}
-    />
+
+      <div ref={containerRef} className="min-h-[360px] flex-1 p-2" />
+    </div>
   );
 }
 
-export default Terminal;
+/**
+ * Live `xterm.js` terminal view of an agent session's complete CLI / ACP output
+ * (Claude Code, Codex, Gemini CLI / Antigravity) with live streaming updates
+ * and an interactive prompt bar to send follow-up instructions or wake the agent.
+ */
+export function AgentTerminal({
+  sessionId,
+  agentId,
+  agentName,
+  className,
+}: {
+  sessionId: string;
+  agentId?: string;
+  agentName?: string;
+  className?: string;
+}) {
+  const { client, revision } = useRuntime();
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const xtermRef = React.useRef<XTerm | null>(null);
+  const fitRef = React.useRef<FitAddon | null>(null);
+  const lastOutputRef = React.useRef<string>('');
+
+  const [meta, setMeta] = React.useState<{
+    acpSessionId: string | null;
+    state: string;
+    worktree: string | null;
+    pid: number | null;
+  } | null>(null);
+  const [promptInput, setPromptInput] = React.useState('');
+  const [sending, setSending] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  // Mount XTerm instance
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const term = new XTerm({
+      cursorBlink: false,
+      disableStdin: true,
+      fontSize: 12.5,
+      lineHeight: 1.38,
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+      theme: XTERM_THEME,
+      allowProposedApi: true,
+      scrollback: 10000,
+      convertEol: true,
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(container);
+    try {
+      fit.fit();
+    } catch {
+      /* ignore */
+    }
+
+    xtermRef.current = term;
+    fitRef.current = fit;
+    lastOutputRef.current = '';
+
+    const resizeObserver = new ResizeObserver(() => {
+      try {
+        fit.fit();
+      } catch {
+        /* ignore */
+      }
+    });
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+      term.dispose();
+      xtermRef.current = null;
+      fitRef.current = null;
+    };
+  }, [sessionId]);
+
+  // Fetch & incrementally write formatted agent terminal output whenever revision bumps
+  React.useEffect(() => {
+    if (!client || !sessionId) return;
+    let cancelled = false;
+    client
+      .sessionTerminal(sessionId)
+      .then((res) => {
+        if (cancelled) return;
+        setMeta({
+          acpSessionId: res.acpSessionId,
+          state: res.state,
+          worktree: res.worktree,
+          pid: res.pid,
+        });
+        const term = xtermRef.current;
+        if (!term) return;
+        const prev = lastOutputRef.current;
+        if (res.output.startsWith(prev)) {
+          const delta = res.output.slice(prev.length);
+          if (delta) {
+            term.write(delta);
+            term.scrollToBottom();
+          }
+        } else {
+          term.clear();
+          term.write(res.output);
+          term.scrollToBottom();
+        }
+        lastOutputRef.current = res.output;
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, sessionId, revision]);
+
+  const sendPrompt = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client || !promptInput.trim() || sending) return;
+    setSending(true);
+    setError(null);
+    const text = promptInput.trim();
+    try {
+      await client.promptSession(sessionId, text);
+      setPromptInput('');
+    } catch (err) {
+      // Fallback: wake the agent by ID if session prompt failed
+      if (agentId) {
+        try {
+          await client.wakeAgent(agentId, {
+            fromActorId: 'winston',
+            fromActorKind: 'human',
+            sessionId,
+            prompt: text,
+            reason: 'Direct prompt from Agent Terminal',
+            allowFallbackAdapter: true,
+          });
+          setPromptInput('');
+        } catch (wakeErr) {
+          setError(wakeErr instanceof Error ? wakeErr.message : String(wakeErr));
+        }
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className={cn('flex flex-col overflow-hidden rounded-xl border border-border/60 bg-[#0f1012]', className)}>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-3 py-1.5 text-xs">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            aria-hidden="true"
+            className={cn(
+              'size-2 shrink-0 rounded-full',
+              meta?.state === 'running' || meta?.state === 'starting'
+                ? 'animate-pulse bg-emerald-400'
+                : meta?.state === 'idle'
+                  ? 'bg-sky-400'
+                  : meta?.state === 'failed'
+                    ? 'bg-red-400'
+                    : 'bg-zinc-500'
+            )}
+          />
+          <span className="truncate font-mono text-[11px] text-zinc-200">
+            {agentName ?? agentId ?? 'Agent'} · session {sessionId}
+          </span>
+          {meta?.acpSessionId && (
+            <span className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
+              acp: {meta.acpSessionId}
+            </span>
+          )}
+          {meta?.pid && (
+            <span className="font-mono text-[10px] text-zinc-400">pid {meta.pid}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[11px] text-zinc-400">{meta?.state ?? 'loading'}</span>
+          <button
+            type="button"
+            onClick={() => xtermRef.current?.scrollToBottom()}
+            className="rounded px-2 py-0.5 text-[11px] text-zinc-300 hover:bg-white/10"
+          >
+            Bottom
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="border-b border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
+          {error}
+        </div>
+      )}
+
+      <div ref={containerRef} className="min-h-[380px] flex-1 p-2" />
+
+      <form onSubmit={sendPrompt} className="flex items-center gap-2 border-t border-border/50 bg-[#141619] px-3 py-2">
+        <span className="font-mono text-xs text-emerald-400">❯</span>
+        <input
+          value={promptInput}
+          onChange={(e) => setPromptInput(e.target.value)}
+          placeholder={`Send follow-up prompt or wake ${agentName ?? agentId ?? 'agent'}…`}
+          aria-label="Send prompt to agent session"
+          className="h-8 flex-1 bg-transparent font-mono text-xs text-zinc-100 outline-none placeholder:text-zinc-500"
+        />
+        <button
+          type="submit"
+          disabled={!promptInput.trim() || sending}
+          className="rounded-md bg-emerald-500/20 px-3 py-1 font-mono text-xs font-medium text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-40"
+        >
+          {sending ? 'Sending…' : 'Send / Wake'}
+        </button>
+      </form>
+    </div>
+  );
+}

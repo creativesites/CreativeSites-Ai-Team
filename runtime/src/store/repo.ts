@@ -81,6 +81,9 @@ const RISKS: T.Risk[] = ['low', 'medium', 'high', 'critical'];
 const RISK_RANK: Record<T.Risk, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 const TASK_STATUSES: T.TaskStatus[] = ['pending', 'running', 'done', 'failed', 'blocked'];
 const TASK_MODES: NonNullable<T.Task['mode']>[] = ['build', 'verify', 'review', 'ops', 'design'];
+const JOB_KINDS: T.JobKind[] = ['code', 'research', 'ops', 'design', 'decision'];
+const SHIP_STATUSES: T.ShipStatus[] = ['none', 'ready', 'merged', 'pr_opened', 'cherry_picked', 'branch_pushed'];
+const IDENTITY_STATUS_STATES: T.IdentityStatusState[] = ['idle', 'working', 'rate_limited', 'waiting_reset', 'offline'];
 
 interface EventInput {
   type: string;
@@ -301,6 +304,12 @@ export class Repo {
       if (input.approvalLevel !== undefined) fields.push(['approval_level', oneOf(input.approvalLevel, ['owner', 'lead', 'member', 'none'] as const, 'approvalLevel')]);
       if (input.adapterId !== undefined) fields.push(['adapter_id', optionalString(input.adapterId, 'adapterId')]);
       if (input.archived !== undefined) fields.push(['archived', input.archived ? 1 : 0]);
+      if (input.activeSessionId !== undefined) fields.push(['active_session_id', optionalString(input.activeSessionId, 'activeSessionId')]);
+      if (input.acpSessionId !== undefined) fields.push(['acp_session_id', optionalString(input.acpSessionId, 'acpSessionId')]);
+      if (input.statusState !== undefined) fields.push(['status_state', oneOf(input.statusState, IDENTITY_STATUS_STATES, 'statusState')]);
+      if (input.rateLimitResetAt !== undefined) fields.push(['rate_limit_reset_at', optionalString(input.rateLimitResetAt, 'rateLimitResetAt')]);
+      if (input.rateLimitReason !== undefined) fields.push(['rate_limit_reason', optionalString(input.rateLimitReason, 'rateLimitReason')]);
+      if (input.lastWokenAt !== undefined) fields.push(['last_woken_at', optionalString(input.lastWokenAt, 'lastWokenAt')]);
       if (fields.length) {
         this.db.prepare(`UPDATE identities SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
       }
@@ -808,7 +817,11 @@ export class Repo {
       tasks: this.listTasks(jobId),
       evidence,
       approvals: this.all('SELECT * FROM approvals WHERE job_id = ? ORDER BY created_at DESC', jobId).map(toApproval),
-      sessions: this.all('SELECT * FROM sessions WHERE task_id IN (SELECT id FROM tasks WHERE job_id = ?) ORDER BY started_at DESC', jobId).map(toSession),
+      sessions: this.all(
+        'SELECT * FROM sessions WHERE job_id = ? OR task_id IN (SELECT id FROM tasks WHERE job_id = ?) ORDER BY started_at DESC',
+        jobId,
+        jobId
+      ).map(toSession),
       usage: this.all('SELECT * FROM usage WHERE job_id = ? ORDER BY created_at DESC', jobId).map(toUsage),
       history: this.all('SELECT * FROM job_stage_history WHERE job_id = ? ORDER BY id', jobId).map(toHistory),
       stageNote: str(row.stage_note),
@@ -835,13 +848,14 @@ export class Repo {
         .prepare(
           `INSERT INTO jobs
             (id, number, room_id, title, brief, stage, created_by, created_at, updated_at,
-             project_id, risk, priority, budget_cents, owner_id)
-           VALUES (?, ?, ?, ?, ?, 'brief', ?, ?, ?, ?, ?, ?, ?, ?)`
+             project_id, risk, priority, budget_cents, owner_id, kind)
+           VALUES (?, ?, ?, ?, ?, 'brief', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id, next, roomId, title, input.brief ?? '', createdBy, t, t,
           projectId, oneOf(input.risk, RISKS, 'risk', 'low'), optionalString(input.priority, 'priority') ?? 'normal',
-          input.budgetCents == null ? null : positiveInt(input.budgetCents, 'budgetCents'), ownerId
+          input.budgetCents == null ? null : positiveInt(input.budgetCents, 'budgetCents'), ownerId,
+          oneOf(input.kind, JOB_KINDS, 'kind', 'code')
         );
       for (const [index, text] of (input.criteria ?? []).entries()) {
         if (typeof text !== 'string') throw new InputError(`criteria[${index}] must be a string`);
@@ -872,6 +886,9 @@ export class Repo {
       if (input.priority !== undefined) fields.push(['priority', required(input.priority, 'priority')]);
       if (input.budgetCents !== undefined) fields.push(['budget_cents', input.budgetCents == null ? null : positiveInt(input.budgetCents, 'budgetCents')]);
       if (input.blockedReason !== undefined) fields.push(['blocked_reason', optionalString(input.blockedReason, 'blockedReason')]);
+      if (input.kind !== undefined) fields.push(['kind', oneOf(input.kind, JOB_KINDS, 'kind')]);
+      if (input.shipStatus !== undefined) fields.push(['ship_status', oneOf(input.shipStatus, SHIP_STATUSES, 'shipStatus')]);
+      if (input.shipPayload !== undefined) fields.push(['ship_payload', jsonText(input.shipPayload)]);
       fields.push(['updated_at', now()]);
       this.db.prepare(`UPDATE jobs SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), jobId);
       this.recordEvent(events, { type: 'job.updated', subjectId: jobId, payload: { fields: fields.map(([c]) => c) }, subjectType: 'job' });
@@ -1469,25 +1486,43 @@ export class Repo {
     const agentId = required(input.agentId, 'agentId');
     const runtimeCommand = required(input.runtimeCommand, 'runtimeCommand');
     if (!this.one('SELECT id FROM identities WHERE id = ?', agentId)) throw new NotFoundError(`identity ${agentId} not found`);
-    if (input.taskId && !this.one('SELECT id FROM tasks WHERE id = ?', input.taskId)) throw new NotFoundError(`task ${input.taskId} not found`);
+    let resolvedJobId = input.jobId ?? null;
+    if (input.taskId) {
+      const taskRow = this.one('SELECT job_id FROM tasks WHERE id = ?', input.taskId);
+      if (!taskRow) throw new NotFoundError(`task ${input.taskId} not found`);
+      if (!resolvedJobId) resolvedJobId = str(taskRow.job_id);
+    }
     const id = newId('sess');
+    const t = now();
     this.write((events) => {
       this.db
         .prepare(
           `INSERT INTO sessions
-            (id, agent_id, task_id, runtime_command, pid, worktree, state, last_seen_at, started_at, ended_at,
+            (id, agent_id, task_id, job_id, room_id, runtime_command, pid, worktree, state, last_seen_at, started_at, ended_at,
              acp_session_id, adapter_id, mode, base_sha, base_branch, model)
-           VALUES (?, ?, ?, ?, ?, ?, 'starting', ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'starting', ?, ?, NULL, ?, ?, ?, ?, ?, ?)`
         )
         .run(
-          id, agentId, input.taskId ?? null, runtimeCommand, input.pid ?? null, input.worktree ?? null,
-          now(), now(), input.acpSessionId ?? null, input.adapterId ?? null,
+          id, agentId, input.taskId ?? null, resolvedJobId, input.roomId ?? null,
+          runtimeCommand, input.pid ?? null, input.worktree ?? null,
+          t, t, input.acpSessionId ?? null, input.adapterId ?? null,
           oneOf(input.mode, TASK_MODES, 'mode', 'build'), input.baseSha ?? null, input.baseBranch ?? null, input.model ?? null
         );
+      // Automatically capture the active session ID and ACP session ID on the agent identity record
+      this.db
+        .prepare(
+          `UPDATE identities
+             SET active_session_id = ?,
+                 acp_session_id = COALESCE(?, acp_session_id),
+                 status_state = 'working',
+                 last_woken_at = ?
+           WHERE id = ?`
+        )
+        .run(id, input.acpSessionId ?? null, t, agentId);
       this.recordEvent(events, {
         type: 'session.started',
         subjectId: id,
-        payload: { agentId, taskId: input.taskId ?? null, adapterId: input.adapterId ?? null },
+        payload: { agentId, taskId: input.taskId ?? null, jobId: resolvedJobId, roomId: input.roomId ?? null, adapterId: input.adapterId ?? null },
         actorId: agentId,
         actorKind: 'agent',
         subjectType: 'session',
@@ -1510,10 +1545,28 @@ export class Repo {
       if (input.model !== undefined) fields.push(['model', input.model]);
       if (input.state === 'stopped' || input.state === 'failed') fields.push(['ended_at', now()]);
       this.db.prepare(`UPDATE sessions SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
+
+      // Keep the agent's identity record in sync with its session state & captured acpSessionId
+      const idFields: [string, SQLInputValue][] = [['active_session_id', id]];
+      if (input.acpSessionId) idFields.push(['acp_session_id', input.acpSessionId]);
+      if (input.state === 'starting' || input.state === 'running') {
+        idFields.push(['status_state', 'working']);
+      } else if (input.state === 'idle' || input.state === 'stopped') {
+        idFields.push(['status_state', 'idle']);
+      } else if (input.state === 'failed') {
+        const curId = this.one('SELECT status_state FROM identities WHERE id = ?', session.agentId);
+        if (curId && str(curId.status_state) !== 'rate_limited' && str(curId.status_state) !== 'waiting_reset') {
+          idFields.push(['status_state', 'idle']);
+        }
+      }
+      this.db
+        .prepare(`UPDATE identities SET ${idFields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
+        .run(...idFields.map(([, v]) => v), session.agentId);
+
       this.recordEvent(events, {
         type: 'session.updated',
         subjectId: id,
-        payload: { state: input.state ?? session.state, exitCode: input.exitCode ?? null },
+        payload: { state: input.state ?? session.state, exitCode: input.exitCode ?? null, acpSessionId: input.acpSessionId ?? session.acpSessionId ?? null },
         subjectType: 'session',
       });
     });
@@ -2129,20 +2182,419 @@ export class Repo {
     return this.all('SELECT * FROM adapters ORDER BY id');
   }
 
-  upsertAdapterOverride(id: string, input: { command?: string | null; args?: string[]; enabled?: boolean; abilities?: Record<string, boolean> }): void {
+  upsertAdapterOverride(id: string, input: { command?: string | null; args?: string[]; enabled?: boolean; abilities?: Record<string, boolean>; rateLimitResetAt?: string | null; rateLimitReason?: string | null }): void {
     this.write((events) => {
       this.db
         .prepare(
-          `INSERT INTO adapters (id, command, args, enabled, abilities, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET command = excluded.command, args = excluded.args, enabled = excluded.enabled,
-             abilities = excluded.abilities, updated_at = excluded.updated_at`
+          `INSERT INTO adapters (id, command, args, enabled, abilities, rate_limit_reset_at, rate_limit_reason, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             command = COALESCE(excluded.command, adapters.command),
+             args = CASE WHEN excluded.args = '[]' AND adapters.args IS NOT NULL THEN adapters.args ELSE excluded.args END,
+             enabled = excluded.enabled,
+             abilities = CASE WHEN excluded.abilities = '{}' AND adapters.abilities IS NOT NULL THEN adapters.abilities ELSE excluded.abilities END,
+             rate_limit_reset_at = excluded.rate_limit_reset_at,
+             rate_limit_reason = excluded.rate_limit_reason,
+             updated_at = excluded.updated_at`
         )
         .run(
-          required(id, 'id'), input.command ?? null, jsonText(input.args ?? []),
-          input.enabled === false ? 0 : 1, jsonText(input.abilities ?? {}), now()
+          required(id, 'id'),
+          input.command ?? null,
+          jsonText(input.args ?? []),
+          input.enabled === false ? 0 : 1,
+          jsonText(input.abilities ?? {}),
+          input.rateLimitResetAt ?? null,
+          input.rateLimitReason ?? null,
+          now()
         );
-      this.recordEvent(events, { type: 'adapter.updated', subjectId: id });
+      this.recordEvent(events, { type: 'adapter.updated', subjectId: id, payload: { rateLimitResetAt: input.rateLimitResetAt ?? null, rateLimitReason: input.rateLimitReason ?? null } });
     });
+  }
+
+  setIdentityRateLimit(idInput: string, reason: string, resetAt: string): T.Identity {
+    const id = required(idInput, 'id').toLowerCase();
+    const identity = this.getIdentity(id);
+    this.write((events) => {
+      this.db
+        .prepare(
+          `UPDATE identities
+             SET status_state = 'rate_limited',
+                 rate_limit_reason = ?,
+                 rate_limit_reset_at = ?
+           WHERE id = ?`
+        )
+        .run(reason, resetAt, id);
+      this.recordEvent(events, {
+        type: 'agent.rate_limited',
+        subjectId: id,
+        payload: { agentId: id, adapterId: identity.adapterId ?? null, reason, resetAt },
+        actorId: id,
+        actorKind: 'agent',
+        subjectType: 'identity',
+      });
+    });
+    return this.getIdentity(id);
+  }
+
+  clearIdentityRateLimit(idInput: string): T.Identity {
+    const id = required(idInput, 'id').toLowerCase();
+    this.getIdentity(id);
+    this.write((events) => {
+      this.db
+        .prepare(
+          `UPDATE identities
+             SET status_state = CASE WHEN status_state IN ('rate_limited','waiting_reset') THEN 'idle' ELSE status_state END,
+                 rate_limit_reason = NULL,
+                 rate_limit_reset_at = NULL
+           WHERE id = ?`
+        )
+        .run(id);
+      this.recordEvent(events, {
+        type: 'agent.rate_limit_cleared',
+        subjectId: id,
+        payload: { agentId: id },
+        actorId: id,
+        actorKind: 'agent',
+        subjectType: 'identity',
+      });
+    });
+    return this.getIdentity(id);
+  }
+
+  setAdapterRateLimit(adapterId: string, reason: string, resetAt: string): void {
+    const id = required(adapterId, 'adapterId').toLowerCase();
+    this.write((events) => {
+      this.db
+        .prepare(
+          `INSERT INTO adapters (id, command, args, enabled, abilities, rate_limit_reset_at, rate_limit_reason, updated_at)
+           VALUES (?, NULL, '[]', 1, '{}', ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             rate_limit_reset_at = excluded.rate_limit_reset_at,
+             rate_limit_reason = excluded.rate_limit_reason,
+             updated_at = excluded.updated_at`
+        )
+        .run(id, resetAt, reason, now());
+      this.recordEvent(events, {
+        type: 'adapter.rate_limited',
+        subjectId: id,
+        payload: { adapterId: id, reason, resetAt },
+        subjectType: 'adapter',
+      });
+    });
+  }
+
+  clearAdapterRateLimit(adapterId: string): void {
+    const id = required(adapterId, 'adapterId').toLowerCase();
+    this.write((events) => {
+      this.db
+        .prepare(
+          `UPDATE adapters SET rate_limit_reset_at = NULL, rate_limit_reason = NULL, updated_at = ? WHERE id = ?`
+        )
+        .run(now(), id);
+      this.recordEvent(events, {
+        type: 'adapter.rate_limit_cleared',
+        subjectId: id,
+        payload: { adapterId: id },
+        subjectType: 'adapter',
+      });
+    });
+  }
+
+  /** Sweeps expired rate limits and returns the agent IDs that just reset. */
+  sweepExpiredRateLimits(): string[] {
+    const t = now();
+    const expiredIdentities = this.all(
+      'SELECT id FROM identities WHERE rate_limit_reset_at IS NOT NULL AND rate_limit_reset_at <= ?',
+      t
+    );
+    const expiredAdapters = this.all(
+      'SELECT id FROM adapters WHERE rate_limit_reset_at IS NOT NULL AND rate_limit_reset_at <= ?',
+      t
+    );
+    const clearedAgents: string[] = [];
+    for (const row of expiredIdentities) {
+      const id = String(row.id);
+      this.clearIdentityRateLimit(id);
+      clearedAgents.push(id);
+    }
+    for (const row of expiredAdapters) {
+      this.clearAdapterRateLimit(String(row.id));
+    }
+    return clearedAgents;
+  }
+
+  // ---------------------------------------------------------------- agent wakes
+
+  createWake(input: {
+    targetAgentId: string;
+    fromActorId: string;
+    fromActorKind?: T.ActorKind;
+    jobId?: string | null;
+    roomId?: string | null;
+    taskId?: string | null;
+    sessionId?: string | null;
+    adapterId?: string | null;
+    reason?: string;
+    prompt: string;
+    status?: T.WakeStatus;
+    scheduledFor?: string | null;
+  }): T.AgentWake {
+    const targetAgentId = required(input.targetAgentId, 'targetAgentId').toLowerCase();
+    const fromActorId = required(input.fromActorId, 'fromActorId');
+    const fromActorKind = oneOf(input.fromActorKind, ['human', 'agent', 'system'] as const, 'fromActorKind', 'agent');
+    const prompt = required(input.prompt, 'prompt');
+    const reason = input.reason?.trim() || 'Direct wake request';
+    const status = oneOf(input.status, ['pending', 'dispatched', 'deferred_rate_limit', 'completed', 'failed'] as const, 'status', 'pending');
+    const id = newId('wake');
+    const t = now();
+    this.write((events) => {
+      this.db
+        .prepare(
+          `INSERT INTO agent_wakes
+            (id, target_agent_id, from_actor_id, from_actor_kind, job_id, room_id, task_id, session_id,
+             adapter_id, reason, prompt, status, scheduled_for, created_at, dispatched_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          id,
+          targetAgentId,
+          fromActorId,
+          fromActorKind,
+          input.jobId ?? null,
+          input.roomId ?? null,
+          input.taskId ?? null,
+          input.sessionId ?? null,
+          input.adapterId ?? null,
+          reason,
+          prompt,
+          status,
+          input.scheduledFor ?? null,
+          t,
+          status === 'dispatched' ? t : null
+        );
+      this.recordEvent(events, {
+        type: 'agent.wake_requested',
+        subjectId: targetAgentId,
+        payload: { wakeId: id, targetAgentId, fromActorId, status, reason, scheduledFor: input.scheduledFor ?? null, jobId: input.jobId ?? null, roomId: input.roomId ?? null },
+        actorId: fromActorId,
+        actorKind: fromActorKind,
+        subjectType: 'identity',
+      });
+    });
+    return this.getWake(id);
+  }
+
+  updateWake(
+    id: string,
+    patch: {
+      status?: T.WakeStatus;
+      sessionId?: string | null;
+      adapterId?: string | null;
+      scheduledFor?: string | null;
+      dispatchedAt?: string | null;
+      completedAt?: string | null;
+      error?: string | null;
+    }
+  ): T.AgentWake {
+    const wake = this.getWake(id);
+    this.write((events) => {
+      const fields: [string, SQLInputValue][] = [];
+      if (patch.status !== undefined) {
+        fields.push(['status', patch.status]);
+        if (patch.status === 'dispatched' && !wake.dispatchedAt) fields.push(['dispatched_at', now()]);
+        if (patch.status === 'completed' || patch.status === 'failed') fields.push(['completed_at', now()]);
+      }
+      if (patch.sessionId !== undefined) fields.push(['session_id', patch.sessionId]);
+      if (patch.adapterId !== undefined) fields.push(['adapter_id', patch.adapterId]);
+      if (patch.scheduledFor !== undefined) fields.push(['scheduled_for', patch.scheduledFor]);
+      if (patch.dispatchedAt !== undefined) fields.push(['dispatched_at', patch.dispatchedAt]);
+      if (patch.completedAt !== undefined) fields.push(['completed_at', patch.completedAt]);
+      if (patch.error !== undefined) fields.push(['error', patch.error]);
+      if (fields.length) {
+        this.db.prepare(`UPDATE agent_wakes SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
+      }
+      this.recordEvent(events, {
+        type: 'agent.wake_updated',
+        subjectId: wake.targetAgentId,
+        payload: { wakeId: id, status: patch.status ?? wake.status, sessionId: patch.sessionId ?? wake.sessionId },
+        subjectType: 'identity',
+      });
+    });
+    return this.getWake(id);
+  }
+
+  getWake(id: string): T.AgentWake {
+    const row = this.one('SELECT * FROM agent_wakes WHERE id = ?', id);
+    if (!row) throw new NotFoundError(`wake ${id} not found`);
+    return toAgentWake(row);
+  }
+
+  listWakes(filter: { targetAgentId?: string; jobId?: string; roomId?: string; status?: T.WakeStatus; limit?: number } = {}): T.AgentWake[] {
+    const where: string[] = [];
+    const params: SQLInputValue[] = [];
+    if (filter.targetAgentId) {
+      where.push('target_agent_id = ?');
+      params.push(filter.targetAgentId.toLowerCase());
+    }
+    if (filter.jobId) {
+      where.push('job_id = ?');
+      params.push(filter.jobId);
+    }
+    if (filter.roomId) {
+      where.push('room_id = ?');
+      params.push(filter.roomId);
+    }
+    if (filter.status) {
+      where.push('status = ?');
+      params.push(filter.status);
+    }
+    params.push(Math.min(positiveInt(filter.limit, 'limit', 200) || 200, 1000));
+    return this.all(
+      `SELECT * FROM agent_wakes ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC LIMIT ?`,
+      ...params
+    ).map(toAgentWake);
+  }
+
+  // ---------------------------------------------------------------- agent schedules (cron / timer)
+
+  createSchedule(input: {
+    agentId: string;
+    createdBy: string;
+    createdByKind?: T.ActorKind;
+    jobId?: string | null;
+    roomId?: string | null;
+    taskId?: string | null;
+    kind: 'timer' | 'cron' | 'interval';
+    cronExpr?: string | null;
+    intervalSeconds?: number | null;
+    nextRunAt: string;
+    prompt: string;
+    reason?: string | null;
+    maxRuns?: number | null;
+  }): T.AgentSchedule {
+    const agentId = required(input.agentId, 'agentId').toLowerCase();
+    if (!this.one('SELECT id FROM identities WHERE id = ?', agentId)) throw new NotFoundError(`identity ${agentId} not found`);
+    const createdBy = required(input.createdBy, 'createdBy');
+    const createdByKind = oneOf(input.createdByKind, ['human', 'agent', 'system'] as const, 'createdByKind', 'agent');
+    const kind = oneOf(input.kind, ['timer', 'cron', 'interval'] as const, 'kind');
+    const prompt = required(input.prompt, 'prompt');
+    const nextRunAt = required(input.nextRunAt, 'nextRunAt');
+    const id = newId('sched');
+    this.write((events) => {
+      this.db
+        .prepare(
+          `INSERT INTO agent_schedules
+            (id, agent_id, created_by, created_by_kind, job_id, room_id, task_id, kind, cron_expr,
+             interval_seconds, next_run_at, prompt, reason, enabled, max_runs, run_count, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?)`
+        )
+        .run(
+          id,
+          agentId,
+          createdBy,
+          createdByKind,
+          input.jobId ?? null,
+          input.roomId ?? null,
+          input.taskId ?? null,
+          kind,
+          input.cronExpr ?? null,
+          input.intervalSeconds ?? null,
+          nextRunAt,
+          prompt,
+          input.reason ?? null,
+          input.maxRuns ?? (kind === 'timer' ? 1 : null),
+          now()
+        );
+      this.recordEvent(events, {
+        type: 'schedule.created',
+        subjectId: agentId,
+        payload: { scheduleId: id, agentId, kind, cronExpr: input.cronExpr ?? null, intervalSeconds: input.intervalSeconds ?? null, nextRunAt },
+        actorId: createdBy,
+        actorKind: createdByKind,
+        subjectType: 'schedule',
+      });
+    });
+    return this.getSchedule(id);
+  }
+
+  getSchedule(id: string): T.AgentSchedule {
+    const row = this.one('SELECT * FROM agent_schedules WHERE id = ?', id);
+    if (!row) throw new NotFoundError(`schedule ${id} not found`);
+    return toAgentSchedule(row);
+  }
+
+  listSchedules(filter: { agentId?: string; jobId?: string; roomId?: string; enabledOnly?: boolean } = {}): T.AgentSchedule[] {
+    const where: string[] = [];
+    const params: SQLInputValue[] = [];
+    if (filter.agentId) {
+      where.push('agent_id = ?');
+      params.push(filter.agentId.toLowerCase());
+    }
+    if (filter.jobId) {
+      where.push('job_id = ?');
+      params.push(filter.jobId);
+    }
+    if (filter.roomId) {
+      where.push('room_id = ?');
+      params.push(filter.roomId);
+    }
+    if (filter.enabledOnly) {
+      where.push('enabled = 1');
+    }
+    return this.all(
+      `SELECT * FROM agent_schedules ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY next_run_at ASC`,
+      ...params
+    ).map(toAgentSchedule);
+  }
+
+  listDueSchedules(asOfIso = now()): T.AgentSchedule[] {
+    return this.all(
+      'SELECT * FROM agent_schedules WHERE enabled = 1 AND next_run_at <= ? ORDER BY next_run_at ASC',
+      asOfIso
+    ).map(toAgentSchedule);
+  }
+
+  updateSchedule(id: string, input: T.UpdateScheduleInput & { lastRunAt?: string; runCount?: number }): T.AgentSchedule {
+    this.getSchedule(id);
+    this.write((events) => {
+      const fields: [string, SQLInputValue][] = [];
+      if (input.enabled !== undefined) fields.push(['enabled', input.enabled ? 1 : 0]);
+      if (input.prompt !== undefined) fields.push(['prompt', required(input.prompt, 'prompt')]);
+      if (input.cronExpr !== undefined) fields.push(['cron_expr', input.cronExpr]);
+      if (input.intervalSeconds !== undefined) fields.push(['interval_seconds', input.intervalSeconds]);
+      if (input.nextRunAt !== undefined) fields.push(['next_run_at', input.nextRunAt]);
+      if (input.lastRunAt !== undefined) fields.push(['last_run_at', input.lastRunAt]);
+      if (input.runCount !== undefined) fields.push(['run_count', input.runCount]);
+      if (fields.length) {
+        this.db.prepare(`UPDATE agent_schedules SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
+      }
+      this.recordEvent(events, { type: 'schedule.updated', subjectId: id, subjectType: 'schedule' });
+    });
+    return this.getSchedule(id);
+  }
+
+  deleteSchedule(id: string): void {
+    this.getSchedule(id);
+    this.write((events) => {
+      this.db.prepare('DELETE FROM agent_schedules WHERE id = ?').run(id);
+      this.recordEvent(events, { type: 'schedule.deleted', subjectId: id, subjectType: 'schedule' });
+    });
+  }
+
+  setJobShipped(jobId: string, input: { shipSha: string; shipStatus: T.ShipStatus; shipPayload: Record<string, unknown> }): T.JobDetail {
+    this.getJob(jobId);
+    this.write((events) => {
+      this.db
+        .prepare('UPDATE jobs SET ship_sha = ?, ship_status = ?, ship_payload = ?, updated_at = ? WHERE id = ?')
+        .run(input.shipSha, input.shipStatus, jsonText(input.shipPayload), now(), jobId);
+      this.recordEvent(events, {
+        type: 'job.shipped',
+        subjectId: jobId,
+        payload: input,
+        subjectType: 'job',
+      });
+    });
+    return this.getJob(jobId);
   }
 }
 
@@ -2184,6 +2636,12 @@ const toIdentity = (r: Row): T.Identity => ({
   approvalLevel: (str(r.approval_level) ?? 'member') as T.Identity['approvalLevel'],
   adapterId: str(r.adapter_id),
   archived: bool(r.archived),
+  activeSessionId: str(r.active_session_id),
+  acpSessionId: str(r.acp_session_id),
+  statusState: (str(r.status_state) ?? 'idle') as T.IdentityStatusState,
+  rateLimitResetAt: str(r.rate_limit_reset_at),
+  rateLimitReason: str(r.rate_limit_reason),
+  lastWokenAt: str(r.last_woken_at),
 });
 
 const toTeam = (r: Row): T.Team => ({
@@ -2275,6 +2733,9 @@ const toJobSummary = (r: Row): T.JobSummary => ({
   startedAt: str(r.started_at),
   endedAt: str(r.ended_at),
   blockedReason: str(r.blocked_reason),
+  kind: (str(r.kind) ?? 'code') as T.JobKind,
+  shipStatus: (str(r.ship_status) ?? 'none') as T.ShipStatus,
+  shipPayload: parseJson<Record<string, unknown>>(r.ship_payload, {}),
 });
 
 const toTask = (r: Row): T.Task => ({
@@ -2378,6 +2839,8 @@ const toSession = (r: Row): T.Session => ({
   id: String(r.id),
   agentId: String(r.agent_id),
   taskId: str(r.task_id),
+  jobId: str(r.job_id),
+  roomId: str(r.room_id),
   runtimeCommand: String(r.runtime_command),
   pid: r.pid == null ? null : num(r.pid),
   worktree: str(r.worktree),
@@ -2473,4 +2936,46 @@ const toEvent = (r: Row): T.RuntimeEvent => ({
   subjectType: str(r.subject_type),
   hash: str(r.hash),
   prevHash: str(r.prev_hash),
+});
+
+const toAgentWake = (r: Row): T.AgentWake => ({
+  id: String(r.id),
+  targetAgentId: String(r.target_agent_id),
+  fromActorId: String(r.from_actor_id),
+  fromActorKind: (str(r.from_actor_kind) ?? 'agent') as T.ActorKind,
+  jobId: str(r.job_id),
+  roomId: str(r.room_id),
+  taskId: str(r.task_id),
+  sessionId: str(r.session_id),
+  adapterId: str(r.adapter_id),
+  reason: String(r.reason),
+  prompt: String(r.prompt),
+  status: (str(r.status) ?? 'pending') as T.WakeStatus,
+  scheduledFor: str(r.scheduled_for),
+  createdAt: String(r.created_at),
+  dispatchedAt: str(r.dispatched_at),
+  completedAt: str(r.completed_at),
+  error: str(r.error),
+});
+
+const toAgentSchedule = (r: Row): T.AgentSchedule => ({
+  id: String(r.id),
+  agentId: String(r.agent_id),
+  targetAgentId: String(r.agent_id),
+  createdBy: String(r.created_by),
+  createdByKind: (str(r.created_by_kind) ?? 'agent') as T.ActorKind,
+  jobId: str(r.job_id),
+  roomId: str(r.room_id),
+  taskId: str(r.task_id),
+  kind: (str(r.kind) ?? 'timer') as T.AgentSchedule['kind'],
+  cronExpr: str(r.cron_expr),
+  intervalSeconds: r.interval_seconds == null ? null : num(r.interval_seconds),
+  nextRunAt: String(r.next_run_at),
+  lastRunAt: str(r.last_run_at),
+  prompt: String(r.prompt),
+  reason: str(r.reason),
+  enabled: bool(r.enabled),
+  maxRuns: r.max_runs == null ? null : num(r.max_runs),
+  runCount: num(r.run_count),
+  createdAt: String(r.created_at),
 });

@@ -167,31 +167,71 @@ export class Checker {
     if (!actorId.trim()) throw new InputError('actorId is required');
     this.repo.getIdentity(actorId); // must be a real coworker, not a string
     const job = this.repo.getJob(jobId);
+    const isNonCode = job.kind && job.kind !== 'code';
     const selected = taskIds?.length
       ? taskIds.map((id) => {
           const task = this.repo.getTask(id);
           if (task.jobId !== job.id) throw new NotFoundError(`task ${id} not found on this job`);
           return task;
         })
-      : job.tasks.filter((t) => Boolean(t.checkCommand));
-    if (!selected.length) throw new ConflictError('No task with a check command to verify');
-    const worktree = await this.worktreeForJob(job);
-    const base = workspaces.workspaceState(worktree.path).headSha ?? worktree.baseSha;
+      : job.tasks.filter((t) => Boolean(t.checkCommand) || isNonCode);
+    if (!selected.length) {
+      if (isNonCode) {
+        const observed = this.repo.appendEvidence({
+          jobId: job.id,
+          kind: 'review',
+          class: 'OBSERVED',
+          summary: `Independent verification of ${job.kind} job deliverable by ${actorId}`,
+          payload: { kind: job.kind, verifiedBy: actorId, verifiedAt: new Date().toISOString() },
+          recordedBy: 'runtime',
+          recordedByKind: 'system',
+        });
+        const verified = this.repo.verifyEvidence(observed.id, {
+          verifiedBy: actorId,
+          note: `Independent verification of ${job.kind} job deliverable`,
+        });
+        return {
+          ok: true,
+          base: job.baseSha ?? 'non-code',
+          results: [{ taskId: job.id, ok: true, exitCode: 0, evidenceId: verified.id, error: null }],
+        };
+      }
+      throw new ConflictError('No task with a check command to verify');
+    }
+
+    const hasCheckCommands = selected.some((t) => Boolean(t.checkCommand?.trim()));
+    const worktree = hasCheckCommands ? await this.worktreeForJob(job) : null;
+    const base = worktree
+      ? (workspaces.workspaceState(worktree.path).headSha ?? worktree.baseSha)
+      : (job.baseSha ?? 'non-code');
     const results: VerificationOutcome[] = [];
 
     for (const task of selected) {
-      const command = task.checkCommand?.trim();
-      if (!command) {
-        results.push({ taskId: task.id, ok: false, exitCode: null, evidenceId: null, error: 'No check command' });
-        continue;
-      }
       if (task.assigneeId && task.assigneeId === actorId) {
         results.push({ taskId: task.id, ok: false, exitCode: null, evidenceId: null, error: 'The verifier cannot be the task assignee' });
         continue;
       }
+      const command = task.checkCommand?.trim();
+      if (!command) {
+        if (isNonCode) {
+          const taskEvidence = job.evidence.find((e) => e.taskId === task.id && e.class !== 'VERIFIED' && e.recordedBy !== actorId);
+          if (!taskEvidence) {
+            results.push({ taskId: task.id, ok: false, exitCode: null, evidenceId: null, error: 'No deliverable evidence recorded for this non-code task' });
+            continue;
+          }
+          const verified = this.repo.verifyEvidence(taskEvidence.id, {
+            verifiedBy: actorId,
+            note: `Independent verification of ${job.kind} deliverable`,
+          });
+          results.push({ taskId: task.id, ok: true, exitCode: 0, evidenceId: verified.id, error: null });
+          continue;
+        }
+        results.push({ taskId: task.id, ok: false, exitCode: null, evidenceId: null, error: 'No check command' });
+        continue;
+      }
       const cleanPath = path.join(this.worktreeRoot, `verify-${job.number}-${Date.now()}-${task.id.slice(-4)}`);
       try {
-        workspaces.createDetachedWorktree(worktree.repoPath, cleanPath, base);
+        workspaces.createDetachedWorktree(worktree!.repoPath, cleanPath, base);
       } catch (e) {
         results.push({ taskId: task.id, ok: false, exitCode: null, evidenceId: null, error: (e as Error).message });
         continue;
@@ -220,10 +260,99 @@ export class Checker {
           });
         }
       } finally {
-        workspaces.removeWorktree(worktree.repoPath, cleanPath);
+        workspaces.removeWorktree(worktree!.repoPath, cleanPath);
       }
     }
     return { ok: results.every((r) => r.ok), base, results };
+  }
+
+  /**
+   * Phase 2 Ship Actions: ships a verified/approved job's worktree changes into
+   * the project repository via merge, cherry-pick, or branch publication, and
+   * records OBSERVED git evidence.
+   */
+  async ship(jobId: string, input: T.ShipJobInput): Promise<T.ShipJobResult> {
+    if (!input.actorId?.trim()) throw new InputError('actorId is required');
+    const job = this.repo.getJob(jobId);
+    const pendingApprovals = job.approvals.filter((a) => a.status === 'pending');
+    if (pendingApprovals.length > 0) {
+      throw new ConflictError(`Cannot ship while ${pendingApprovals.length} approval(s) are still pending`);
+    }
+    const strategy = input.strategy ?? 'merge';
+    if (!['merge', 'cherry-pick', 'branch'].includes(strategy)) {
+      throw new InputError('strategy must be one of: merge, cherry-pick, branch');
+    }
+
+    // Ensure any dirty worktree state is committed first
+    const committed = await this.commitWorktree(job.id, input.message ?? `ship ${job.title}`);
+    const worktree = await this.worktreeForJob(job);
+    const repoState = workspaces.workspaceState(worktree.repoPath);
+    const targetBranch = input.targetBranch?.trim() || repoState.branch || 'main';
+    const jobBranch = `myaos/job-${job.number}`;
+    let finalSha = committed.commitSha;
+    let commandUsed = `git branch -f ${jobBranch} ${committed.commitSha}`;
+
+    if (strategy === 'merge') {
+      commandUsed = `git merge --no-ff ${committed.commitSha} -m 'Merge ${jobBranch}: ${job.title.replace(/'/g, '')}'`;
+      const mergeRes = await runShell(
+        `git -c user.name=MyaOS -c user.email=myaos@localhost merge --no-ff ${committed.commitSha} -m 'Merge ${jobBranch}: ${job.title.replace(/'/g, '')}'`,
+        worktree.repoPath,
+        60_000
+      );
+      if (mergeRes.exitCode !== 0) {
+        throw new ConflictError(`Git merge failed: ${mergeRes.stderr.slice(-600) || mergeRes.stdout.slice(-600)}`);
+      }
+      finalSha = workspaces.workspaceState(worktree.repoPath).headSha ?? committed.commitSha;
+    } else if (strategy === 'cherry-pick') {
+      commandUsed = `git cherry-pick ${committed.commitSha}`;
+      const cpRes = await runShell(
+        `git -c user.name=MyaOS -c user.email=myaos@localhost cherry-pick ${committed.commitSha}`,
+        worktree.repoPath,
+        60_000
+      );
+      if (cpRes.exitCode !== 0 && !/nothing to commit|previous cherry-pick is now empty/i.test(cpRes.stdout + cpRes.stderr)) {
+        throw new ConflictError(`Git cherry-pick failed: ${cpRes.stderr.slice(-600) || cpRes.stdout.slice(-600)}`);
+      }
+      finalSha = workspaces.workspaceState(worktree.repoPath).headSha ?? committed.commitSha;
+    }
+
+    const shipStatus: T.ShipStatus =
+      strategy === 'merge' ? 'merged' : strategy === 'cherry-pick' ? 'cherry_picked' : 'branch_pushed';
+    const shipPayload = {
+      strategy,
+      targetBranch,
+      jobBranch,
+      commitSha: finalSha,
+      shippedBy: input.actorId,
+      shippedAt: new Date().toISOString(),
+    };
+    const evidence = this.repo.appendEvidence({
+      jobId: job.id,
+      kind: 'deploy',
+      class: 'OBSERVED',
+      summary: `Shipped via ${strategy} to ${strategy === 'branch' ? jobBranch : targetBranch} at ${finalSha.slice(0, 12)}`,
+      payload: shipPayload,
+      command: commandUsed,
+      exitCode: 0,
+      commitSha: finalSha,
+      worktree: worktree.repoPath,
+      recordedBy: 'runtime',
+      recordedByKind: 'system',
+    });
+    const updatedJob = this.repo.setJobShipped(job.id, {
+      shipSha: finalSha,
+      shipStatus,
+      shipPayload,
+    });
+    return {
+      ok: true,
+      job: updatedJob,
+      strategy,
+      branch: strategy === 'branch' ? jobBranch : targetBranch,
+      targetBranch: strategy === 'branch' ? jobBranch : targetBranch,
+      commitSha: finalSha,
+      evidence,
+    };
   }
 
   readArtifact(sha256: string): { bytes: Buffer; mime: string } | null {

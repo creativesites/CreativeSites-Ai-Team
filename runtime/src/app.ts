@@ -7,6 +7,8 @@ import { artifactsDir, cloneParentDir, loadConfig, newProjectParentDir, workspac
 import { Checker } from './checks.ts';
 import { SessionManager } from './acp/session-manager.ts';
 import { Bridge } from './bridge.ts';
+import { Orchestrator } from './orchestrator.ts';
+import { TerminalManager } from './terminal-manager.ts';
 import { readAdapterEnv } from './adapter-env.ts';
 import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
@@ -56,6 +58,9 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   });
   const checker = new Checker({ repo, workspaceRoots: wsRoots, worktreeRoot: wtRoot, artifactsDir: artDir });
   const sessions = new SessionManager({ repo, checker, env: readAdapterEnv(cfg) });
+  const orchestrator = new Orchestrator({ repo, sessions, checker });
+  orchestrator.start();
+  const terminals = new TerminalManager();
   const teamRepo = opts.teamRepo === null ? null : (opts.teamRepo ?? cfg.teamRepo ?? null);
   bridge = new Bridge({ repo, teamRepo });
   bridge.start();
@@ -92,6 +97,8 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     checker,
     sessions,
     bridge,
+    orchestrator,
+    terminals,
   });
   broadcast = api.broadcast;
 
@@ -121,6 +128,8 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     close: () =>
       new Promise<void>((resolve) => {
         clearInterval(sweep);
+        orchestrator.dispose();
+        terminals.closeAll();
         bridge?.dispose();
         void sessions.closeAll().finally(() => {
           api.server.closeAllConnections();

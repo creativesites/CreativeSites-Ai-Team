@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
   ChevronLeft,
   Check,
+  GitMerge,
   Play,
   Plus,
   RefreshCw,
@@ -9,7 +10,7 @@ import {
   Terminal,
   X,
 } from 'lucide-react';
-import type { AdapterInfo, Evidence, Identity, JobDetail, JobStage, Room, Session, Task } from '@runtime/types';
+import type { AdapterInfo, Evidence, Identity, JobDetail, JobKind, JobStage, Room, Session, Task } from '@runtime/types';
 import { Avatar, OwnerAvatar } from '@/components/app/avatar';
 import { EmptyState, EvidenceTag, jobLabel, SectionTitle, StageBar, Tag } from '@/components/app/status';
 import { buttonVariants } from '@/components/ui/button';
@@ -18,6 +19,8 @@ import { useRuntime, useRuntimeData } from '@/lib/runtime-context';
 import { cn } from '@/lib/utils';
 
 const time = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const shortTime = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
 
 const NEXT: Partial<Record<JobStage, { to: JobStage; label: string; hint: string }>> = {
   brief: { to: 'plan', label: 'Start planning', hint: 'A plan and criteria turn the brief into work.' },
@@ -26,6 +29,14 @@ const NEXT: Partial<Record<JobStage, { to: JobStage; label: string; hint: string
   verify: { to: 'approve', label: 'Request approval', hint: 'Needs every criterion observed or verified.' },
   approve: { to: 'done', label: 'Mark done', hint: 'Needs every pending approval resolved.' },
 };
+
+const JOB_KINDS: Array<{ id: JobKind; label: string }> = [
+  { id: 'code', label: 'Code' },
+  { id: 'research', label: 'Research' },
+  { id: 'ops', label: 'Ops' },
+  { id: 'design', label: 'Design' },
+  { id: 'decision', label: 'Decision' },
+];
 
 export function JobScreen({
   job,
@@ -56,16 +67,22 @@ export function JobScreen({
   const builders = identities.filter((i) => !i.isOwner && i.id !== ownerId);
   const [agentId, setAgentId] = React.useState(job.tasks.find((t) => t.assigneeId)?.assigneeId ?? builders[0]?.id ?? '');
   const [taskId, setTaskId] = React.useState(job.tasks[0]?.id ?? '');
-  const readyAdapters = (adapters.status === 'ready' ? adapters.data : []).filter((a) => a.installed && (a.auth.state === 'ready' || a.auth.state === 'configured'));
+  const readyAdapters = (adapters.status === 'ready' ? adapters.data : []).filter(
+    (a) => a.installed && (a.auth.state === 'ready' || a.auth.state === 'configured')
+  );
   const [adapterId, setAdapterId] = React.useState(readyAdapters[0]?.id ?? 'claude');
   const verifiers = identities.filter((i) => !i.isOwner && i.id !== ownerId);
   const [verifierId, setVerifierId] = React.useState(
-    job.tasks.find((t) => t.assigneeId)?.assigneeId === 'kael' ? (verifiers[0]?.id ?? 'kael') : (verifiers.find((i) => i.id === 'kael')?.id ?? verifiers[0]?.id ?? 'kael')
+    job.tasks.find((t) => t.assigneeId)?.assigneeId === 'kael'
+      ? (verifiers[0]?.id ?? 'kael')
+      : (verifiers.find((i) => i.id === 'kael')?.id ?? verifiers[0]?.id ?? 'kael')
   );
   const [approvalTitle, setApprovalTitle] = React.useState(`Merge ${jobLabel(job.number)} into main`);
   const [approvalConsequence, setApprovalConsequence] = React.useState(
     'The verified change is merged into main. Nothing is deployed; a revert undoes it.'
   );
+  const [shipStrategy, setShipStrategy] = React.useState<'merge' | 'cherry-pick' | 'branch'>('merge');
+  const [scheduleInterval, setScheduleInterval] = React.useState('15m');
 
   React.useEffect(() => {
     setTaskId((current) => (job.tasks.some((t) => t.id === current) ? current : (job.tasks[0]?.id ?? '')));
@@ -119,7 +136,51 @@ export function JobScreen({
     act('session', async () => {
       if (!taskId) throw new Error('Add a task first; a builder session belongs to a task.');
       const session = await client!.startSession(job.id, { agentId, adapterId, taskId, mode: 'build' });
-      setNotice(`Builder session ${session.id.slice(-6)} started. Follow it in Dev.`);
+      setNotice(`Builder session ${session.id} started (acp: ${session.acpSessionId ?? 'capturing'}). Follow it in Dev.`);
+    });
+
+  const dispatchLeaderForJob = () =>
+    act('leader-dispatch', async () => {
+      const res = await client!.dispatchTeamLeader({
+        fromActorId: ownerId,
+        roomId: job.roomId,
+        jobId: job.id,
+        goal: `Drive ${jobLabel(job.number)} (${job.title}) through implementation and independent verification. Wake assigned builders and Kael as tasks complete.`,
+      });
+      setNotice(
+        res.session?.id
+          ? `Team Leader woken (session ${res.session.id}) — coordinating ${jobLabel(job.number)}.`
+          : `Team Leader scheduled on reset (${shortTime(res.deferredUntil)}).`
+      );
+    });
+
+  const scheduleJobCheckin = () =>
+    act('schedule-checkin', async () => {
+      const durMatch = scheduleInterval.trim().match(/^(\d+)\s*(s|m|h)$/i);
+      const secs = durMatch
+        ? Number(durMatch[1]) * (durMatch[2]!.toLowerCase() === 'h' ? 3600 : durMatch[2]!.toLowerCase() === 'm' ? 60 : 1)
+        : 900;
+      const target = agentId || 'atlas';
+      await client!.createSchedule({
+        targetAgentId: target,
+        createdBy: ownerId,
+        jobId: job.id,
+        roomId: job.roomId,
+        intervalSeconds: secs,
+        prompt: `Scheduled progress check on ${jobLabel(job.number)} (${job.title}): inspect task checks, wake blocked coworkers, or hand off to Kael for verification.`,
+      });
+      setNotice(`Scheduled recurring ${scheduleInterval} wakeup check-in for ${who(target)?.name ?? target}.`);
+    });
+
+  const handleShip = () =>
+    act('ship', async () => {
+      const res = await client!.shipJob(job.id, {
+        strategy: shipStrategy,
+        actorId: ownerId,
+      });
+      setNotice(
+        `Shipped via ${res.strategy}${res.commitSha ? ` (${res.commitSha.slice(0, 10)})` : ''}${res.branch ? ` on ${res.branch}` : ''}.`
+      );
     });
 
   return (
@@ -137,6 +198,24 @@ export function JobScreen({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {client && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Kind
+              <select
+                value={job.kind ?? 'code'}
+                onChange={(e) => void act('kind', () => client.updateJob(job.id, { kind: e.target.value as JobKind }))}
+                aria-label="Job kind"
+                className="glass-panel h-8 rounded-md px-2 text-xs text-foreground"
+              >
+                {JOB_KINDS.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {job.shipStatus === 'shipped' && <Tag tone="verified">Shipped</Tag>}
           <Tag tone={job.risk === 'high' || job.risk === 'critical' ? 'risk' : 'quiet'}>Risk {job.risk ?? 'low'}</Tag>
           <span className="text-xs text-muted-foreground">Owner: {ownerName}</span>
           <Tag tone="quiet">{job.costCents ?? 0}¢ spent</Tag>
@@ -150,6 +229,40 @@ export function JobScreen({
       </header>
 
       <StageBar stage={job.stage} waitingOnYou={pending.length > 0} />
+
+      {client && (
+        <div className="bg-card flex flex-wrap items-center justify-between gap-2.5 rounded-xl px-4 py-2.5 text-xs">
+          <span className="text-muted-foreground">
+            <strong>Autonomous Job Coordination:</strong> Have the Team Leader wake builders &amp; verifier, or schedule self-wake check-ins.
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={dispatchLeaderForJob}
+              disabled={busy !== null}
+              className={buttonVariants({ variant: 'glass', size: 'sm' })}
+            >
+              {busy === 'leader-dispatch' ? 'Waking Leader…' : 'Ask Team Leader to Drive Job'}
+            </button>
+            <div className="flex items-center gap-1">
+              <input
+                value={scheduleInterval}
+                onChange={(e) => setScheduleInterval(e.target.value)}
+                aria-label="Check-in interval"
+                className="glass-panel h-8 w-16 rounded-md px-2 font-mono text-xs outline-none"
+              />
+              <button
+                type="button"
+                onClick={scheduleJobCheckin}
+                disabled={busy !== null}
+                className={buttonVariants({ variant: 'glass', size: 'sm' })}
+              >
+                Schedule Check-in
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {(error || notice) && (
         <div className={cn('flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-sm', error ? 'border-risk/40 bg-risk/10 text-risk' : 'border-verified/40 bg-verified/10 text-verified')} role="status">
@@ -168,7 +281,9 @@ export function JobScreen({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
         <main className="flex min-w-0 flex-1 flex-col gap-4">
           <section aria-label="The brief" className="bg-card flex flex-col gap-3 rounded-xl px-5 py-4.5">
-            <SectionTitle aside="what must be true when this is done">The brief</SectionTitle>
+            <SectionTitle aside={job.kind && job.kind !== 'code' ? `${job.kind} job (non-code verification enabled)` : 'what must be true when this is done'}>
+              The brief
+            </SectionTitle>
             <p className="text-[14.5px] leading-relaxed whitespace-pre-wrap text-foreground/90">{job.brief || 'No brief written.'}</p>
           </section>
 
@@ -258,7 +373,7 @@ export function JobScreen({
                 ))}
               </div>
             )}
-            {job.tasks.length > 0 && (
+            {(job.tasks.length > 0 || (job.kind && job.kind !== 'code')) && (
               <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-3">
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                   Independent verifier
@@ -276,7 +391,7 @@ export function JobScreen({
                       const result = await client!.verifyJob(job.id, verifierId);
                       setNotice(
                         result.ok
-                          ? `Verified in a clean worktree at ${result.base.slice(0, 10)}. Every check passed.`
+                          ? `Verified independently${result.base ? ` at ${result.base.slice(0, 10)}` : ''}. Every check passed.`
                           : `Verification failed: ${result.results.filter((r) => !r.ok).map((r) => r.error ?? r.taskId).join('; ')}`
                       );
                     })
@@ -289,7 +404,7 @@ export function JobScreen({
             )}
             <div className="flex flex-wrap gap-2">
               <input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} placeholder="Task title" aria-label="New task title" className="glass-panel h-9 flex-1 rounded-md px-2.5 text-sm outline-none" />
-              <input value={taskCheck} onChange={(e) => setTaskCheck(e.target.value)} placeholder="Check command (optional)" aria-label="New task check command" className="glass-panel h-9 flex-1 rounded-md px-2.5 font-mono text-xs outline-none" />
+              <input value={taskCheck} onChange={(e) => setTaskCheck(e.target.value)} placeholder="Check command (optional for non-code jobs)" aria-label="New task check command" className="glass-panel h-9 flex-1 rounded-md px-2.5 font-mono text-xs outline-none" />
               <button type="button" onClick={addTask} disabled={busy !== null || !taskTitle.trim()} className={buttonVariants({ variant: 'glass' })}>
                 <Plus /> Task
               </button>
@@ -312,7 +427,10 @@ export function JobScreen({
                   Agent
                   <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="glass-panel h-9 rounded-md px-2 text-xs">
                     {builders.map((i) => (
-                      <option key={i.id} value={i.id}>{i.name}</option>
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                        {i.statusState === 'rate_limited' && i.rateLimitResetAt ? ` (resets ${shortTime(i.rateLimitResetAt)})` : ''}
+                      </option>
                     ))}
                   </select>
                 </label>
@@ -320,7 +438,10 @@ export function JobScreen({
                   Adapter
                   <select value={adapterId} onChange={(e) => setAdapterId(e.target.value)} className="glass-panel h-9 rounded-md px-2 text-xs">
                     {readyAdapters.map((a) => (
-                      <option key={a.id} value={a.id}>{a.name}{a.auth.state === 'configured' ? ' (unverified)' : ''}</option>
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                        {a.rateLimitResetAt ? ` (limit resets ${shortTime(a.rateLimitResetAt)})` : a.auth.state === 'configured' ? ' (unverified)' : ''}
+                      </option>
                     ))}
                     {readyAdapters.length === 0 && <option value="">No ready adapter</option>}
                   </select>
@@ -334,7 +455,14 @@ export function JobScreen({
               <p className="text-sm text-muted-foreground">No session has run for this job yet.</p>
             ) : (
               (job.sessions ?? []).map((s) => (
-                <SessionRow key={s.id} session={s} agent={who(s.agentId)} onCancel={() => act(`cancel:${s.id}`, () => client!.cancelSession(s.id, ownerId))} busy={busy === `cancel:${s.id}`} />
+                <SessionRow
+                  key={s.id}
+                  session={s}
+                  jobId={job.id}
+                  agent={who(s.agentId)}
+                  onCancel={() => act(`cancel:${s.id}`, () => client!.cancelSession(s.id, ownerId))}
+                  busy={busy === `cancel:${s.id}`}
+                />
               ))
             )}
           </section>
@@ -371,6 +499,47 @@ export function JobScreen({
               </div>
             </section>
           ))}
+
+          {(job.kind ?? 'code') === 'code' && (
+            <section aria-label="Ship worktree" className="bg-card flex flex-col gap-3 rounded-xl p-5">
+              <SectionTitle aside={job.shipStatus === 'shipped' ? 'shipped' : 'merge, cherry-pick, or branch'}>
+                Ship worktree
+              </SectionTitle>
+              {job.shipStatus === 'shipped' && job.shipPayload ? (
+                <div className="rounded-lg border border-verified/40 bg-verified/10 p-3 text-xs text-verified">
+                  Shipped via <strong>{String(job.shipPayload.strategy ?? 'merge')}</strong>
+                  {job.shipPayload.commitSha ? ` · ${String(job.shipPayload.commitSha).slice(0, 10)}` : ''}
+                  {job.shipPayload.branch ? ` · ${String(job.shipPayload.branch)}` : ''}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Apply verified worktree commits to the repository using an audited git strategy.
+                </p>
+              )}
+              {client && (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={shipStrategy}
+                    onChange={(e) => setShipStrategy(e.target.value as 'merge' | 'cherry-pick' | 'branch')}
+                    aria-label="Ship strategy"
+                    className="glass-panel h-9 flex-1 rounded-md px-2 text-xs"
+                  >
+                    <option value="merge">Merge worktree commit</option>
+                    <option value="cherry-pick">Cherry-pick commit</option>
+                    <option value="branch">Push dedicated branch</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleShip}
+                    disabled={busy !== null}
+                    className={buttonVariants({ variant: 'default', size: 'sm' })}
+                  >
+                    <GitMerge /> {busy === 'ship' ? 'Shipping…' : 'Ship'}
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
 
           <section aria-label="Budget" className="bg-card flex flex-col gap-2 rounded-xl p-5">
             <SectionTitle aside={budget.status === 'ready' && budget.data?.configured ? (budget.data.source ?? '') : 'not set'}>Budget</SectionTitle>
@@ -440,15 +609,24 @@ function TaskRow({ task, assignee, busy, onRunCheck, onDone, onStart }: { task: 
   );
 }
 
-function SessionRow({ session, agent, onCancel, busy }: { session: Session; agent?: Identity; onCancel: () => void; busy: boolean }) {
+function SessionRow({ session, jobId, agent, onCancel, busy }: { session: Session; jobId: string; agent?: Identity; onCancel: () => void; busy: boolean }) {
   const live = session.state === 'starting' || session.state === 'running' || session.state === 'idle';
   return (
     <div className="glass-panel flex flex-wrap items-center gap-2.5 rounded-lg px-3 py-2">
       {agent ? <Avatar who={agent} size={24} /> : null}
-      <span className="min-w-0 flex-1 truncate text-sm">{agent?.name ?? session.agentId}</span>
-      <code className="basis-40 truncate font-mono text-xs text-muted-foreground">{session.runtimeCommand}</code>
+      <div className="flex min-w-0 flex-1 flex-col leading-tight">
+        <span className="truncate text-sm font-medium">{agent?.name ?? session.agentId}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">
+          {session.id}
+          {session.acpSessionId ? ` · acp: ${session.acpSessionId}` : ''}
+        </span>
+      </div>
+      <code className="basis-36 truncate font-mono text-xs text-muted-foreground">{session.runtimeCommand}</code>
       <Tag tone={session.state === 'failed' ? 'risk' : live ? 'observed' : 'quiet'}>{session.state}</Tag>
       <span className="text-xs text-muted-foreground">{session.turnCount ?? 0} turns</span>
+      <a href={href({ name: 'dev', jobId })} className={buttonVariants({ variant: 'glass', size: 'sm' })}>
+        Terminal
+      </a>
       {live && (
         <button type="button" onClick={onCancel} disabled={busy} className={buttonVariants({ variant: 'glass', size: 'sm' })}>
           {busy ? 'Cancelling…' : 'Cancel'}

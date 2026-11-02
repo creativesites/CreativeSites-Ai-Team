@@ -12,8 +12,10 @@ import {
 } from '../store/repo.ts';
 import * as workspaces from '../workspaces.ts';
 import type { Checker } from '../checks.ts';
-import type { SessionManager } from '../acp/session-manager.ts';
+import { formatSessionTerminalOutput, type SessionManager } from '../acp/session-manager.ts';
 import type { Bridge } from '../bridge.ts';
+import type { Orchestrator } from '../orchestrator.ts';
+import type { TerminalManager } from '../terminal-manager.ts';
 import { getRosterPayload } from '../council-roster.ts';
 import { findFolderSession, listFolderSessions } from '../council-watch.ts';
 import {
@@ -34,6 +36,8 @@ export interface ServerOptions {
   checker: Checker;
   sessions: SessionManager;
   bridge: Bridge;
+  orchestrator: Orchestrator;
+  terminals: TerminalManager;
 }
 
 export interface RuntimeServer {
@@ -187,15 +191,108 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('POST', '/v1/bridge/ingest', () => ({ status: 200, body: opts.bridge.ingestNow() })),
     route('POST', '/v1/adapters/:id', (ctx) => {
       repo.upsertAdapterOverride(ctx.params.id!, ctx.body as never);
-      return { status: 200, body: adapterList(true) };
+      return { status: 200, body: adapterList(false) };
     }, false),
+    route('POST', '/v1/adapters/:id/rate-limit', (ctx) => {
+      const reason = asString(ctx.body.reason, 'reason');
+      const resetIn = Number(ctx.body.resetInSeconds ?? 1800);
+      const resetAt = asOptionalString(ctx.body.resetAt) ?? new Date(Date.now() + resetIn * 1000).toISOString();
+      repo.setAdapterRateLimit(ctx.params.id!, reason, resetAt);
+      return { status: 200, body: adapterList(false) };
+    }),
+    route('POST', '/v1/adapters/:id/clear-rate-limit', (ctx) => {
+      repo.clearAdapterRateLimit(ctx.params.id!);
+      return { status: 200, body: adapterList(false) };
+    }),
 
-    // identities
+    // identities & rate-limits
     route('GET', '/v1/identities', (ctx) => ({ status: 200, body: repo.listIdentities(ctx.query.get('archived') === '1') })),
     route('POST', '/v1/identities', (ctx) => ({ status: 201, body: repo.createIdentity(ctx.body as unknown as T.CreateIdentityInput) })),
     route('GET', '/v1/identities/:id', (ctx) => ({ status: 200, body: repo.getIdentity(ctx.params.id!) })),
     route('POST', '/v1/identities/:id', (ctx) => ({ status: 200, body: repo.updateIdentity(ctx.params.id!, ctx.body as T.UpdateIdentityInput) })),
+    route('POST', '/v1/identities/:id/rate-limit', (ctx) => {
+      const reason = asString(ctx.body.reason, 'reason');
+      const resetIn = Number(ctx.body.resetInSeconds ?? 1800);
+      const resetAt = asOptionalString(ctx.body.resetAt) ?? new Date(Date.now() + resetIn * 1000).toISOString();
+      const updated = repo.setIdentityRateLimit(ctx.params.id!, reason, resetAt);
+      if (typeof ctx.body.resumePrompt === 'string' && ctx.body.resumePrompt.trim()) {
+        opts.orchestrator.createSchedule({
+          agentId: updated.id,
+          createdBy: asOptionalString(ctx.body.actorId) ?? updated.id,
+          kind: 'timer',
+          runAt: resetAt,
+          prompt: ctx.body.resumePrompt.trim(),
+          reason: `Auto-resume after session limit reset: ${reason}`,
+          maxRuns: 1,
+        });
+      }
+      return { status: 200, body: updated };
+    }),
+    route('POST', '/v1/identities/:id/clear-rate-limit', (ctx) => ({
+      status: 200,
+      body: repo.clearIdentityRateLimit(ctx.params.id!),
+    })),
+    route('GET', '/v1/rate-limits', () => ({ status: 200, body: opts.orchestrator.rateLimitStatus() })),
     route('POST', '/v1/import/identities', (ctx) => ({ status: 200, body: repo.importIdentities(ctx.body as unknown as T.ImportIdentitiesInput) })),
+
+    // autonomous wake, spawn, team-leader & cron/timer schedules
+    route('POST', '/v1/agents/:id/wake', async (ctx) => ({
+      status: 202,
+      body: await opts.orchestrator.wakeAgent(ctx.params.id!, ctx.body as unknown as T.WakeAgentInput),
+    })),
+    route('POST', '/v1/wakes', async (ctx) => ({
+      status: 202,
+      body: await opts.orchestrator.wakeAgent(asString(ctx.body.targetAgentId, 'targetAgentId'), ctx.body as unknown as T.WakeAgentInput),
+    })),
+    route('GET', '/v1/wakes', (ctx) => ({
+      status: 200,
+      body: repo.listWakes({
+        targetAgentId: ctx.query.get('targetAgentId') ?? undefined,
+        jobId: ctx.query.get('jobId') ?? undefined,
+        roomId: ctx.query.get('roomId') ?? undefined,
+        status: (ctx.query.get('status') as T.WakeStatus | null) ?? undefined,
+        limit: Number(ctx.query.get('limit') ?? 200),
+      }),
+    })),
+    route('POST', '/v1/agents/spawn', async (ctx) => ({
+      status: 201,
+      body: await opts.orchestrator.spawnAgent(ctx.body as unknown as T.SpawnAgentInput),
+    })),
+    route('POST', '/v1/team-leader/dispatch', async (ctx) => ({
+      status: 202,
+      body: await opts.orchestrator.delegateToTeamLeader({
+        leaderId: asOptionalString(ctx.body.leaderId),
+        fromActorId: asString(ctx.body.fromActorId, 'fromActorId'),
+        jobId: asOptionalString(ctx.body.jobId) ?? null,
+        roomId: asOptionalString(ctx.body.roomId) ?? null,
+        directive: asOptionalString(ctx.body.directive) ?? asString(ctx.body.goal, 'directive'),
+      }),
+    })),
+    route('GET', '/v1/schedules', (ctx) => ({
+      status: 200,
+      body: repo.listSchedules({
+        agentId: ctx.query.get('agentId') ?? undefined,
+        jobId: ctx.query.get('jobId') ?? undefined,
+        roomId: ctx.query.get('roomId') ?? undefined,
+        enabledOnly: ctx.query.get('enabledOnly') === '1',
+      }),
+    })),
+    route('POST', '/v1/schedules', (ctx) => ({
+      status: 201,
+      body: opts.orchestrator.createSchedule(ctx.body as unknown as T.CreateScheduleInput),
+    })),
+    route('PATCH', '/v1/schedules/:id', (ctx) => ({
+      status: 200,
+      body: repo.updateSchedule(ctx.params.id!, ctx.body as T.UpdateScheduleInput),
+    })),
+    route('DELETE', '/v1/schedules/:id', (ctx) => {
+      repo.deleteSchedule(ctx.params.id!);
+      return { status: 204 };
+    }),
+    route('POST', '/v1/schedules/tick', async (ctx) => ({
+      status: 200,
+      body: await opts.orchestrator.tick(asOptionalString(ctx.body.asOf)),
+    })),
 
     // teams
     route('GET', '/v1/teams', () => ({ status: 200, body: repo.listTeams() })),
@@ -242,10 +339,14 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       status: 200,
       body: repo.listMessages(ctx.params.id!, Number(ctx.query.get('limit') ?? 200)),
     })),
-    route('POST', '/v1/rooms/:id/messages', (ctx) => ({
-      status: 201,
-      body: repo.postMessage(ctx.params.id!, ctx.body as unknown as T.PostMessageInput),
-    })),
+    route('POST', '/v1/rooms/:id/messages', (ctx) => {
+      const room = repo.getRoom(ctx.params.id!);
+      const msg = repo.postMessage(room.id, ctx.body as unknown as T.PostMessageInput);
+      void opts.orchestrator.handleRoomMessage(room, msg).catch((e) => {
+        console.error('[orchestrator] room message hook failed:', e);
+      });
+      return { status: 201, body: msg };
+    }),
 
     // jobs
     route('GET', '/v1/jobs', (ctx) => ({
@@ -280,9 +381,13 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       status: 200,
       body: await opts.checker.verify(
         ctx.params.id!,
-        asString(ctx.body.actorId, 'actorId'),
+        asOptionalString(ctx.body.actorId) ?? asString(ctx.body.verifierId, 'actorId'),
         Array.isArray(ctx.body.taskIds) ? (ctx.body.taskIds as string[]) : undefined
       ),
+    })),
+    route('POST', '/v1/jobs/:id/ship', async (ctx) => ({
+      status: 200,
+      body: await opts.checker.ship(ctx.params.id!, ctx.body as unknown as T.ShipJobInput),
     })),
     route('GET', '/v1/artifacts/:sha', (ctx) => {
       const artifact = opts.checker.readArtifact(ctx.params.sha!);
@@ -457,6 +562,59 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       status: 201,
       body: repo.appendTranscript(ctx.params.id!, ctx.body as unknown as T.AppendTranscriptInput),
     })),
+    route('GET', '/v1/sessions/:id/terminal', (ctx) => {
+      const session = repo.getSession(ctx.params.id!);
+      const entries = repo.listTranscript(session.id, Number(ctx.query.get('since') ?? 0), 5000);
+      let agentName = session.agentId;
+      try {
+        agentName = repo.getIdentity(session.agentId).name;
+      } catch {
+        /* fallback */
+      }
+      return {
+        status: 200,
+        body: {
+          sessionId: session.id,
+          agentId: session.agentId,
+          agentName,
+          acpSessionId: session.acpSessionId ?? null,
+          state: session.state,
+          worktree: session.worktree,
+          pid: session.pid,
+          output: formatSessionTerminalOutput(session, entries, agentName),
+        },
+      };
+    }),
+
+    // runtime interactive shell terminals (works in both Tauri and Browser)
+    route('GET', '/v1/terminals', () => ({ status: 200, body: opts.terminals.list() })),
+    route('POST', '/v1/terminals', (ctx) => ({
+      status: 201,
+      body: opts.terminals.create(
+        asOptionalString(ctx.body.cwd) ?? null,
+        Number(ctx.body.cols ?? 100),
+        Number(ctx.body.rows ?? 30)
+      ),
+    })),
+    route('GET', '/v1/terminals/:id/stream', (ctx) => {
+      const origin = ctx.req.headers.origin;
+      ctx.res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+        Connection: 'keep-alive',
+        ...(origin && origins.has(origin) ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}),
+      });
+      opts.terminals.subscribe(ctx.params.id!, ctx.res);
+      return 'stream';
+    }),
+    route('POST', '/v1/terminals/:id/input', (ctx) => {
+      opts.terminals.write(ctx.params.id!, typeof ctx.body.data === 'string' ? ctx.body.data : '');
+      return { status: 200, body: { ok: true } };
+    }),
+    route('DELETE', '/v1/terminals/:id', (ctx) => {
+      opts.terminals.kill(ctx.params.id!);
+      return { status: 204 };
+    }),
   ];
 
   // ------------------------------------------------------------------ per-route helpers
@@ -488,6 +646,8 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         source: 'override' as const,
         abilities,
         lastProbeAt: override.last_probe_at ? String(override.last_probe_at) : adapter.lastProbeAt,
+        rateLimitResetAt: override.rate_limit_reset_at ? String(override.rate_limit_reset_at) : null,
+        rateLimitReason: override.rate_limit_reason ? String(override.rate_limit_reason) : null,
       };
     });
     for (const [id, override] of overrides) {
@@ -507,6 +667,8 @@ export function createServer(opts: ServerOptions): RuntimeServer {
           abilities: {},
           lastProbeAt: null,
           auth: { state: 'unknown', detail: 'Custom adapter; not probed' },
+          rateLimitResetAt: override.rate_limit_reset_at ? String(override.rate_limit_reset_at) : null,
+          rateLimitReason: override.rate_limit_reason ? String(override.rate_limit_reason) : null,
         });
       }
     }
@@ -681,6 +843,8 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     }
   });
 
+  server.keepAliveTimeout = 65_000;
+  server.headersTimeout = 66_000;
   server.on('close', () => {
     for (const res of streams) res.end();
     streams.clear();

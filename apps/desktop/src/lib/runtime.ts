@@ -1,6 +1,8 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type {
   AdapterInfo,
+  AgentSchedule,
+  AgentWake,
   Approval,
   ApprovalPolicy,
   BridgeStatus,
@@ -24,13 +26,16 @@ import type {
   CreateProjectInput,
   CreateRepoInput,
   CreateRoomInput,
+  CreateScheduleInput,
   CreateTaskInput,
   CreateTeamInput,
   DecideApprovalInput,
   Evidence,
   Health,
   Identity,
+  IdentityStatusState,
   JobDetail,
+  JobKind,
   JobPlan,
   JobStage,
   JobStageHistory,
@@ -38,6 +43,7 @@ import type {
   Message,
   PostMessageInput,
   Project,
+  RateLimitReportInput,
   Repo,
   Room,
   RoomMember,
@@ -45,6 +51,9 @@ import type {
   RuntimeEvent,
   Session,
   Settings,
+  ShipJobInput,
+  ShipJobResult,
+  SpawnAgentInput,
   Summary,
   Task,
   Team,
@@ -53,8 +62,11 @@ import type {
   UpdateIdentityInput,
   UpdatePolicyInput,
   UpdateProjectInput,
+  UpdateScheduleInput,
   UpdateTaskInput,
   VerifyEvidenceInput,
+  WakeAgentInput,
+  WakeAgentResult,
   WorkspaceState,
 } from '@runtime/types';
 
@@ -180,7 +192,7 @@ export class RuntimeClient {
     const suffix = q.toString() ? `?${q}` : '';
     return this.request<JobSummary[]>('GET', `/v1/jobs${suffix}`);
   };
-  updateJob = (id: string, input: { title?: string; brief?: string; risk?: string; priority?: string; budgetCents?: number | null; blockedReason?: string | null }) =>
+  updateJob = (id: string, input: { title?: string; brief?: string; risk?: string; priority?: string; budgetCents?: number | null; blockedReason?: string | null; kind?: JobKind }) =>
     this.request<JobDetail>('PATCH', `/v1/jobs/${encodeURIComponent(id)}`, input);
   transitionJob = (id: string, input: { to: JobStage; actorId: string; actorKind?: 'human' | 'agent' | 'system'; note?: string; force?: boolean }) =>
     this.request<JobDetail>('POST', `/v1/jobs/${encodeURIComponent(id)}/stage`, input);
@@ -244,7 +256,7 @@ export class RuntimeClient {
   budgets = () => this.request<Budget[]>('GET', '/v1/budgets');
   createBudget = (input: CreateBudgetInput) => this.request<Budget>('POST', '/v1/budgets', input);
 
-  // ---- sessions / transcript
+  // ---- sessions / transcript / terminal output
   startSession = (jobId: string, input: { agentId: string; adapterId?: string; taskId?: string; prompt?: string; mode?: string }) =>
     this.request<Session>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/sessions`, input);
   session = (id: string) => this.request<Session>('GET', `/v1/sessions/${encodeURIComponent(id)}`);
@@ -254,6 +266,122 @@ export class RuntimeClient {
     this.request<{ ok: boolean }>('POST', `/v1/sessions/${encodeURIComponent(id)}/prompt`, { text });
   transcript = (id: string, since = 0) =>
     this.request<TranscriptEntry[]>('GET', `/v1/sessions/${encodeURIComponent(id)}/transcript?since=${since}`);
+  sessionTerminal = (id: string, since = 0) =>
+    this.request<{
+      sessionId: string;
+      agentId: string;
+      agentName: string;
+      acpSessionId: string | null;
+      state: string;
+      worktree: string | null;
+      pid: number | null;
+      output: string;
+    }>('GET', `/v1/sessions/${encodeURIComponent(id)}/terminal?since=${since}`);
+
+  // ---- autonomous wakes, schedules, rate-limits, spawn & ship
+  wakeAgent = (agentId: string, input: WakeAgentInput) =>
+    this.request<WakeAgentResult>('POST', `/v1/agents/${encodeURIComponent(agentId)}/wake`, input);
+  wakes = (filter: { targetAgentId?: string; jobId?: string; roomId?: string; status?: string } = {}) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(filter)) if (v) q.set(k, String(v));
+    return this.request<AgentWake[]>('GET', `/v1/wakes${q.toString() ? `?${q}` : ''}`);
+  };
+  spawnAgent = (input: SpawnAgentInput) =>
+    this.request<{ identity: Identity; wakeResult: WakeAgentResult | null }>('POST', '/v1/agents/spawn', input);
+  dispatchTeamLeader = (input: { leaderId?: string; fromActorId: string; jobId?: string | null; roomId?: string | null; directive?: string; goal?: string }) =>
+    this.request<WakeAgentResult>('POST', '/v1/team-leader/dispatch', {
+      ...input,
+      directive: input.directive ?? input.goal ?? '',
+    });
+  schedules = (filter: { agentId?: string; jobId?: string; roomId?: string; enabledOnly?: boolean } = {}) => {
+    const q = new URLSearchParams();
+    if (filter.agentId) q.set('agentId', filter.agentId);
+    if (filter.jobId) q.set('jobId', filter.jobId);
+    if (filter.roomId) q.set('roomId', filter.roomId);
+    if (filter.enabledOnly) q.set('enabledOnly', '1');
+    return this.request<AgentSchedule[]>('GET', `/v1/schedules${q.toString() ? `?${q}` : ''}`);
+  };
+  createSchedule = (input: CreateScheduleInput) =>
+    this.request<AgentSchedule>('POST', '/v1/schedules', input);
+  updateSchedule = (id: string, input: UpdateScheduleInput) =>
+    this.request<AgentSchedule>('PATCH', `/v1/schedules/${encodeURIComponent(id)}`, input);
+  deleteSchedule = (id: string) =>
+    this.request<unknown>('DELETE', `/v1/schedules/${encodeURIComponent(id)}`);
+  tickSchedules = (asOf?: string) =>
+    this.request<{ firedSchedules: string[]; clearedRateLimits: string[] }>('POST', '/v1/schedules/tick', asOf ? { asOf } : {});
+  rateLimits = () =>
+    this.request<{
+      agents: {
+        id: string;
+        name: string;
+        runtime: string | null;
+        adapterId: string | null;
+        statusState: IdentityStatusState;
+        rateLimitResetAt: string | null;
+        rateLimitReason: string | null;
+        activeSessionId: string | null;
+        acpSessionId: string | null;
+      }[];
+      adapters: {
+        id: string;
+        rateLimitResetAt: string | null;
+        rateLimitReason: string | null;
+      }[];
+    }>('GET', '/v1/rate-limits');
+  setAgentRateLimit = (agentId: string, input: RateLimitReportInput & { resumePrompt?: string }) =>
+    this.request<Identity>('POST', `/v1/identities/${encodeURIComponent(agentId)}/rate-limit`, input);
+  clearAgentRateLimit = (agentId: string) =>
+    this.request<Identity>('POST', `/v1/identities/${encodeURIComponent(agentId)}/clear-rate-limit`, {});
+  setAdapterRateLimit = (adapterId: string, input: RateLimitReportInput) =>
+    this.request<AdapterInfo[]>('POST', `/v1/adapters/${encodeURIComponent(adapterId)}/rate-limit`, input);
+  clearAdapterRateLimit = (adapterId: string) =>
+    this.request<AdapterInfo[]>('POST', `/v1/adapters/${encodeURIComponent(adapterId)}/clear-rate-limit`, {});
+  shipJob = (jobId: string, input: ShipJobInput) =>
+    this.request<ShipJobResult>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/ship`, input);
+
+  // ---- runtime interactive shell terminals
+  createTerminal = (cwd?: string | null, cols = 100, rows = 30) =>
+    this.request<{ id: string; cwd: string; shell: string; pid: number | null; alive: boolean; createdAt: string }>(
+      'POST',
+      '/v1/terminals',
+      { cwd, cols, rows }
+    );
+  writeTerminalInput = (id: string, data: string) =>
+    this.request<{ ok: boolean }>('POST', `/v1/terminals/${encodeURIComponent(id)}/input`, { data });
+  killTerminal = (id: string) =>
+    this.request<unknown>('DELETE', `/v1/terminals/${encodeURIComponent(id)}`);
+  async streamTerminal(
+    id: string,
+    onEvent: (ev: { type: 'data' | 'exit' | 'error'; data?: string; exitCode?: number; message?: string }) => void,
+    signal: AbortSignal
+  ): Promise<void> {
+    const res = await fetch(`${this.connection.url}/v1/terminals/${encodeURIComponent(id)}/stream`, {
+      headers: { Authorization: `Bearer ${this.connection.token}` },
+      signal,
+    });
+    if (!res.ok || !res.body) throw new RuntimeError(res.status, 'terminal stream refused');
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut: number;
+      while ((cut = buffer.indexOf('\n\n')) >= 0) {
+        const block = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        const data = block
+          .split('\n')
+          .filter((l) => l.startsWith('data: '))
+          .map((l) => l.slice(6))
+          .join('\n');
+        if (!data) continue;
+        const ev = JSON.parse(data);
+        onEvent(ev);
+      }
+    }
+  }
 
   // ---- councils
   councilRoster = () =>

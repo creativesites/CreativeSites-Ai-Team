@@ -3,7 +3,10 @@
 
 export type EvidenceClass = 'OBSERVED' | 'DECLARED' | 'ATTESTED' | 'VERIFIED' | 'UNKNOWN';
 export type JobStage = 'brief' | 'plan' | 'build' | 'verify' | 'approve' | 'done' | 'cancelled';
+export type JobKind = 'code' | 'research' | 'ops' | 'design' | 'decision';
+export type ShipStatus = 'none' | 'ready' | 'shipped' | 'merged' | 'pr_opened' | 'cherry_picked' | 'branch_pushed';
 export type SessionState = 'starting' | 'running' | 'idle' | 'stopped' | 'failed';
+export type IdentityStatusState = 'idle' | 'working' | 'rate_limited' | 'waiting_reset' | 'offline';
 export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'blocked';
 export type ApprovalStatus = 'pending' | 'approved' | 'declined' | 'expired' | 'escalated';
 export type Risk = 'low' | 'medium' | 'high' | 'critical';
@@ -56,6 +59,12 @@ export interface Identity {
   approvalLevel?: 'owner' | 'lead' | 'member' | 'none';
   adapterId?: string | null;
   archived?: boolean;
+  activeSessionId?: string | null;
+  acpSessionId?: string | null;
+  statusState?: IdentityStatusState;
+  rateLimitResetAt?: string | null;
+  rateLimitReason?: string | null;
+  lastWokenAt?: string | null;
 }
 
 export interface Team {
@@ -153,6 +162,9 @@ export interface JobSummary {
   startedAt?: string | null;
   endedAt?: string | null;
   blockedReason?: string | null;
+  kind?: JobKind;
+  shipStatus?: ShipStatus;
+  shipPayload?: Record<string, unknown>;
 }
 
 export interface Criterion {
@@ -289,6 +301,8 @@ export interface Session {
   id: string;
   agentId: string;
   taskId: string | null;
+  jobId?: string | null;
+  roomId?: string | null;
   runtimeCommand: string;
   pid: number | null;
   worktree: string | null;
@@ -381,6 +395,8 @@ export interface AdapterInfo {
   abilities: Record<string, boolean>;
   lastProbeAt: string | null;
   auth: AdapterAuth;
+  rateLimitResetAt?: string | null;
+  rateLimitReason?: string | null;
 }
 
 export type Ruin = 'none' | 'possible' | 'likely';
@@ -706,6 +722,12 @@ export interface UpdateIdentityInput {
   approvalLevel?: 'owner' | 'lead' | 'member' | 'none';
   adapterId?: string | null;
   archived?: boolean;
+  activeSessionId?: string | null;
+  acpSessionId?: string | null;
+  statusState?: IdentityStatusState;
+  rateLimitResetAt?: string | null;
+  rateLimitReason?: string | null;
+  lastWokenAt?: string | null;
 }
 
 export interface CreateTeamInput {
@@ -772,6 +794,7 @@ export interface CreateJobInput {
   risk?: Risk;
   priority?: string;
   budgetCents?: number;
+  kind?: JobKind;
 }
 
 export interface UpdateJobInput {
@@ -781,6 +804,9 @@ export interface UpdateJobInput {
   priority?: string;
   budgetCents?: number | null;
   blockedReason?: string | null;
+  kind?: JobKind;
+  shipStatus?: ShipStatus;
+  shipPayload?: Record<string, unknown>;
 }
 
 export interface TransitionJobInput {
@@ -908,6 +934,8 @@ export interface CreateBudgetInput {
 export interface RegisterSessionInput {
   agentId: string;
   taskId?: string | null;
+  jobId?: string | null;
+  roomId?: string | null;
   runtimeCommand: string;
   adapterId?: string | null;
   pid?: number | null;
@@ -965,3 +993,146 @@ export interface CreateProjectFolderInput {
   initGit?: boolean;
   teamId?: string;
 }
+
+// --- Autonomous Wake, Cron/Timer Schedules, Rate-Limits, Spawn & Ship ---
+
+export type WakeStatus = 'pending' | 'dispatched' | 'deferred_rate_limit' | 'completed' | 'failed';
+
+export interface AgentWake {
+  id: string;
+  targetAgentId: string;
+  fromActorId: string;
+  fromActorKind: ActorKind;
+  jobId: string | null;
+  roomId: string | null;
+  taskId: string | null;
+  sessionId: string | null;
+  adapterId: string | null;
+  reason: string;
+  prompt: string;
+  status: WakeStatus;
+  scheduledFor: string | null;
+  createdAt: string;
+  dispatchedAt: string | null;
+  completedAt: string | null;
+  error: string | null;
+}
+
+export interface WakeAgentInput {
+  targetAgentId?: string;
+  fromActorId: string;
+  fromActorKind?: ActorKind;
+  jobId?: string | null;
+  roomId?: string | null;
+  taskId?: string | null;
+  sessionId?: string | null;
+  adapterId?: string | null;
+  reason?: string;
+  prompt: string;
+  /** If target's primary adapter is rate-limited, automatically run on an available fallback adapter (e.g. gemini/codex/claude). */
+  allowFallbackAdapter?: boolean;
+}
+
+export interface WakeAgentResult {
+  wake: AgentWake;
+  session: Session | null;
+  deferred: boolean;
+  resetAt: string | null;
+  deferredUntil?: string | null;
+  rateLimitReason: string | null;
+  usedFallbackAdapter: string | null;
+}
+
+export interface AgentSchedule {
+  id: string;
+  agentId: string;
+  targetAgentId?: string;
+  createdBy: string;
+  createdByKind: ActorKind;
+  jobId: string | null;
+  roomId: string | null;
+  taskId: string | null;
+  kind: 'timer' | 'cron' | 'interval';
+  cronExpr: string | null;
+  intervalSeconds: number | null;
+  nextRunAt: string;
+  lastRunAt: string | null;
+  prompt: string;
+  reason: string | null;
+  enabled: boolean;
+  maxRuns: number | null;
+  runCount: number;
+  createdAt: string;
+}
+
+export interface CreateScheduleInput {
+  agentId?: string;
+  targetAgentId?: string;
+  createdBy: string;
+  createdByKind?: ActorKind;
+  jobId?: string | null;
+  roomId?: string | null;
+  taskId?: string | null;
+  kind?: 'timer' | 'cron' | 'interval';
+  cronExpr?: string | null;
+  delaySeconds?: number | null;
+  intervalSeconds?: number | null;
+  runAt?: string | null;
+  prompt: string;
+  reason?: string | null;
+  maxRuns?: number | null;
+}
+
+export interface UpdateScheduleInput {
+  enabled?: boolean;
+  prompt?: string;
+  cronExpr?: string | null;
+  intervalSeconds?: number | null;
+  nextRunAt?: string;
+}
+
+export interface SpawnAgentInput {
+  id?: string;
+  name: string;
+  role?: string;
+  runtime?: string;
+  adapterId?: string;
+  teamId?: string;
+  lane?: string;
+  seats?: string[];
+  avatarMark?: string;
+  avatarColor?: string;
+  spawnedBy: string;
+  spawnedByKind?: ActorKind;
+  /** Optional immediate wakeup after registration */
+  wakePrompt?: string;
+  prompt?: string;
+  jobId?: string | null;
+  roomId?: string | null;
+  taskId?: string | null;
+}
+
+export interface RateLimitReportInput {
+  reason: string;
+  resetAt?: string | null;
+  resetInSeconds?: number | null;
+  actorId?: string;
+}
+
+export interface ShipJobInput {
+  strategy: 'merge' | 'cherry-pick' | 'branch';
+  targetBranch?: string;
+  actorId: string;
+  message?: string;
+}
+
+export interface ShipJobResult {
+  ok?: boolean;
+  job: JobDetail;
+  strategy: 'merge' | 'cherry-pick' | 'branch';
+  targetBranch: string;
+  branch?: string;
+  commitSha: string;
+  evidence: Evidence;
+}
+
