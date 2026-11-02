@@ -189,7 +189,7 @@
     "format": "jpg",
     "resolution": "1600x1200",
     "source_url": "https://upload.wikimedia.org/wikipedia/commons/5/59/%D0%92%D0%BE%D0%BB%D0%BE%D1%81%D1%8B_%D1%82%D1%80%D0%B5%D1%85_%D1%80%D0%B0%D0%B7%D0%BD%D1%8B%D1%85_%D0%BB%D1%8E%D0%B4%D0%B5%D0%B9.jpg",
-    "page_url": "https://commons.wikimedia.org/wiki/File:Волосы_трех_разных_людей.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:\u0412\u043e\u043b\u043e\u0441\u044b_\u0442\u0440\u0435\u0445_\u0440\u0430\u0437\u043d\u044b\u0445_\u043b\u044e\u0434\u0435\u0439.jpg",
     "license": "CC BY-SA 4.0",
     "author_attribution": "Wikimedia Commons Contributor",
     "description": "Comparative macro study of hair fibers from three different individuals, showing defined structural wave curvature and fiber thickness variation.",
@@ -216,7 +216,7 @@
     "format": "jpg",
     "resolution": "4912x3264",
     "source_url": "https://upload.wikimedia.org/wikipedia/commons/b/bb/%D0%A7%D0%B5%D0%BB%D0%BE%D0%B2%D0%B5%D1%87%D0%B5%D1%81%D0%BA%D0%B8%D0%B9_%D0%B2%D0%BE%D0%BB%D0%BE%D1%81.jpg",
-    "page_url": "https://commons.wikimedia.org/wiki/File:Человеческий_волос.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:\u0427\u0435\u043b\u043e\u0432\u0435\u0447\u0435\u0441\u043a\u0438\u0439_\u0432\u043e\u043b\u043e\u0441.jpg",
     "license": "CC BY-SA 4.0",
     "author_attribution": "Wikimedia Commons Contributor",
     "description": "High-magnification photography of straight human hair fiber showing zero curvature, smooth longitudinal alignment, and uniform specular light reflection.",
@@ -438,7 +438,7 @@
     "format": "tif/jpg",
     "resolution": "4748x3165",
     "source_url": "https://upload.wikimedia.org/wikipedia/commons/8/8f/%D0%9F%D0%BE%D0%B2%D0%B5%D1%80%D1%85%D0%BD%D0%BE%D1%81%D1%82%D1%8C_%D1%87%D0%B5%D0%BB%D0%BE%D0%B2%D0%B5%D1%87%D0%B5%D1%81%D0%BA%D0%BE%D0%B3%D0%BE_%D0%B2%D0%BE%D0%BB%D0%BE%D1%81%D0%B0.tif",
-    "page_url": "https://commons.wikimedia.org/wiki/File:Поверхность_человеческого_волоса.tif",
+    "page_url": "https://commons.wikimedia.org/wiki/File:\u041f\u043e\u0432\u0435\u0440\u0445\u043d\u043e\u0441\u0442\u044c_\u0447\u0435\u043b\u043e\u0432\u0435\u0447\u0435\u0441\u043a\u043e\u0433\u043e_\u0432\u043e\u043b\u043e\u0441\u0430.tif",
     "license": "CC BY-SA 4.0",
     "author_attribution": "Wikimedia Commons Contributor / Scientific Microanalysis",
     "description": "High-definition scanning electron micrograph capturing the transverse cut surface of a human hair fiber, clearly showing the concentric outer cuticle ring encircling the dense cortical core.",
@@ -965,10 +965,741 @@
     "format": "jpg",
     "resolution": "5513x5512",
     "source_url": "https://upload.wikimedia.org/wikipedia/commons/b/bc/%D0%9E%D0%B1%D1%80%D0%B5%D0%B7%D0%B0%D0%BD%D0%BD%D1%8B%D0%B9_%D0%B2%D0%BE%D0%BB%D0%BE%D1%81.jpg",
-    "page_url": "https://commons.wikimedia.org/wiki/File:Обрезанный_волос.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:\u041e\u0431\u0440\u0435\u0437\u0430\u043d\u043d\u044b\u0439_\u0432\u043e\u043b\u043e\u0441.jpg",
     "license": "CC BY-SA 4.0",
     "author_attribution": "High-Resolution Microscopy Contributor / Wikimedia Commons",
     "description": "5,500x5,500 pixel microscopic view of a cleanly sheared hair shaft end, showcasing the circular/elliptical perimeter and uncrushed internal cortical matrix.",
     "educational_notes": "Mya uses this to educate users on salon-grade convex trimming shears: dull scissors crush the hair cortex and accelerate premature split ends."
+  },
+  {
+    "id": "media_style_crochet_braids_033",
+    "title": "Crochet Braids with Latch Hook Installation",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "3A to 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "All Densities",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "crochet_braids",
+      "latch_hook",
+      "protective_style",
+      "synthetic_extensions",
+      "low_tension"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "450x440",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/ea/Latch_hook_braids_2017.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Latch_hook_braids_2017.jpg",
+    "license": "CC BY 4.0",
+    "author_attribution": "Designed And Divine",
+    "description": "Close-up view of crochet braids installed by looping textured extensions through cornrowed natural hair with a latch hook tool.",
+    "educational_notes": "Crochet braids are an exceptional low-tension protective style because the natural hair is safely tucked into base cornrows while extensions are looped through. Ensure cornrows are not braided too tightly along the hairline to prevent traction alopecia."
+  },
+  {
+    "id": "media_style_halo_crown_braid_034",
+    "title": "Dutch Crown Halo Braid Protective Updo",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "2A to 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "Medium to High",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "halo_braid",
+      "crown_braid",
+      "dutch_braid",
+      "protective_updo",
+      "tucked_ends"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1944x2592",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/e5/Dutch_Crown_Braid.JPG",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Dutch_Crown_Braid.JPG",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Stilfehler",
+    "description": "Continuous inverted Dutch crown braid wrapping seamlessly around the perimeter of the head with ends completely tucked and pinned.",
+    "educational_notes": "The halo braid completely shields the fragile ends of hair from atmospheric friction, cotton collars, and dryness. It is an ideal 3-to-5 day low-manipulation updo for maintaining moisture retention."
+  },
+  {
+    "id": "media_style_ghana_feedin_braids_035",
+    "title": "Ghana Feed-In Cornrows with Graduated Thickness",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "3A to 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "Medium to High",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "ghana_braids",
+      "feed_in_braids",
+      "cornrows",
+      "protective_style",
+      "scalp_braids"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1440x1440",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/8/8a/Ghana_Braids._.._Crystal%27s_Braiding_%26_Beyond.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Ghana_Braids._.._Crystal%27s_Braiding_%26_Beyond.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Crystal's Braiding & Beyond",
+    "description": "Curving Ghana cornrows utilizing the feed-in braiding technique, starting micro-fine at the hairline and expanding into thicker cylindrical plaits.",
+    "educational_notes": "The feed-in technique reduces starting tension at the delicate hairline by introducing extension hair gradually along the braid shaft rather than anchoring a heavy knot at the root."
+  },
+  {
+    "id": "media_style_marley_twists_036",
+    "title": "Textured Marley Two-Strand Twists",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "3B to 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "Medium to High",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "marley_twists",
+      "kinky_twists",
+      "two_strand_twists",
+      "protective_style",
+      "textured_extensions"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1930x2412",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/3/35/Lanisha-Cole-Frontin-music-video-model-new-smiling-image-2019.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Lanisha-Cole-Frontin-music-video-model-new-smiling-image-2019.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Lanisha Cole",
+    "description": "Shoulder-length textured two-strand twists installed using coarse, matte-finish Marley hair matching natural 4B/4C strand texture.",
+    "educational_notes": "Marley twists blend seamlessly with natural coily textures because the coarse fiber mimics natural curl geometry. Light daily water-based leave-in misting keeps natural hair hydrated inside the twist matrix."
+  },
+  {
+    "id": "media_style_fulani_braids_037",
+    "title": "Traditional Fulani Braids with Center Part and Side Plaits",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "3C to 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "Medium to High",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "fulani_braids",
+      "cornrows",
+      "tribal_braids",
+      "beaded_braids",
+      "cultural_style"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "694x1066",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/8/89/S%C3%A9n%C3%A9gal-Femme_Peulh_du_Cayor_%28AOF%29.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:S%C3%A9n%C3%A9gal-Femme_Peulh_du_Cayor_%28AOF%29.jpg",
+    "license": "Public Domain",
+    "author_attribution": "Fran\u00e7ois-Edmond Fortier (Historical Archive)",
+    "description": "Heritage Fulani cornrow pattern originating from the Fula people of West Africa, characterized by a center scalp braid, reverse side cornrows, and decorative adornments.",
+    "educational_notes": "Modern Fulani braids combine geometric scalp cornrows with loose box braids in the back. When adorning braids with beads or cowrie shells, ensure weight is balanced to prevent focal traction on front follicles."
+  },
+  {
+    "id": "media_style_butterfly_locs_038",
+    "title": "Textured Butterfly Faux Locs with Distressed Loops",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "3A to 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "All Densities",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "butterfly_locs",
+      "faux_locs",
+      "distressed_locs",
+      "protective_style",
+      "boho_style"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "750x1334",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/6/63/Tri_colored_butterfly_locs_on_black_girl_03.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Tri_colored_butterfly_locs_on_black_girl_03.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Alexia Monaa",
+    "description": "Multi-tonal distressed butterfly faux locs featuring intentional textured loops and organic cylindrical wrapping along the shaft.",
+    "educational_notes": "Butterfly locs provide the aesthetic of mature freeform locs without commitment. Cleanse the scalp with an applicator bottle and witch hazel or diluted clarifying shampoo without submerging heavy loc extensions."
+  },
+  {
+    "id": "media_style_space_buns_puffs_039",
+    "title": "High Dual Space Buns and Afro Puffs on Natural Coils",
+    "category": "hairstyles",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "3C, 4A, 4B, 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "Medium to High",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "space_buns",
+      "afro_puffs",
+      "high_puff",
+      "natural_updo",
+      "volume"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1000x667",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/e3/Afro_puffs_girl.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Afro_puffs_girl.jpg",
+    "license": "CC BY 2.0",
+    "author_attribution": "stevendepolo",
+    "description": "Symmetrical twin afro puffs gathered on either side of the crown, celebrating natural voluminous texture and soft coil definition.",
+    "educational_notes": "Space buns are a classic low-manipulation updo. Always use satin scrunchies or seamless elastic bands, and never pull hair taut against the hairline to protect delicate edge follicles."
+  },
+  {
+    "id": "media_style_bantu_knot_out_040",
+    "title": "Defined Spiral Heatless Curls from Bantu Knot-Out",
+    "category": "hairstyles",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "3A to 4C, Locs",
+      "porosity_relevance": "All Porosities",
+      "density": "All Densities",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "bantu_knot_out",
+      "knot_out",
+      "heatless_curls",
+      "loc_styling",
+      "curl_definition"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "3456x4608",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/e3/Dreadlocks_of_an_African-American_person%2C_after_being_unwound_from_Bantu_knots.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Dreadlocks_of_an_African-American_person,_after_being_unwound_from_Bantu_knots.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "GrammarFascist",
+    "description": "Lush, bouncy spiral curls formed on mature locs through a heat-free Bantu knot set and unraveling technique.",
+    "educational_notes": "A Bantu knot-out delivers maximum corkscrew curl definition with zero thermal heat damage. For frizz-free takedown, ensure hair is 100% dry and coat fingertips with a lightweight sealing oil."
+  },
+  {
+    "id": "media_style_two_strand_twists_041",
+    "title": "Individual Two-Strand Rope Twists on Natural Texture",
+    "category": "hairstyles",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "3B, 3C, 4A, 4B, 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "Medium to High",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "two_strand_twists",
+      "mini_twists",
+      "rope_twists",
+      "protective_style",
+      "starter_locs"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "375x500",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/5/52/Dreadlocks-naani.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Dreadlocks-naani.jpg",
+    "license": "CC BY 3.0",
+    "author_attribution": "Veroniqueakin",
+    "description": "Cleanly sectioned two-strand rope twists on natural hair, offering versatility as a standalone protective style or base for twist-outs.",
+    "educational_notes": "Two-strand twists offer balanced tension distribution and easy access to the scalp. They can be worn for 2-4 weeks with weekly hydrating mists, or unraveled for an ultra-defined twist-out."
+  },
+  {
+    "id": "media_style_freeform_locs_042",
+    "title": "Organic Freeform Locs with Natural Matting",
+    "category": "hairstyles",
+    "subcategory": "locs",
+    "hair_attributes": {
+      "type": "4A, 4B, 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "Medium to High",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "freeform_locs",
+      "natural_locs",
+      "dreadlocks",
+      "organic_matting",
+      "low_manipulation"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "5184x3456",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/2/22/Freeform_Dreadlocks.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Freeform_Dreadlocks.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Isiyekala",
+    "description": "Thick, naturally coalesced freeform locs formed without manicured parting grids or rotational palm-rolling.",
+    "educational_notes": "Freeform locs represent the pinnacle of zero-manipulation hair care. The hair sheds and mats naturally into organic cylinders. Scalp hygiene through residue-free clarifying shampoo is paramount."
+  },
+  {
+    "id": "media_style_starter_locs_043",
+    "title": "Starter Locs Grid and Budding Phase",
+    "category": "hairstyles",
+    "subcategory": "locs",
+    "hair_attributes": {
+      "type": "3C, 4A, 4B, 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "All Densities",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "starter_locs",
+      "loc_journey",
+      "budding_locs",
+      "comb_coils",
+      "parting_grid"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "3008x2000",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/4/4b/Dreadlocks_%28Grundstock%29%2BWax_von_oben.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Dreadlocks_(Grundstock)%2BWax_von_oben.jpg",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "Top-down view of freshly established starter locs partitioned into a structured scalp grid pattern.",
+    "educational_notes": "The starter phase (months 0-6) requires gentle scalp cleansing without excessive friction to allow shed hairs to interlock. Sleep with a satin scarf to preserve the parting architecture."
+  },
+  {
+    "id": "media_style_mens_salon_locs_044",
+    "title": "Manicured Medium-Length Men's Locs",
+    "category": "hairstyles",
+    "subcategory": "mens_styles",
+    "hair_attributes": {
+      "type": "4A, 4B, 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "Medium to High",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "mens_locs",
+      "dreadlocks",
+      "mens_hair",
+      "retwist",
+      "loc_grooming"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1920x2560",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/6/6e/Zulu-Shona_African_Man_With_Salon-styled_Dreadlocks.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Zulu-Shona_African_Man_With_Salon-styled_Dreadlocks.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Michael-Lee Mahachi",
+    "description": "Well-groomed medium-length locs with palm-rolled roots and healthy cylindrical density on an African man.",
+    "educational_notes": "For men's loc grooming, retwisting roots every 4-6 weeks prevents over-thinning. Avoid heavy waxes that cause internal lint accumulation; use lightweight aloe or flaxseed-based gels."
+  },
+  {
+    "id": "media_style_mens_flattop_045",
+    "title": "Precision Rectangular Flattop with Tapered Sides",
+    "category": "hairstyles",
+    "subcategory": "mens_styles",
+    "hair_attributes": {
+      "type": "3C to 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "High",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "flattop",
+      "high_top",
+      "barber_cut",
+      "fade",
+      "mens_cut",
+      "shape_up"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "3008x2000",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/6/69/PRC_flattop-1.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:PRC_flattop-1.jpg",
+    "license": "Public Domain",
+    "author_attribution": "SoHome Jacaranda Lilau",
+    "description": "Architectural rectangular flattop haircut featuring a horizontally leveled top plateau and skin-tapered temple sides.",
+    "educational_notes": "The flattop leverages the natural upright tensile strength of Type 4 coils. Maintain moisture with light oil sheens and use an afro pick with horizontal clipper passes for crisp edges."
+  },
+  {
+    "id": "media_style_mens_buzz_cut_046",
+    "title": "Clean Uniform Buzz Cut on Natural Texture",
+    "category": "hairstyles",
+    "subcategory": "mens_styles",
+    "hair_attributes": {
+      "type": "1A to 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "All Densities",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "buzz_cut",
+      "big_chop",
+      "short_hair",
+      "low_maintenance",
+      "mens_cut",
+      "waves_base"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1021x1648",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/e3/Photo_of_buzz_cut.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Photo_of_buzz_cut.jpg",
+    "license": "CC0",
+    "author_attribution": "Absock",
+    "description": "Uniform short clipper buzz cut across textured hair, providing a clean baseline for hair resets or 360 wave training.",
+    "educational_notes": "The buzz cut eliminates all heat, chemical, and mechanical damage ('the Big Chop'). Keep the scalp nourished with jojoba oil and protect newly emerging coils from UV exposure."
+  },
+  {
+    "id": "media_style_gele_headwrap_047",
+    "title": "Regal Structured Gele Headwrap Protective Fashion",
+    "category": "hairstyles",
+    "subcategory": "protective_styles",
+    "hair_attributes": {
+      "type": "All Types",
+      "porosity_relevance": "All Porosities",
+      "density": "All Densities",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "gele",
+      "headwrap",
+      "cultural_adornment",
+      "protective_wrap",
+      "fabric_crown"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "360x540",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/3/39/Nigerian_woman_in_a_buba_blouse_and_the_gele_headtie2.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Nigerian_woman_in_a_buba_blouse_and_the_gele_headtie2.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Jamie Tubers",
+    "description": "Ornate Nigerian Gele headtie folded into structured architectural pleats, serving as both royal ceremonial fashion and total hair protection.",
+    "educational_notes": "Headwraps provide complete shielding from sun, wind, and airborne pollutants. Always line rough fabrics with a silk or satin under-cap to prevent cotton fibers from absorbing natural hair moisture."
+  },
+  {
+    "id": "media_tool_afro_pick_048",
+    "title": "Traditional Long-Toothed Afro Pick and Volume Comb",
+    "category": "hairstyles",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "3C, 4A, 4B, 4C",
+      "porosity_relevance": "All Porosities",
+      "density": "Medium to High",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "afro_pick",
+      "styling_tool",
+      "volume",
+      "root_lift",
+      "cultural_icon"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "738x576",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/0/05/Comb_%28Ayidah%29.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Comb_(Ayidah).jpg",
+    "license": "CC0",
+    "author_attribution": "Irene Obeng",
+    "description": "Handcrafted traditional long-toothed wooden afro comb, engineered for gentle root lifting and volume expansion without raking through curl ends.",
+    "educational_notes": "To expand afro volume without causing friction breakage, insert the pick only 1-2 inches into the roots and lift outward. Never drag the pick through the ends of dry textured hair."
+  },
+  {
+    "id": "media_hair_type_south_asian_049",
+    "title": "High-Density South Asian Hair (Type 1B/2A)",
+    "category": "hair_type",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "1B to 2A",
+      "porosity_relevance": "Low to Medium",
+      "density": "High Density",
+      "strand_thickness": "Coarse"
+    },
+    "style_tags": [
+      "south_asian",
+      "indian_hair",
+      "thick_hair",
+      "high_density",
+      "coarse_strands"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1920x1080",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/4/4e/Indian_hair.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Indian_hair.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "Exemplar of South Asian high-density hair featuring coarse, round-to-slightly-oval strand cross-sections and strong natural tensile integrity.",
+    "educational_notes": "South Asian hair is celebrated for high tensile strength and strand thickness. Ayurvedic scalp massage with amla or coconut oil helps maintain follicle vitality and prevents premature thinning."
+  },
+  {
+    "id": "media_hair_type_east_asian_050",
+    "title": "Sleek Coarse East/Southeast Asian Hair (Type 1A)",
+    "category": "hair_type",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "1A",
+      "porosity_relevance": "Low Porosity",
+      "density": "High Density",
+      "strand_thickness": "Coarse"
+    },
+    "style_tags": [
+      "east_asian",
+      "asian_hair",
+      "straight_hair",
+      "cylindrical_strands",
+      "low_porosity"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1920x1080",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/9/91/Southeast_Asian_straight_hair_close-up.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Southeast_Asian_straight_hair_close-up.jpg",
+    "license": "CC BY-SA 4.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "Macro close-up of East Asian straight hair demonstrating perfectly round strand morphology and compact, low-porosity cuticle layering.",
+    "educational_notes": "East Asian hair has the largest diameter and most circular cross-section of all human hair types. Its tightly sealed cuticle layer repels moisture initially but retains hydration once penetrated with lightweight aqueous serums."
+  },
+  {
+    "id": "media_hair_type_thick_wavy_051",
+    "title": "Voluminous S-Pattern Wavy Texture (Type 2B/2C)",
+    "category": "hair_type",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "2B to 2C",
+      "porosity_relevance": "Medium Porosity",
+      "density": "High Density",
+      "strand_thickness": "Medium to Coarse"
+    },
+    "style_tags": [
+      "wavy_hair",
+      "type_2b",
+      "type_2c",
+      "s_wave",
+      "high_density"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1200x1600",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/4/4b/KempStillings1917.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:KempStillings1917.jpg",
+    "license": "Public Domain",
+    "author_attribution": "Historical Archive (1917)",
+    "description": "Classic portrait showing abundant, high-density wavy hair with distinct S-shaped curvature flowing from mid-lengths to ends.",
+    "educational_notes": "Type 2 waves require lightweight moisture to maintain definition without weighing down the root volume. Scrunching with lightweight foam or curl creams enhances natural wave grouping."
+  },
+  {
+    "id": "media_hair_type_loose_curls_052",
+    "title": "Windblown Loose Curly Ringlets (Type 2C/3A)",
+    "category": "hair_type",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "2C to 3A",
+      "porosity_relevance": "Medium Porosity",
+      "density": "Medium",
+      "strand_thickness": "Fine to Medium"
+    },
+    "style_tags": [
+      "loose_curls",
+      "ringlets",
+      "type_3a",
+      "spiral_curls",
+      "curl_definition"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1920x1280",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/6/6f/Windblown_Wavy_Hair_%28Unsplash%29.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Windblown_Wavy_Hair_(Unsplash).jpg",
+    "license": "CC0",
+    "author_attribution": "Unsplash Contributor",
+    "description": "Natural loose spirals and defined ringlets exhibiting bouncy movement and open curl diameter.",
+    "educational_notes": "Type 3A ringlets are susceptible to atmospheric humidity and surface frizz. Styling on soaking wet hair with leave-in conditioner followed by a light-hold botanical gel locks in the curl clump."
+  },
+  {
+    "id": "media_hair_type_silver_gray_afro_053",
+    "title": "Crown of Silver Gray Natural Textured Hair (Type 4B/4C)",
+    "category": "hair_type",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "4B to 4C",
+      "porosity_relevance": "High Porosity",
+      "density": "Medium",
+      "strand_thickness": "Fine to Coarse"
+    },
+    "style_tags": [
+      "gray_hair",
+      "silver_curls",
+      "aging_gracefully",
+      "canities",
+      "mature_hair"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1920x1080",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/ea/Woman_with_gray_afro_listening_to_speeches_-_50th_Anniversary_of_the_March_on_Washington_for_Jobs_and_Freedom.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Woman_with_gray_afro_listening_to_speeches_-_50th_Anniversary_of_the_March_on_Washington_for_Jobs_and_Freedom.jpg",
+    "license": "Public Domain",
+    "author_attribution": "Voice of America (Historical Record)",
+    "description": "Stunning silver-gray natural afro on a mature Black woman, highlighting the natural beauty and volume of aging textured hair.",
+    "educational_notes": "Graying hair loses melanin and sebum production diminishes, causing silver coils to feel coarser or more wire-like. Deep conditioning masks with fatty acids and botanical oils restore softness and elasticity."
+  },
+  {
+    "id": "media_hair_type_childrens_natural_054",
+    "title": "Gentle Unmanipulated Coils on Young Hair (Type 4A-4C)",
+    "category": "hair_type",
+    "subcategory": "childrens_styles",
+    "hair_attributes": {
+      "type": "4A, 4B, 4C",
+      "porosity_relevance": "Normal Porosity",
+      "density": "High",
+      "strand_thickness": "Fine"
+    },
+    "style_tags": [
+      "childrens_hair",
+      "youth_curls",
+      "virgin_coils",
+      "gentle_care",
+      "tender_headed"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1200x1600",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/9/91/A_black_child%2C_Chicago._-_NARA_-_556138.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:A_black_child,_Chicago._-_NARA_-_556138.jpg",
+    "license": "Public Domain",
+    "author_attribution": "National Archives and Records Administration (NARA)",
+    "description": "Delicate, untouched natural afro coils on a young child, demonstrating pure virgin hair texture and natural volume.",
+    "educational_notes": "Children's hair strands have thinner cuticles and more sensitive scalp nerve endings. Use finger-detangling with generous slippery conditioner and avoid tight elastic bands to prevent traction discomfort."
+  },
+  {
+    "id": "media_hair_type_color_treated_curls_055",
+    "title": "Voluminous Crimson-Dyed Curly Hair (Type 3B/3C)",
+    "category": "hair_type",
+    "subcategory": "color_treated",
+    "hair_attributes": {
+      "type": "3B to 3C",
+      "porosity_relevance": "High Porosity",
+      "density": "High",
+      "strand_thickness": "Medium"
+    },
+    "style_tags": [
+      "color_treated",
+      "red_curls",
+      "dyed_hair",
+      "porosity_care",
+      "curly_color"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1440x1920",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/ec/Lil_Miss_Hot_Mess.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Lil_Miss_Hot_Mess.jpg",
+    "license": "CC BY-SA 2.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "Full, expressive crown of rich red-dyed curly ringlets showcasing vibrant color payoff on textured hair.",
+    "educational_notes": "Chemical coloring raises cuticle scales, converting hair to high porosity. Alternate between protein reconstructors to rebuild disulfide bonds and ceramide-rich deep conditioners to seal lifted cuticles."
+  },
+  {
+    "id": "media_hair_type_latina_wavy_056",
+    "title": "Soft S-Wave Spectrum in Hispanic/Latina Hair (Type 2A-2C)",
+    "category": "hair_type",
+    "subcategory": "natural_manipulation",
+    "hair_attributes": {
+      "type": "2A to 2C",
+      "porosity_relevance": "Medium Porosity",
+      "density": "Medium to High",
+      "strand_thickness": "Medium"
+    },
+    "style_tags": [
+      "latina_hair",
+      "hispanic_diversity",
+      "wavy_curls",
+      "multitextured",
+      "soft_waves"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1200x1800",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/e/e0/Vintage_studio_portrait_woman_with_wavy_hair.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Vintage_studio_portrait_woman_with_wavy_hair.jpg",
+    "license": "Public Domain",
+    "author_attribution": "Vintage Archive",
+    "description": "Soft, flowing S-wave texture characteristic of the diverse hair spectrum across Hispanic and Latina populations.",
+    "educational_notes": "Latina hair encompasses everything from pin-straight Type 1 to tight Type 4 coils. For wavy profiles, hydrating with lightweight argan or jojoba oil prevents humidity frizz without greasy residue."
+  },
+  {
+    "id": "media_hair_type_4c_shrinkage_macro_057",
+    "title": "Ultra-Tight 4C Coil Springs Demonstrating Natural Elastic Recoil",
+    "category": "hair_type",
+    "subcategory": "type_4c",
+    "hair_attributes": {
+      "type": "4C",
+      "porosity_relevance": "Low to Normal",
+      "density": "High",
+      "strand_thickness": "Fine to Medium"
+    },
+    "style_tags": [
+      "type_4c",
+      "shrinkage",
+      "micro_springs",
+      "elastic_recoil",
+      "macro_coils"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "2000x1500",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/b/b3/Afro-textured_hair_close-up.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Afro-textured_hair_close-up.jpg",
+    "license": "Public Domain",
+    "author_attribution": "Wikimedia Commons Macro Archive",
+    "description": "Extreme macro photograph of tight 4C micro-coils, demonstrating the dense spring geometry responsible for up to 80% natural shrinkage.",
+    "educational_notes": "Shrinkage is biological proof of hair elasticity and hydration recoil, not damage. Type 4C coils form microscopic O-shaped springs that protect the inner cortex from tensile stress when properly lubricated."
+  },
+  {
+    "id": "media_style_silk_press_thermal_058",
+    "title": "Thermal Silk Press and Flat Iron Transformation on Natural Coils",
+    "category": "hairstyles",
+    "subcategory": "heat_styled",
+    "hair_attributes": {
+      "type": "3A to 4C",
+      "porosity_relevance": "Low to High",
+      "density": "All Densities",
+      "strand_thickness": "All Thicknesses"
+    },
+    "style_tags": [
+      "silk_press",
+      "flat_iron",
+      "thermal_styling",
+      "heat_protection",
+      "blowout",
+      "straight_natural"
+    ],
+    "asset_type": "image",
+    "format": "jpg",
+    "resolution": "1800x1200",
+    "source_url": "https://upload.wikimedia.org/wikipedia/commons/2/25/Hair_straightening_before_and_after.jpg",
+    "page_url": "https://commons.wikimedia.org/wiki/File:Hair_straightening_before_and_after.jpg",
+    "license": "CC BY-SA 3.0",
+    "author_attribution": "Wikimedia Commons Contributor",
+    "description": "Side-by-side comparison demonstrating a thermal silk press straightening transformation on textured hair.",
+    "educational_notes": "A silk press temporarily breaks hydrogen bonds without altering chemical disulfide bonds. Always apply a high-grade silicone or argan heat protectant (up to 450\u00b0F / 232\u00b0C) and pass the flat iron only once per section to avoid heat damage."
   }
 ]

@@ -1,0 +1,414 @@
+{
+  "_meta": {
+    "source": "https://www.myavana.com/collections/",
+    "last_updated": "2026-09-15",
+    "description": "Complete Myavana product and service catalog for Mya the AI Hair Care Concierge",
+    "total_products": 6,
+    "total_collections": 19
+  },
+
+  "brand": {
+    "name": "MYAVANA",
+    "tagline": "A personalized hair care service delivering products, services, and content for every woman's hair journey",
+    "website": "https://www.myavana.com",
+    "shop_url": "https://www.myavana.com/collections/myavana-shop",
+    "social": {
+      "twitter": "@myavanahaircare",
+      "instagram": "@myavanahaircare"
+    }
+  },
+
+  "products": [
+    {
+      "id": "hair-assessment",
+      "title": "MYAVANA HairAI™ Instant Analysis + Recommendations",
+      "handle": "hair-assessment",
+      "url": "https://www.myavana.com/products/hair-assessment",
+      "collection": "Get Started",
+      "collection_url": "https://www.myavana.com/collections/get-started",
+      "sku": "HAI000122023",
+      "price": 9.00,
+      "price_display": "$9.00",
+      "billing": "one-time",
+      "category": "Digital Service / Subscription Entry",
+      "audience": "consumers",
+      "short_description": "AI-powered instant hair analysis that eliminates trial and error from your hair care routine.",
+      "full_description": "Are you tired of wasting money and time trying to find hair products that work for you? You've probably spent countless hours searching YouTube, Pinterest, or Instagram trying to find products that work for you based on someone who has hair that 'looks like yours' but the products still don't work. Did you know that your hair is as unique as your fingerprint? What may work for someone else's hair (even if it looks similar to yours) more times than not, won't work for you. That's why we created Myavana HairAI™, a unique hair analysis that eliminates trial and error from your hair care routine.",
+      "what_is_included": [
+        "Unique analysis of your hair type and texture",
+        "Instant product recommendations with the right ingredients for you",
+        "Ongoing recommendations throughout your hair journey",
+        "MYAVANA Member benefits: hair care concierge, virtual consultations, stylist referrals, virtual community, exclusive hair parties and more"
+      ],
+      "key_benefit": "Personalized hair product recommendations based on YOUR unique hair — not someone else's",
+      "mya_talking_points": [
+        "Only $9 — most affordable entry point to personalized hair care",
+        "AI-powered, not generic — your hair fingerprint is unique",
+        "Eliminates product trial and error forever",
+        "Unlocks ongoing Mya membership benefits"
+      ],
+      "variants": [
+        { "title": "Default Title", "price": 9.00 }
+      ]
+    },
+
+    {
+      "id": "myavana-hairscope",
+      "title": "MYAVANA HairScope™",
+      "handle": "myavana-hairscope",
+      "url": "https://www.myavana.com/products/myavana-hairscope",
+      "collection": "Get Started / Pro Tools",
+      "collection_url": "https://www.myavana.com/collections/get-started",
+      "sku": "HS100",
+      "price": 399.00,
+      "price_display": "$399.00",
+      "billing": "one-time (includes first month Pro+ subscription)",
+      "category": "Hardware + Pro Subscription Bundle",
+      "audience": "professionals — stylists, salon owners, brands",
+      "short_description": "The official MYAVANA HairScope™ microscope device for stylists, bundled with a Pro+ monthly subscription and onboarding.",
+      "full_description": "The official MYAVANA HairScope™ for Stylists and Membership Subscription Sign Up. Myavana provides business membership to hair care brands, stylists, salon owners, retailers, distributors, and organizations to give you new technology tools to grow your business. For $399, this covers your initial sign-up for monthly subscription AND the Myavana HairScope device all in one.",
+      "what_is_included": [
+        "MYAVANA HairScope™ Device (microscope for hair & scalp analysis)",
+        "MYAVANA Pro+ Subscription for 1 month",
+        "Onboarding Training for HairScope and Salon APP",
+        "Ongoing Salon Success Academy Training",
+        "Pro+ software subscription: HairAI, HairSI Kits, HairCI, Hair RI, Kiosks",
+        "MYAVANA Certified education training",
+        "Client referrals in your local area",
+        "Access to real-time consumer intelligence & analytics",
+        "Access to product recommendation intelligence & optimization",
+        "Access to innovative product performance testing & consumer panels",
+        "Quarterly industry intelligence and trends report",
+        "Strategic growth plan for new market opportunity",
+        "Beauty industry relationships & networking",
+        "Branded profile page on the Myavana business ecosystem directory",
+        "First access to career growth opportunities through beauty technology"
+      ],
+      "key_benefit": "Complete professional hair technology suite — one device unlocks your entire digital hair analysis business",
+      "mya_talking_points": [
+        "The HairScope™ device performs microscopic hair & scalp analysis",
+        "Designed for salons, stylists, and beauty brands",
+        "$399 one-time covers the device + first month Pro+ subscription",
+        "Turns any salon into a MYAVANA Pro certified partner",
+        "Gives clients their Unique Hair ID — health, density, porosity, elasticity"
+      ],
+      "variants": [
+        { "title": "Default Title", "price": 399.00 }
+      ]
+    },
+
+    {
+      "id": "hair-nirvana-membership",
+      "title": "MYAVANA Hair Nirvana Membership Club",
+      "handle": "myavana-hair-nirvana-membership-club",
+      "url": "https://www.myavana.com/products/myavana-hair-nirvana-membership-club",
+      "collection": "MYAVANA Shop",
+      "collection_url": "https://www.myavana.com/collections/myavana-shop",
+      "sku": null,
+      "price": 25.00,
+      "price_display": "$25/month",
+      "billing": "monthly subscription",
+      "category": "Consumer Membership Subscription",
+      "audience": "consumers — women on a hair journey",
+      "short_description": "A monthly membership that gives you a personal hair coach, AI analysis, community, and expert access — all in one.",
+      "full_description": "Myavana provides a monthly membership to support you through different phases of your hair & life journey. For $25/month, your membership includes comprehensive hair care support from analysis to community to expert coaching.",
+      "what_is_included": [
+        "Hair analysis",
+        "Hair Consultation",
+        "Personalized hair care plan",
+        "Personal hair coach",
+        "Digital hair profile",
+        "Product, ingredient, and regimen recommendations",
+        "Recommended hairstylist",
+        "Mobile app subscription",
+        "Quarterly product samples",
+        "Exclusive hair care content",
+        "Exclusive invites as 'in-studio audience' for upcoming MYAVANA TV Shows",
+        "Weekly girlfriend groups for your hair & life journey",
+        "Weekly hair chats with experts",
+        "Weekly women's wellness chats"
+      ],
+      "key_benefit": "Complete hair care support system — analysis, coaching, community, products, and stylist referrals for $25/month",
+      "mya_talking_points": [
+        "Your most comprehensive consumer offering — perfect for serious hair journeys",
+        "Includes a personal hair coach (Mya + human experts)",
+        "Quarterly physical product samples sent to you",
+        "Community access: girlfriend groups, expert chats, wellness sessions",
+        "TV show audience access — exclusive MYAVANA experiences",
+        "Mobile app + digital hair profile to track your journey"
+      ],
+      "variants": [
+        { "title": "Default Title", "price": 25.00, "billing": "per month" }
+      ]
+    },
+
+    {
+      "id": "pro-plus-membership",
+      "title": "MYAVANA Pro+ Membership and Subscription",
+      "handle": "hair-beauty-network-business-membership",
+      "url": "https://www.myavana.com/products/hair-beauty-network-business-membership",
+      "collection": "Business Memberships",
+      "collection_url": "https://www.myavana.com/collections/business-memberships",
+      "sku": null,
+      "price": 99.00,
+      "price_display": "$99/month",
+      "billing": "monthly subscription",
+      "category": "Business / Professional Membership",
+      "audience": "professionals — hair care brands, stylists, salon owners, retailers, distributors, organizations",
+      "short_description": "Monthly business membership giving professionals access to MYAVANA's full technology suite, client tools, analytics, and growth resources.",
+      "full_description": "Myavana provides a business membership to hair care brands, stylists, salon owners, retailers, distributors, and organizations to give you new technology tools to grow your business. For $99/month, your membership includes full access to the MYAVANA personalized hair care technology suite.",
+      "what_is_included": [
+        "Pro+ software subscription: HairAI, HairSI Kits, HairCI, Hair RI, Kiosks",
+        "Create digital hair profiles for your clients",
+        "MYAVANA Certified education training",
+        "Client referrals in your local area",
+        "Sales commission on MYAVANA hair analysis kits",
+        "Access to real-time consumer intelligence & analytics",
+        "Access to product recommendation intelligence & optimization",
+        "Access to innovative product performance testing & consumer panels",
+        "Quarterly industry intelligence and trends report",
+        "Strategic growth plan for new market opportunity",
+        "Beauty industry relationships & networking",
+        "Branded profile page on the Myavana business ecosystem directory",
+        "First access to career growth opportunities through beauty technology"
+      ],
+      "key_benefit": "Turn your salon or brand into a smart, data-driven hair care business with MYAVANA's technology suite",
+      "mya_talking_points": [
+        "Designed for stylists, salon owners, brands, retailers, distributors",
+        "$99/month after initial HairScope™ device purchase ($399)",
+        "Earn sales commissions on hair analysis kit sales",
+        "Appear on Myavana's ecosystem directory — get client referrals",
+        "Access consumer intelligence and product performance data",
+        "Quarterly trend reports to stay ahead of the market"
+      ],
+      "variants": [
+        { "title": "Default Title", "price": 99.00, "billing": "per month" }
+      ]
+    },
+
+    {
+      "id": "full-hair-scan",
+      "title": "MYAVANA FULL HAIR SCAN + CARE EXPERIENCE",
+      "handle": "myavana-hair-kit",
+      "url": "https://www.myavana.com/products/myavana-hair-kit",
+      "collection": "Personalized Hair Care",
+      "collection_url": "https://www.myavana.com/collections/personalized-hair-care",
+      "sku": "SQ5465056",
+      "price": 99.00,
+      "price_display": "$99.00",
+      "billing": "one-time",
+      "category": "In-Person Service Experience",
+      "audience": "consumers — wanting an in-salon professional hair scan",
+      "short_description": "A one-hour in-salon HairScope appointment with personalized consultation, hair & scalp analysis, product samples, and a matched stylist.",
+      "full_description": "Our HairScope appointments now provide a personalized consultation with hair & scalp analysis in a one-hour appointment at a MYAVANA Pro Salon. You will receive an expert-led CARE experience that identifies your Unique Hair ID, including a deep analysis on the condition of your hair: health, density, porosity, and elasticity. It creates a digital healthy hair care plan containing recommended products, ingredients, regimens, and a local professional stylist you can trust.",
+      "what_is_included": [
+        "1-hour appointment at a MYAVANA Pro Salon",
+        "Hair & scalp analysis using HairScope™ (health, density, porosity, elasticity)",
+        "Your Unique Hair ID identified",
+        "Personalized hair care plan (digital)",
+        "Personalized Hair Essentials: Samples of your full start-to-finish regimen (cleansing, conditioning, treatment, styling)",
+        "Recommended Salon Professional: Licensed cosmetologist assigned as your professional partner",
+        "Access to Personalized Concierge for dedicated support"
+      ],
+      "key_benefit": "The most complete in-person MYAVANA experience — get your Unique Hair ID, matched stylist, product samples, and ongoing concierge support",
+      "mya_talking_points": [
+        "This is the flagship in-person Myavana experience",
+        "Performed at a MYAVANA Pro Salon — real expert analysis",
+        "You leave with physical product samples tailored exactly to you",
+        "Get assigned a professional stylist partner",
+        "Your Unique Hair ID: health, density, porosity & elasticity all measured",
+        "$99 one-time — includes concierge membership access"
+      ],
+      "variants": [
+        { "title": "Default Title", "price": 99.00 }
+      ]
+    },
+
+    {
+      "id": "gift-card",
+      "title": "MYAVANA Gift Card",
+      "handle": "myavana-gift-card",
+      "url": "https://www.myavana.com/products/myavana-gift-card",
+      "collection": "MYAVANA Shop",
+      "collection_url": "https://www.myavana.com/collections/myavana-shop",
+      "sku": null,
+      "category": "Gift Card",
+      "audience": "gift givers",
+      "short_description": "Give the gift of healthy hair — redeemable for any MYAVANA product or service.",
+      "full_description": "Gift the power of personalized hair care. MYAVANA Gift Cards can be redeemed for any product or service in the Myavana ecosystem.",
+      "mya_talking_points": [
+        "Perfect gift for anyone on a hair journey",
+        "Redeemable for HairAI analysis, memberships, or salon experiences",
+        "Available in amounts from $25 to $200"
+      ],
+      "variants": [
+        { "title": "$25", "price": 25.00 },
+        { "title": "$50", "price": 50.00 },
+        { "title": "$75", "price": 75.00 },
+        { "title": "$100", "price": 100.00 },
+        { "title": "$125", "price": 125.00 },
+        { "title": "$150", "price": 150.00 },
+        { "title": "$175", "price": 175.00 },
+        { "title": "$200", "price": 200.00 }
+      ]
+    }
+  ],
+
+  "collections": [
+    {
+      "title": "MYAVANA Shop",
+      "handle": "myavana-shop",
+      "url": "https://www.myavana.com/collections/myavana-shop",
+      "description": "The main Myavana storefront — all products and services in one place",
+      "products_count": 10
+    },
+    {
+      "title": "Get Started",
+      "handle": "get-started",
+      "url": "https://www.myavana.com/collections/get-started",
+      "description": "Entry-level products for new Myavana members",
+      "products_count": 4
+    },
+    {
+      "title": "Personalized Hair Care",
+      "handle": "personalized-hair-care",
+      "url": "https://www.myavana.com/collections/personalized-hair-care",
+      "description": "In-salon and digital personalized hair care experiences",
+      "products_count": 7
+    },
+    {
+      "title": "Business Memberships",
+      "handle": "business-memberships",
+      "url": "https://www.myavana.com/collections/business-memberships",
+      "description": "Professional memberships for stylists, salons, and brands",
+      "products_count": 1
+    },
+    {
+      "title": "Gift Cards",
+      "handle": "gift-cards",
+      "url": "https://www.myavana.com/collections/gift-cards",
+      "description": "Gift cards redeemable for any Myavana product or service",
+      "products_count": 1
+    }
+  ],
+
+  "service_offerings": {
+    "for_consumers": [
+      {
+        "name": "HairAI™ Analysis",
+        "price": "$9",
+        "url": "https://www.myavana.com/products/hair-assessment",
+        "one_line": "AI-powered instant hair analysis + product recommendations"
+      },
+      {
+        "name": "Hair Nirvana Membership",
+        "price": "$25/month",
+        "url": "https://www.myavana.com/products/myavana-hair-nirvana-membership-club",
+        "one_line": "Monthly membership with coach, community, samples & exclusive content"
+      },
+      {
+        "name": "Full Hair Scan + Care Experience",
+        "price": "$99 one-time",
+        "url": "https://www.myavana.com/products/myavana-hair-kit",
+        "one_line": "In-salon HairScope appointment with your Unique Hair ID, stylist match & samples"
+      },
+      {
+        "name": "Gift Card",
+        "price": "$25–$200",
+        "url": "https://www.myavana.com/products/myavana-gift-card",
+        "one_line": "Gift the Myavana experience to someone you love"
+      }
+    ],
+    "for_professionals": [
+      {
+        "name": "HairScope™ Device + Pro+ Bundle",
+        "price": "$399 one-time",
+        "url": "https://www.myavana.com/products/myavana-hairscope",
+        "one_line": "HairScope™ microscope device + first month Pro+ subscription + onboarding"
+      },
+      {
+        "name": "Pro+ Monthly Membership",
+        "price": "$99/month",
+        "url": "https://www.myavana.com/products/hair-beauty-network-business-membership",
+        "one_line": "Full MYAVANA technology suite, client tools, analytics & ecosystem listing"
+      }
+    ]
+  },
+
+  "technology_suite": {
+    "description": "MYAVANA's AI-powered proprietary technology tools available through Pro+ membership",
+    "tools": [
+      {
+        "name": "HairAI™",
+        "description": "AI hair analysis engine that identifies hair type, texture, and generates personalized product recommendations"
+      },
+      {
+        "name": "HairScope™",
+        "description": "Microscope device for in-salon hair & scalp analysis — measures health, density, porosity, and elasticity at the follicle level"
+      },
+      {
+        "name": "HairSI Kits",
+        "description": "Hair Sample Intelligence kits for laboratory-grade strand analysis"
+      },
+      {
+        "name": "HairCI",
+        "description": "Hair Consumer Intelligence platform for real-time consumer data and analytics"
+      },
+      {
+        "name": "Hair RI",
+        "description": "Hair Recommendation Intelligence — product and ingredient recommendation optimization engine"
+      },
+      {
+        "name": "Kiosks",
+        "description": "In-store self-service kiosks for hair analysis at retail or salon locations"
+      },
+      {
+        "name": "Mya AI Concierge",
+        "description": "AI-powered hair care chatbot providing personalized guidance, product recommendations, and ongoing support through the entire hair journey"
+      }
+    ]
+  },
+
+  "mya_product_knowledge": {
+    "how_to_recommend": "When a user asks about products, services, or how to get started, always match their situation to the right entry point using the decision guide below.",
+    "decision_guide": [
+      {
+        "user_situation": "Just wants to know what products work for their hair",
+        "recommend": "HairAI™ Instant Analysis",
+        "reason": "Fastest, most affordable ($9) way to get personalized recommendations",
+        "cta": "Start with a HairAI™ analysis — myavana.com/products/hair-assessment"
+      },
+      {
+        "user_situation": "Wants ongoing support, coaching, and community",
+        "recommend": "Hair Nirvana Membership Club",
+        "reason": "Monthly membership with personal coach, samples, weekly expert access",
+        "cta": "Join the Hair Nirvana Club at $25/month — myavana.com/products/myavana-hair-nirvana-membership-club"
+      },
+      {
+        "user_situation": "Wants an in-person deep dive with a professional",
+        "recommend": "Full Hair Scan + Care Experience",
+        "reason": "The complete in-salon experience — HairScope analysis, stylist match, product samples",
+        "cta": "Book a Full Hair Scan for $99 — myavana.com/products/myavana-hair-kit"
+      },
+      {
+        "user_situation": "Is a stylist or salon owner wanting to offer MYAVANA services",
+        "recommend": "HairScope™ Bundle then Pro+ Membership",
+        "reason": "Get the device + first month included, then $99/month for the full tech suite",
+        "cta": "Start with HairScope™ at $399 — myavana.com/products/myavana-hairscope"
+      },
+      {
+        "user_situation": "Wants to give a hair care gift",
+        "recommend": "MYAVANA Gift Card",
+        "reason": "Flexible amounts ($25–$200), redeemable for any product or service",
+        "cta": "Get a Gift Card — myavana.com/products/myavana-gift-card"
+      }
+    ],
+    "pricing_summary": {
+      "most_affordable": "HairAI™ Analysis — $9 one-time",
+      "monthly_consumer": "Hair Nirvana Club — $25/month",
+      "in_person_experience": "Full Hair Scan — $99 one-time",
+      "professional_starter": "HairScope™ Bundle — $399 one-time",
+      "professional_monthly": "Pro+ Membership — $99/month"
+    }
+  }
+}

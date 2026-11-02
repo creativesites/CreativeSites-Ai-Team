@@ -1,0 +1,856 @@
+[
+  {
+    "id": "loc_4n6g2gv5",
+    "name": "AHNI Beauty Supply",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "LaShaundra Harris",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "6420 brandon ave",
+      "suite": null,
+      "city": "Springfield",
+      "state": "VA",
+      "postal_code": "22150",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 38.77997211,
+      "longitude": -77.18371017
+    },
+    "contact": {
+      "phone": "+12029248453",
+      "email": "shauneyharris@ahnibeauty.com",
+      "website": "https://www.ahnibeauty.com"
+    },
+    "booking_url": "https://www.ahnibeauty.com",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3erjqm2v",
+    "name": "B'Ware Cosmetology",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": "B'Ware Cosmetology Team",
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "15475 Annapolis Rd",
+      "suite": null,
+      "city": "Bowie",
+      "state": "MD",
+      "postal_code": "20715",
+      "country": "USA"
+    },
+    "coordinates": {
+      "latitude": 38.97760837,
+      "longitude": -76.73532554
+    },
+    "contact": {
+      "phone": null,
+      "email": "Bwarecosmetology@gmail.com",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3rq7r79q",
+    "name": "BPolished Beauty Supply",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Frankesha Watkins",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "4135 Belt line Rd",
+      "suite": "Suite 110",
+      "city": "Addison",
+      "state": "TX",
+      "postal_code": "75001",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 32.95488128,
+      "longitude": -96.84139491
+    },
+    "contact": {
+      "phone": "+12149079420",
+      "email": "info@bpolishedbeautysupply.com",
+      "website": "https://www.bpolishedbeautysupply.com"
+    },
+    "booking_url": "https://www.bpolishedbeautysupply.com",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3gjkxzg7",
+    "name": "Curls and Natural Hair Beauty Place",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Tomasina Boone",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "Shop 1, 1271 Botany Road",
+      "suite": null,
+      "city": "Mascot",
+      "state": "NSW",
+      "postal_code": "2020",
+      "country": "Australia"
+    },
+    "coordinates": {
+      "latitude": -33.93359902,
+      "longitude": 151.19417202
+    },
+    "contact": {
+      "phone": "+61400043427",
+      "email": "info@curlsandnaturalhair.com.au",
+      "website": "https://curlsandnaturalhair.com.au"
+    },
+    "booking_url": "https://curlsandnaturalhair.com.au",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_4krvkqxq",
+    "name": "Different By Design",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": null,
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "440 E McCullough Dr",
+      "suite": null,
+      "city": "Charlotte",
+      "state": "NC",
+      "postal_code": "28262",
+      "country": "USA"
+    },
+    "coordinates": {
+      "latitude": 35.30207493,
+      "longitude": -80.74766514
+    },
+    "contact": {
+      "phone": null,
+      "email": "different_by_design@yahoo.com",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_4yg7w9xv",
+    "name": "Glorious Crowns",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": null,
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "3309 Rogers Rd",
+      "suite": null,
+      "city": "Wake Forest",
+      "state": "NC",
+      "postal_code": "27587",
+      "country": "USA"
+    },
+    "coordinates": {
+      "latitude": 35.95075385,
+      "longitude": -78.51521446
+    },
+    "contact": {
+      "phone": null,
+      "email": null,
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_4n6g2w25",
+    "name": "Glow + Flow Beauty - Hawthorne",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Diann Valentine",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "4361 W. Rosecrans Ave",
+      "suite": null,
+      "city": "Hawthorne",
+      "state": "CA",
+      "postal_code": "90250",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 33.90201598,
+      "longitude": -118.35125094
+    },
+    "contact": {
+      "phone": "+16268258445",
+      "email": "dv@glowandflowbeauty.com",
+      "website": "https://glowandflowbeauty.com/"
+    },
+    "booking_url": "https://glowandflowbeauty.com/",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_32gpz2r9",
+    "name": "Glow + Flow Beauty - Inglewood",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Diann Valentine",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "933 N. LaBrea Ave",
+      "suite": null,
+      "city": "Inglewood",
+      "state": "CA",
+      "postal_code": "90302",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 33.97551144,
+      "longitude": -118.35770534
+    },
+    "contact": {
+      "phone": "+16268258445",
+      "email": "dv@glowandflowbeauty.com",
+      "website": "https://glowandflowbeauty.com/"
+    },
+    "booking_url": "https://glowandflowbeauty.com/",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3v8p5x2m",
+    "name": "Healthy Hair Loft",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": null,
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "20 Grand Ave",
+      "suite": null,
+      "city": "Brooklyn",
+      "state": "NY",
+      "postal_code": "11205",
+      "country": "USA"
+    },
+    "coordinates": {
+      "latitude": 40.69704387,
+      "longitude": -73.96486724
+    },
+    "contact": {
+      "phone": null,
+      "email": "thehairspa498@gmail.com",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_47mwv8zq",
+    "name": "It's a Hair Thang",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": null,
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "1151 Hammond Dr",
+      "suite": null,
+      "city": "Atlanta",
+      "state": "GA",
+      "postal_code": "30346",
+      "country": "USA"
+    },
+    "coordinates": {
+      "latitude": 33.9196035,
+      "longitude": -84.34742045
+    },
+    "contact": {
+      "phone": null,
+      "email": "renee@itsahairthang.com",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3ry9xjqq",
+    "name": "K. Skye Salon",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": null,
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "2 Veronica Ave",
+      "suite": null,
+      "city": "Somerset",
+      "state": "NJ 08873",
+      "postal_code": "",
+      "country": "USA"
+    },
+    "coordinates": {
+      "latitude": 40.48731398,
+      "longitude": -74.50251301
+    },
+    "contact": {
+      "phone": null,
+      "email": "Info@kskyesalon.com",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_48xwggk6",
+    "name": "Karen Marie Salon",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": "Karen Marie",
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "3000 Windy Hill Rd SE",
+      "suite": null,
+      "city": "Marietta",
+      "state": "GA",
+      "postal_code": "30067",
+      "country": "USA"
+    },
+    "coordinates": {
+      "latitude": 33.90424799,
+      "longitude": -84.46631903
+    },
+    "contact": {
+      "phone": null,
+      "email": "KarenMarieHair@yahoo.com",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3mke2kwv",
+    "name": "Kinks and Curls Atlanta",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Crystal Sheppard",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "3157 Sugarloaf Pkwy",
+      "suite": "Ste 190",
+      "city": "Lawrenceville",
+      "state": "GA",
+      "postal_code": "30045",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 33.9212283,
+      "longitude": -84.01008818
+    },
+    "contact": {
+      "phone": null,
+      "email": "cdaniel@kinksandcurlsatlanta.com",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_4p9zrzyk",
+    "name": "Krush Beauty",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": "Taliah Miller",
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "493 Flat Shoals Ave",
+      "suite": "Ste. c",
+      "city": "Atlanta",
+      "state": "Georgia",
+      "postal_code": "30316",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 33.73901599,
+      "longitude": -84.34426603
+    },
+    "contact": {
+      "phone": "+18184513008",
+      "email": "krushbeautyllc@gmail.com",
+      "website": "https://www.krushonyourbeauty.com"
+    },
+    "booking_url": "https://www.krushonyourbeauty.com",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_4zgkevqw",
+    "name": "LimeLight HairArtistry",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": "Anastasia Felton",
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "637 kenwood ave",
+      "suite": null,
+      "city": "Dayton",
+      "state": "Ohio",
+      "postal_code": "45406",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 39.77544645,
+      "longitude": -84.2158546
+    },
+    "contact": {
+      "phone": "+19376727101",
+      "email": "limelighthairartistry@gmail.com",
+      "website": "https://limelighthair.glossgenius.com"
+    },
+    "booking_url": "https://limelighthair.glossgenius.com",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3e2572ev",
+    "name": "MYAVANA Uganda - Arena Mall",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": null,
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "Plot 41- 45 Nsambya Road",
+      "suite": null,
+      "city": "Kampala",
+      "state": "",
+      "postal_code": "10101",
+      "country": "Uganda"
+    },
+    "coordinates": {
+      "latitude": 0.302003,
+      "longitude": 32.5970987
+    },
+    "contact": {
+      "phone": null,
+      "email": "alex@myavana.com",
+      "website": "https://www.myavana.com/pages/uganda-retail"
+    },
+    "booking_url": "https://www.myavana.com/pages/uganda-retail",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3mkezezv",
+    "name": "Nefertiti Beauty Supply Jax",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Stella Webb",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "8011 Merrill Rd, Ste 8",
+      "suite": null,
+      "city": "Jacksonville",
+      "state": "Florida",
+      "postal_code": "32277",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 30.35404257,
+      "longitude": -81.56132548
+    },
+    "contact": {
+      "phone": "+19044443203",
+      "email": "stella.taylorwebb@gmail.com",
+      "website": "https://nefertitibeautysupplyjax.com"
+    },
+    "booking_url": "https://nefertitibeautysupplyjax.com",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3xe5r796",
+    "name": "Shea Universe",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Rita Hadebe",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "8 The Green",
+      "suite": null,
+      "city": "Dover",
+      "state": "Delaware",
+      "postal_code": "19901",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 39.15661925,
+      "longitude": -75.52418462
+    },
+    "contact": {
+      "phone": "+16312048476",
+      "email": "rita@sheauniverse.com",
+      "website": "https://www.sheauniverse.com"
+    },
+    "booking_url": "https://www.sheauniverse.com",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3e25gygv",
+    "name": "Textured Tech Beauty Supply",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Teryn McElroy",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "441 E. Carson St",
+      "suite": "Unit C & D",
+      "city": "Carson",
+      "state": "CA",
+      "postal_code": "90745",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 33.8323189,
+      "longitude": -118.26871709
+    },
+    "contact": {
+      "phone": "4244775888",
+      "email": "teryn@texturedtech.com",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_4yjxe9ev",
+    "name": "The Beauty Genie",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Ebony J Karim",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "1440 W Taylor",
+      "suite": "Ste 1633",
+      "city": "Chicago",
+      "state": "Illinois",
+      "postal_code": "60607",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 41.86953013,
+      "longitude": -87.66328813
+    },
+    "contact": {
+      "phone": "+17736787967",
+      "email": "ekarim@thebeautygenie.co",
+      "website": "https://www.beautywishesinabox.com"
+    },
+    "booking_url": "https://www.beautywishesinabox.com",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_4w2jxj8x",
+    "name": "The Beauty KNW How",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Keisha Woodrup",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "28155 Tomball Pkwy",
+      "suite": "Suite 1C",
+      "city": "Tomball",
+      "state": "TEXAS",
+      "postal_code": "77375",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 30.083765,
+      "longitude": -95.63216599
+    },
+    "contact": {
+      "phone": "+18322672644",
+      "email": "info@thebeautyknwhow.com",
+      "website": "https://thebeautyknwhow.com"
+    },
+    "booking_url": "https://thebeautyknwhow.com",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3qv629gy",
+    "name": "The Hair Zone Beauty Supply, LLC",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Dena Meredith",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "816 E Princeton Dr",
+      "suite": "103",
+      "city": "Princeton",
+      "state": "TX",
+      "postal_code": "75407",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 33.17414504,
+      "longitude": -96.49120889
+    },
+    "contact": {
+      "phone": "+12148362972",
+      "email": "dena@thehairzonebeautysupply.com",
+      "website": "https://www.thehairzonebeautysupply.com"
+    },
+    "booking_url": "https://www.thehairzonebeautysupply.com",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_4wewgz2x",
+    "name": "Too Groovy Salon",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": "Robin D. Groover",
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "265 Ponce De Leon Ave NE",
+      "suite": null,
+      "city": "Atlanta",
+      "state": "GA",
+      "postal_code": "30308",
+      "country": "USA"
+    },
+    "coordinates": {
+      "latitude": 33.77177599,
+      "longitude": -84.378516
+    },
+    "contact": {
+      "phone": null,
+      "email": "RobinDGroover@Grooveglobal.com",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3xjng7e6",
+    "name": "TrichoSpa by Earthtones",
+    "type": "SALON",
+    "category": "salon",
+    "lead_stylist_or_founder": null,
+    "services_offered": [
+      "Hair Strand Assessment",
+      "HairScope Diagnostic Consultation",
+      "Textured Hair Styling & Maintenance",
+      "Healthy Hair Care Regimens",
+      "Silk Press & Natural Hair Care"
+    ],
+    "address": {
+      "street": "845 Westney Rd S",
+      "suite": null,
+      "city": "Ajax",
+      "state": "ON",
+      "postal_code": "L1S 3M4",
+      "country": "Canada"
+    },
+    "coordinates": {
+      "latitude": 43.83042299,
+      "longitude": -79.02139902
+    },
+    "contact": {
+      "phone": null,
+      "email": "susan@earthtonesnaturals.com",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_3qv6r6py",
+    "name": "VAYA Beauty",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Yarné Glascoe",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "1110 oak dr SE",
+      "suite": null,
+      "city": "Washington DC",
+      "state": "DC",
+      "postal_code": "20032",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 38.84619513,
+      "longitude": -76.9902048
+    },
+    "contact": {
+      "phone": "+12409971853",
+      "email": "yarne.powell@gmail.com",
+      "website": "https://www.shopvayabeauty.com"
+    },
+    "booking_url": "https://www.shopvayabeauty.com",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  },
+  {
+    "id": "loc_45xg5xpn",
+    "name": "YANY Beauty",
+    "type": "RETAILER",
+    "category": "retailer",
+    "lead_stylist_or_founder": "Yaminah Childress",
+    "services_offered": [
+      "Healthy Hair Products Retail",
+      "MYAVANA Hair Kits",
+      "Textured Hair Supplies"
+    ],
+    "address": {
+      "street": "448 Crosstown Drive",
+      "suite": null,
+      "city": "Peachtree City",
+      "state": "GA",
+      "postal_code": "30269",
+      "country": "United States"
+    },
+    "coordinates": {
+      "latitude": 33.37820402,
+      "longitude": -84.56284
+    },
+    "contact": {
+      "phone": null,
+      "email": "yaminah@yanybeauty.co",
+      "website": null
+    },
+    "booking_url": "https://www.myavana.com/products/hair-assessment",
+    "myavana_certified": true,
+    "partnership_status": "ACTIVE_ECOSYSTEM_PARTNER"
+  }
+]

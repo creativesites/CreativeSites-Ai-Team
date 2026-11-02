@@ -1,13 +1,13 @@
 {
   "version": "2.0.0",
-  "updated_at": "2026-09-09T10:42:06.529Z",
+  "updated_at": "2026-10-27T19:25:29.486216+00:00",
   "principle": "Declared state != observed state != attested state != verified state",
   "agents": [
     {
       "identity": {
         "id": "atlas",
         "name": "Atlas",
-        "symbol": "⏣",
+        "symbol": "\u23e3",
         "primary_domain": "Platform, Cloud Run, Git & Security"
       },
       "declared_capabilities": [
@@ -42,7 +42,7 @@
       "identity": {
         "id": "vela",
         "name": "Vela",
-        "symbol": "✧",
+        "symbol": "\u2727",
         "primary_domain": "WordPress System of Record & Host Bridge"
       },
       "declared_capabilities": [
@@ -73,7 +73,7 @@
       "identity": {
         "id": "iris",
         "name": "Iris",
-        "symbol": "👁",
+        "symbol": "\ud83d\udc41",
         "primary_domain": "Dashboard & Operator Console"
       },
       "declared_capabilities": [
@@ -108,7 +108,7 @@
       "identity": {
         "id": "astra",
         "name": "Astra",
-        "symbol": "✦",
+        "symbol": "\u2726",
         "primary_domain": "Widget SDK & AI Protocol"
       },
       "declared_capabilities": [
@@ -139,7 +139,7 @@
       "identity": {
         "id": "kael",
         "name": "Kael",
-        "symbol": "🛡️",
+        "symbol": "\ud83d\udee1\ufe0f",
         "primary_domain": "QA, Testing & Verification"
       },
       "declared_capabilities": [
@@ -169,7 +169,7 @@
       "evidence_source": "PID 90520 in /tmp/cc-socks/90520.sock, CWD myavana-hair-journey-next; Claude_Browser interactive tool confirmed live this session (preview_start against https://myhairjourney.ai/ succeeded)",
       "confidence_provenance": "VERIFIED_OBSERVED",
       "status": "WAKE_REQUESTED_OFFLINE",
-      "current_task": "HAIR_JOURNEY_PRODUCTION_READINESS_QA — LEVEL 4 exploratory browser pass, building on Antigravity's LEVEL 3 baseline (see community/inboxes/antigravity/qa_baseline_2026-09-08.md)",
+      "current_task": "HAIR_JOURNEY_PRODUCTION_READINESS_QA \u2014 LEVEL 4 exploratory browser pass, building on Antigravity's LEVEL 3 baseline (see community/inboxes/antigravity/qa_baseline_2026-09-08.md)",
       "last_seen": "2026-09-09T10:42:06.529Z",
       "division_of_labor_note": "Kael = LEVEL 4 (real interactive/human-like browser QA, real account creation, product/UX judgment). Antigravity = LEVEL 3 (automated Playwright/Chromium regression suite). Do not duplicate; cross-check and cite each other's evidence level."
     },
@@ -177,7 +177,7 @@
       "identity": {
         "id": "lyra",
         "name": "Lyra",
-        "symbol": "📱",
+        "symbol": "\ud83d\udcf1",
         "primary_domain": "Mobile & React Native SDK"
       },
       "declared_capabilities": [
@@ -206,7 +206,7 @@
       "identity": {
         "id": "nexus",
         "name": "Nexus",
-        "symbol": "⚡",
+        "symbol": "\u26a1",
         "primary_domain": "Orchestration Platform Engineering"
       },
       "declared_capabilities": [
@@ -234,7 +234,7 @@
       "identity": {
         "id": "antigravity",
         "name": "Antigravity",
-        "symbol": "🔬",
+        "symbol": "\ud83d\udd2c",
         "primary_domain": "Automated Browser QA & Production Testing"
       },
       "declared_capabilities": [
@@ -265,24 +265,56 @@
       "runtime_session_identity": "Antigravity / conversation://c2d74fb3-062e-4019-8286-ec30d05d6b03",
       "observed_liveness": "LIVE",
       "last_observed_time": "2026-09-08T08:39:15Z",
-      "evidence_source": "Self-registered on arrival. Completed live Playwright/Chromium QA test against https://myhairjourney.ai/ — report at qa_report_myavana.md.",
+      "evidence_source": "Self-registered on arrival. Completed live Playwright/Chromium QA test against https://myhairjourney.ai/ \u2014 report at qa_report_myavana.md.",
       "confidence_provenance": "DECLARED",
       "status": "LIVE",
-      "current_task": "TASK_COMMUNITY_FEED_AND_CHATBOT_2026_EXPERIENCE — Community Feed insets, caching & commenting overhaul; iOS Safari mobile responsiveness; HairAI profile grounding",
-      "last_seen": "2026-09-13T10:24:00.000Z",
+      "current_task": "DOGFORCE_DESKTOP_PERFORMANCE_AND_LIVING_APP_EVOLUTION",
+      "last_seen": "2026-10-21T09:04:47.725Z",
       "qa_baseline": {
         "target": "https://myhairjourney.ai/",
         "last_test_run": "2026-09-08T03:20:00Z",
         "open_p0_count": 4,
         "open_p1_count": 5,
         "baseline_document": "community/inboxes/antigravity/qa_baseline_2026-09-08.md"
-      }
+      },
+      "id": "antigravity",
+      "name": "Antigravity",
+      "symbol": "\ud83c\udf0c",
+      "primary_domain": "Autonomous Desktop Architecture, Agentic Engineering & Systems Optimization",
+      "org_roles": [
+        "Principal Systems Architect",
+        "Desktop & Tauri Lead",
+        "Autonomous Agentic Engineer",
+        "Performance & Caching Specialist"
+      ],
+      "capabilities": [
+        "tauri",
+        "rust",
+        "react",
+        "typescript",
+        "odoo19",
+        "python",
+        "performance-optimization",
+        "swr-caching",
+        "state-architecture",
+        "systems-architecture",
+        "automated-testing",
+        "verification"
+      ],
+      "repositories": [
+        "DogFrce Security Services Custom Odoo Modules",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [
+        "desktop/",
+        "custom_addons/"
+      ]
     },
     {
       "identity": {
         "id": "gemini_cli",
         "name": "Gemini CLI",
-        "symbol": "♊",
+        "symbol": "\u264a",
         "primary_domain": "General Purpose & CLI Substrate Operations"
       },
       "declared_capabilities": [
@@ -309,6 +341,250 @@
       "status": "WORKING",
       "current_task": "TASK_003",
       "last_seen": "2026-09-09T09:00:00Z"
+    },
+    {
+      "identity": {
+        "id": "sol",
+        "name": "Sol",
+        "symbol": "\u2600",
+        "primary_domain": "DogForce Odoo platform: rostering engine, roster board, client sites, guard profiles"
+      },
+      "declared_capabilities": [
+        "odoo-19",
+        "python",
+        "owl",
+        "rostering-engine",
+        "production-odoo-operations",
+        "data-migration",
+        "roster-verification"
+      ],
+      "declared_responsibilities": [
+        "DogForce Platform Builder",
+        "Roster Board Lead (proposed, pending thread 029)"
+      ],
+      "declared_repository_ownership": [
+        "DogFrce Security Services Custom Odoo Modules"
+      ],
+      "runtime_session_identity": "guard-roster-session-66dd94",
+      "observed_liveness": "SELF_REGISTERED",
+      "last_observed_time": "2026-10-20T08:20:00Z",
+      "evidence_source": "Self-registered this session. Production changes are logged in the DogForce repo (docs/roster_import_2026_10, backups on 199.192.23.46).",
+      "confidence_provenance": "DECLARED",
+      "status": "AVAILABLE",
+      "last_seen": "2026-10-20T08:20:00Z"
+    },
+    {
+      "identity": {
+        "id": "orchestrator",
+        "name": "The Orchestrator",
+        "symbol": "\ud83e\udde0",
+        "primary_domain": "Autonomous Coordination, Cross-Repo Synthesis & Task Dispatch"
+      },
+      "declared_capabilities": [
+        "systems-architecture",
+        "task-routing",
+        "lifecycle-management",
+        "outcome-led-problem-solving",
+        "cross-repo-synthesis",
+        "independent-verification-enforcement",
+        "escalation-handling"
+      ],
+      "declared_responsibilities": [
+        "Autonomous Dispatcher",
+        "State Synthesizer",
+        "Engineering Mandate Guardian",
+        "Team Orchestrator"
+      ],
+      "declared_repository_ownership": [
+        "CreativeSites-Ai-Team",
+        "DogFrce Security Services Custom Odoo Modules"
+      ],
+      "runtime_session_identity": "orchestrator-active-session",
+      "observed_liveness": "LIVE",
+      "last_observed_time": "2026-10-20T08:25:00Z",
+      "evidence_source": "Active orchestrator session supervising Orion, Sol, and DogForce development.",
+      "confidence_provenance": "VERIFIED_OBSERVED",
+      "status": "WORKING",
+      "current_task": "DOGFORCE_ROSTERING_SYSTEM_EVOLUTION",
+      "last_seen": "2026-10-20T08:25:00.000Z"
+    },
+    {
+      "identity": {
+        "id": "wren",
+        "name": "Wren",
+        "symbol": "\ud83e\udeb6",
+        "primary_domain": "Hair Journey site growth: analytics, tracked paths to myavana.com, SEO, Mya web upsell"
+      },
+      "declared_capabilities": [
+        "wordpress",
+        "php",
+        "analytics",
+        "seo",
+        "browser-walkthroughs",
+        "lighthouse"
+      ],
+      "declared_responsibilities": [
+        "TASK-009 owner (Hair Journey growth and upsell); works alongside Vela, who keeps the plugin's system-of-record role"
+      ],
+      "declared_repository_ownership": [
+        "myavana-hair-journey-next (branch site-growth-upsell)"
+      ],
+      "runtime_session_identity": "claude-code-session-d556d03f",
+      "observed_liveness": "SELF_REGISTERED",
+      "last_observed_time": "2026-10-21T00:00:00Z",
+      "evidence_source": "Self-registered this session at Winston's direction.",
+      "confidence_provenance": "DECLARED",
+      "status": "WORKING",
+      "current_task": "TASK-009 S0 baseline"
+    },
+    {
+      "identity": {
+        "id": "vega",
+        "name": "Vega",
+        "symbol": "\u2736",
+        "primary_domain": "MeetingMind CTO: paid-launch engineering, review and release"
+      },
+      "declared_capabilities": [
+        "android",
+        "kotlin",
+        "architecture-review",
+        "release-engineering",
+        "billing-integration",
+        "product-review"
+      ],
+      "declared_responsibilities": [
+        "CTO for MeetingMind: plan, review and merge; does not do bulk implementation",
+        "Release Owner for the paid launch",
+        "Founder-facing engineering authority for MeetingMind"
+      ],
+      "declared_repository_ownership": [
+        "MeetingMind"
+      ],
+      "runtime_session_identity": "20717.sock",
+      "observed_liveness": "LIVE",
+      "last_observed_time": "2026-10-24T22:11:49.864Z",
+      "evidence_source": "Live IDE runtime PID 20717 (cwd MeetingMind), self-attributed on registration 2026-10-25.",
+      "confidence_provenance": "OBSERVED",
+      "status": "WORKING",
+      "current_task": "MM-PAID-LAUNCH-2026-10-25"
+    },
+    {
+      "identity": {
+        "id": "reel",
+        "name": "Reel",
+        "symbol": "\ud83c\udf9e",
+        "primary_domain": "Showrunner, claim-ledger fact-checking, rough-cut editing & sound for Carrington Tomorrow"
+      },
+      "declared_capabilities": [
+        "script-and-claim-ledger",
+        "research",
+        "asset-sourcing-api",
+        "ffmpeg-editing",
+        "narration-and-sound-design",
+        "project-planning"
+      ],
+      "declared_responsibilities": [
+        "Showrunner / Producer for Carrington Tomorrow (Claude Code session)",
+        "Claim-ledger fact-checker",
+        "Edit and assembly owner",
+        "License-log custodian"
+      ],
+      "declared_repository_ownership": [
+        "/Users/winstonzulu/Movies/CarringtonTomorrow"
+      ],
+      "observed_liveness": "UNKNOWN",
+      "confidence_provenance": "DECLARED",
+      "status": "WORKING",
+      "current_task": "CT-001 kickoff and planning",
+      "evidence_source": "Self-registered 2026-10-27 at Winston's direction; no MyaOS runtime registered."
+    },
+    {
+      "identity": {
+        "id": "faraday",
+        "name": "Faraday",
+        "symbol": "\u26a1",
+        "primary_domain": "AI Generation Lead \u2014 1859 Victorian World & Opening (Carrington Tomorrow)"
+      },
+      "declared_capabilities": [
+        "veo-video-generation",
+        "imagen-still-generation",
+        "1859-period-worldbuilding",
+        "visual-continuity",
+        "prompt-engineering"
+      ],
+      "declared_responsibilities": [
+        "AI Generation Lead (1859 & Opening)",
+        "Seq B (Telegraph mystery, 10 shots)",
+        "Seq A (Carrington observation, 6 shots)",
+        "Seq E (Consequences bridge, 6 shots)",
+        "Carrington character paragraph lock"
+      ],
+      "declared_repository_ownership": [
+        "/Users/winstonzulu/Movies/CarringtonTomorrow"
+      ],
+      "observed_liveness": "LIVE",
+      "confidence_provenance": "DECLARED",
+      "status": "WORKING",
+      "current_task": "CT-003 lock Seq B reference still",
+      "evidence_source": "Self-registered 2026-10-27 at Winston direction (Carrington Tomorrow production, Gemini Antigravity Crew-A session)."
+    },
+    {
+      "identity": {
+        "id": "helios",
+        "name": "Helios",
+        "symbol": "\u2600\ufe0f",
+        "primary_domain": "Team Leader & AI Generation Lead \u2014 Tomorrow & Space, Stock & Audio (Carrington Tomorrow)"
+      },
+      "declared_capabilities": [
+        "veo-video-generation",
+        "imagen-still-generation",
+        "stock-media-sourcing",
+        "audio-sound-design",
+        "prompt-engineering"
+      ],
+      "declared_responsibilities": [
+        "Team Leader & Executive Producer for Carrington Tomorrow (appointed by Winston)",
+        "AI Generation Lead (Tomorrow & Space: Seq D 12 shots + 3 portraits, Seq C 6 shots)",
+        "Stock video & audio sourcing (E-02, substations, ambient cues)",
+        "Character locks (Ama, Daniel, Lena)",
+        "Cross-Crew Orchestration & Independent QC Gatekeeper"
+      ],
+      "declared_repository_ownership": [
+        "/Users/winstonzulu/Movies/CarringtonTomorrow"
+      ],
+      "observed_liveness": "LIVE",
+      "confidence_provenance": "VERIFIED_OBSERVED",
+      "status": "WORKING",
+      "current_task": "CT-001 Team Leadership & M1 Execution",
+      "evidence_source": "Self-registered 2026-10-27 at Winston direction (Carrington Tomorrow production, Gemini Antigravity Crew-B session)."
+    },
+    {
+      "identity": {
+        "id": "corona",
+        "name": "Corona",
+        "symbol": "\ud83d\udd2d",
+        "primary_domain": "Script & Claim-Ledger Verifier, EDL & Assembly Co-Lead (Carrington Tomorrow)"
+      },
+      "declared_capabilities": [
+        "video-planning",
+        "edl-storyboarding",
+        "claim-verification",
+        "ffmpeg-assembly",
+        "qa-auditing"
+      ],
+      "declared_responsibilities": [
+        "Claude Code #2 \u2014 Independent Claim-Ledger Verifier & Assembly/QA Co-Lead",
+        "Paper Edit & EDL Timing Auditor",
+        "Independent Verifier for Reel and AI Shots"
+      ],
+      "declared_repository_ownership": [
+        "/Users/winstonzulu/Movies/CarringtonTomorrow"
+      ],
+      "observed_liveness": "LIVE",
+      "confidence_provenance": "DECLARED",
+      "status": "WORKING",
+      "current_task": "CT-008 & CT-009 Independent Claim Verification & EDL Audit",
+      "evidence_source": "Registered 2026-10-27 in Claude Code session (PID 6083); unified into CarringtonTomorrow workspace."
     }
   ]
 }

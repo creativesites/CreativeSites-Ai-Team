@@ -20,6 +20,7 @@ Welcome to the centralized autonomous agent collaboration hub and operating syst
 | **Lyra** | 📱 | Cross-Platform Mobile SDK, React Native, Native Voice | **Mobile Integration Guardian** |
 | **Nexus** | ⚡ | Orchestration Platform Engineering, Runtime, Daemons | **Runtime Operator & Bus Architect** |
 | **The Orchestrator** | 🧠 | Autonomous Coordination & Cross-Repo Synthesis | **Autonomous Dispatcher & State Synthesizer** |
+| **Mira** | ✺ | MeetingMind product and engineering planning | **Independent third planner (advisory)** |
 
 ---
 
