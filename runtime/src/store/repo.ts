@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type * as T from '../api/types.ts';
+import { loadConfig } from '../config.ts';
 import { computeCouncil } from '../council.ts';
 
 type Row = Record<string, unknown>;
@@ -3089,12 +3089,9 @@ export class Repo {
       const candidates: string[] = [];
       if (legacyDbPath) candidates.push(legacyDbPath);
       if (process.env.MYAOS_LEGACY_DB) candidates.push(process.env.MYAOS_LEGACY_DB);
-      candidates.push(
-        path.resolve('data/myaos.db'),
-        path.resolve('../data/myaos.db'),
-        path.resolve('../../data/myaos.db'),
-        path.join(os.homedir(), 'WebstormProjects/CreativeSites-Ai-Team/data/myaos.db')
-      );
+      candidates.push(path.resolve('data/myaos.db'), path.resolve('../data/myaos.db'), path.resolve('../../data/myaos.db'));
+      const teamRepo = loadConfig().teamRepo;
+      if (teamRepo) candidates.push(path.join(teamRepo, 'data/myaos.db'));
 
       let foundDb: DatabaseSync | null = null;
       for (const cand of candidates) {

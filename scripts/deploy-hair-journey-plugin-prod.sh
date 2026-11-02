@@ -13,12 +13,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Other checkouts, overridable from the environment. Defaults live under $HOME.
+TEAM_REPO_DIR="${TEAM_REPO_DIR:-${HOME}/WebstormProjects/CreativeSites-Ai-Team}"
+CHATBOT_REPO_DIR="${CHATBOT_REPO_DIR:-${HOME}/WebstormProjects/Myavana-Chatbot}"
+
 # Resolve credentials file
 CREDS_FILE=""
 CANDIDATES=(
   "${REPO_ROOT}/community/secrets/production_wp_credentials.env"
-  "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/community/secrets/production_wp_credentials.env"
-  "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot/community/secrets/production_wp_credentials.env"
+  "${TEAM_REPO_DIR}/community/secrets/production_wp_credentials.env"
+  "${CHATBOT_REPO_DIR}/community/secrets/production_wp_credentials.env"
 )
 
 for f in "${CANDIDATES[@]}"; do
@@ -109,7 +113,7 @@ fi
 
 # Step 1: Synchronize widget asset if chatbot repo exists
 if [[ "${SKIP_WIDGET_SYNC}" == false ]]; then
-  SYNC_WIDGET_SCRIPT="${LOCAL_CHATBOT_REPO:-/Users/winstonzulu/WebstormProjects/Myavana-Chatbot}/scripts/sync-widget-to-wp.sh"
+  SYNC_WIDGET_SCRIPT="${LOCAL_CHATBOT_REPO:-${CHATBOT_REPO_DIR}}/scripts/sync-widget-to-wp.sh"
   if [[ -f "${SYNC_WIDGET_SCRIPT}" ]]; then
     echo ""
     echo "📦 [1/4] Syncing latest web widget build into plugin assets..."

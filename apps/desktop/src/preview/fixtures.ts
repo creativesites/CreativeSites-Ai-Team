@@ -1,5 +1,4 @@
 import type { Evidence, Identity, JobDetail, JobSummary, Message, Room, Session } from '@runtime/types';
-import type { Council, Verdict } from '@/screens/planning';
 
 // SAMPLE DATA FOR THE DEV PREVIEW ONLY (#/preview/<screen>). It mirrors the
 // approved design so screens can be compared with it. It is never shown in
@@ -120,60 +119,3 @@ export const messages: Message[] = [
   { id: 'm2', roomId: 'room_chat', authorId: 'sage', authorKind: 'agent', body: 'The council met. Verdict: Go with conditions. The plan has 4 tasks. Atlas builds, Kael verifies, nothing ships without your approval.', jobId: null, createdAt: t('09:09') },
   { id: 'm3', roomId: 'room_chat', authorId: 'atlas', authorKind: 'agent', body: 'Root cause: the refresh timer is armed from the first login’s expiry. After the first refresh it never re-arms. Fixed in src/auth/refresh.ts with a regression test.\n\n@Kael over to you to verify independently.', jobId: null, createdAt: t('09:31') },
 ];
-
-const sc = (a: number, b: number, c: number, d: number) => ({ A: a, B: b, C: c, D: d });
-const none = { A: 'none', B: 'none', C: 'none', D: 'none' } as const;
-
-export const council: Council = {
-  jobId: 'job_142',
-  jobNumber: 142,
-  jobTitle: job142.title,
-  room: 'myavana-chatbot',
-  chair: people.sage,
-  chairNote: 'Round 2 is on the two cruxes. Five of six seats lean A, so Iris is arguing B, the strongest alternative, at full strength.',
-  round: 3,
-  rounds: ['Brief', 'Openings', 'Cruxes', 'Debate', 'Draft plan', 'Ratify', 'Verdict'],
-  options: [
-    { id: 'A', label: 'Re-arm the refresh timer in the chatbot widget' },
-    { id: 'B', label: 'Fix the shared refresh helper for chatbot and WordPress' },
-    { id: 'C', label: 'Move to server-side sliding sessions' },
-    { id: 'D', label: 'Don’t fix now, document the workaround' },
-  ],
-  cards: [
-    { seat: 'Architect', question: 'Is this the right shape for the code?', weight: 3, identity: people.atlas, said: 'A fixes the cause in one file. B is right long-term but doubles the blast radius today.', scores: sc(8, 7, 6, 2), pillar: 8, ruin: { ...none }, state: 'done' },
-    { seat: 'Skeptic', question: 'What breaks, and what are we not seeing?', weight: 2, identity: people.iris, said: 'Arguing B at full strength: two refresh paths will drift, and the next bug lands in WordPress.', scores: sc(6, 7, 5, 3), pillar: 6, ruin: { ...none }, state: 'speaking' },
-    { seat: 'Verifier', question: 'How will we prove it worked?', weight: 3, identity: people.kael, said: 'A is provable in under a minute with a fake clock across two refreshes.', scores: sc(8, 6, 5, 3), pillar: 8, ruin: { ...none }, state: 'done' },
-    { seat: 'Product', question: 'Will people notice the fix?', weight: 1, identity: people.lyra, said: 'Chat users feel this every day. WordPress users have not reported it.', scores: sc(8, 7, 6, 1), pillar: 8, ruin: { ...none }, state: 'done' },
-    { seat: 'Risk and cost', question: 'What is the blast radius, and what does it cost?', weight: 2, identity: people.nexus, said: 'C signs every user out on deploy. A is reversible with a revert.', scores: sc(6, 5, 3, 4), pillar: 6, ruin: { ...none, C: 'possible' }, state: 'done' },
-    { seat: 'WordPress specialist', question: 'What does the WordPress side depend on?', weight: 2, identity: people.vela, said: 'The site login imports the same helper. I need to check callers before I agree A is isolated.', scores: sc(6, 7, 4, 3), pillar: 6, ruin: { ...none }, state: 'waiting' },
-  ],
-  cruxes: [
-    { text: 'Does the WordPress login depend on the current refresh timing?', between: 'Vela and Atlas disagree' },
-    { text: 'Is a client-side fix enough, or is the server expiry also wrong?', between: 'Iris asked; nobody has evidence yet' },
-  ],
-  debate: [
-    { from: 'Iris', to: 'Atlas', crux: 'Crux 1', text: 'If the WordPress login imports refresh.ts, option A already touches it. Then A is B with fewer tests.' },
-    { from: 'Vela', to: 'Iris', crux: 'Crux 1', text: 'It imports the helper but sets its own timer. I can confirm with a caller search before ratification.' },
-    { from: 'Kael', to: 'Iris', crux: 'Crux 2', text: 'Server expiry is 60 minutes in config and in the token we captured. No evidence it is wrong.' },
-  ],
-};
-
-export const verdict: Verdict = {
-  council,
-  call: 'Do option A: re-arm the refresh timer in the chatbot widget, add a regression test across two refreshes, and have a second agent verify it. Condition: Vela confirms the WordPress login keeps its own timer before anything merges.',
-  carried: [
-    { text: 'A fixes the cause in one file and reverts cleanly.', by: 'Atlas · Architect' },
-    { text: 'A can be proven in under a minute with a fake clock across two refreshes.', by: 'Kael · Verifier' },
-    { text: 'Chat users hit this every day; WordPress users have not reported it.', by: 'Lyra · Product' },
-  ],
-  objection: { text: 'Two refresh code paths will drift apart, and the next logout bug will be in WordPress.', by: 'Iris · Skeptic' },
-  confidence: 7,
-  support: 7.5,
-  tasks: [
-    { id: 'T1', title: 'Confirm WordPress keeps its own timer', owner: people.vela, check: 'caller search for refresh.ts + written answer', gate: 'Must finish before merge', needsYou: true },
-    { id: 'T2', title: 'Re-arm the timer, add the regression test', owner: people.atlas, check: 'npm test -- auth (exit 0); new test fails on old code', gate: 'Runs in its own worktree', needsYou: false },
-    { id: 'T3', title: 'Verify on a clean checkout, review the diff', owner: people.kael, check: 're-run tests from scratch; diff review notes', gate: 'Different agent from T2', needsYou: false },
-    { id: 'T4', title: 'Approve the merge to main', owner: null, check: 'you, after T1 to T3 are verified', gate: 'Needs your approval', needsYou: true },
-  ],
-  doneMeans: job142.criteria.map((c) => c.text),
-};

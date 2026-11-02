@@ -198,9 +198,6 @@ function BriefBox({ rooms, projects, onStartJob }: { rooms: Room[]; projects: Pr
               </select>
             </>
           )}
-          <span className="text-xs text-muted-foreground" title="The planning council arrives in Phase 3">
-            Planning council: not available yet
-          </span>
         </div>
         <button type="submit" disabled={!canSend} className={buttonVariants({ variant: 'default' })}>
           {busy ? 'Starting…' : 'Start job'}

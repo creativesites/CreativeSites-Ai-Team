@@ -5,7 +5,6 @@ import { CoworkersScreen } from '@/screens/coworkers';
 import { DevScreen } from '@/screens/dev';
 import { HomeScreen } from '@/screens/home';
 import { JobScreen } from '@/screens/job';
-import { CouncilScreen, VerdictScreen } from '@/screens/planning';
 import { RoomScreen } from '@/screens/room';
 import * as f from '@/preview/fixtures';
 
@@ -21,8 +20,6 @@ const SCREENS: Record<string, { label: string; route: Route; mode: Mode; render:
     render: () => <RoomScreen room={f.rooms[0]} messages={f.messages} jobs={f.jobs.filter((j) => j.roomId === 'room_chat')} identities={f.identities} focusJob={f.job142} ownerName="Winston" />,
   },
   job: { label: 'Job', route: { name: 'job', jobId: 'job_139' }, mode: 'work', render: () => <JobScreen job={f.job139} room={f.rooms[1]} identities={f.identities} ownerName="Winston" /> },
-  council: { label: 'Council', route: { name: 'council', jobId: 'job_142' }, mode: 'work', render: () => <CouncilScreen council={f.council} /> },
-  verdict: { label: 'Verdict', route: { name: 'verdict', jobId: 'job_142' }, mode: 'work', render: () => <VerdictScreen verdict={f.verdict} /> },
   dev: { label: 'Dev', route: { name: 'dev', jobId: 'job_142' }, mode: 'dev', render: () => <DevScreen sessions={f.sessions} identities={f.identities} jobs={f.jobs} job={f.job142} /> },
   coworkers: { label: 'Coworkers', route: { name: 'coworkers' }, mode: 'work', render: () => <CoworkersScreen identities={f.identities} sessions={f.sessions} /> },
 };

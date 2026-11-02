@@ -270,7 +270,7 @@ export function JobPanel({ job, className }: { job: JobDetail | null; className?
       <div className="flex flex-col gap-2.5">
         <div className="text-xs text-muted-foreground">Done means</div>
         {job.criteria.length === 0 ? (
-          <EmptyState title="No acceptance criteria yet">The planning step writes them (Phase 3).</EmptyState>
+          <EmptyState title="No acceptance criteria yet">Add them on the job screen.</EmptyState>
         ) : (
           job.criteria.map((c) => (
             <div key={c.id} className="glass-panel flex flex-col gap-1.5 rounded-lg px-3 py-2.5">
