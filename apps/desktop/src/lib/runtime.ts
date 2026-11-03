@@ -1,5 +1,15 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type {
+  AccountWeeklyUsage,
+  AiAccount,
+  AiAccountWithSnapshot,
+  AiLimitSnapshot,
+  AiSnapshotInput,
+  CreateAiAccountInput,
+  UsageAlertRecord,
+  UsageEstimateRow,
+} from '@runtime/usage-types';
+import type {
   AdapterInfo,
   AgentSchedule,
   AgentWake,
@@ -348,6 +358,21 @@ export class RuntimeClient {
   updateOkrProgress = (krId: string, currentValue: number) =>
     this.request<{ keyResult: OkrKeyResult; objective: OkrObjective }>('POST', `/v1/okrs/key-results/${encodeURIComponent(krId)}/progress`, { current_value: currentValue });
   realityAudit = () => this.request<RealityAuditSummary>('GET', '/v1/okrs/reality-audit');
+
+  // ---- subscription AI usage (K6/K9)
+  aiAccounts = () => this.request<AiAccountWithSnapshot[]>('GET', '/v1/ai-accounts');
+  createAiAccount = (input: CreateAiAccountInput) => this.request<AiAccount>('POST', '/v1/ai-accounts', input);
+  addAiSnapshot = (accountId: string, input: AiSnapshotInput) =>
+    this.request<{ snapshot: AiLimitSnapshot; alert: UsageAlertRecord | null }>(
+      'POST',
+      `/v1/ai-accounts/${encodeURIComponent(accountId)}/snapshots`,
+      input
+    );
+  aiSnapshots = (accountId: string) =>
+    this.request<AiLimitSnapshot[]>('GET', `/v1/ai-accounts/${encodeURIComponent(accountId)}/snapshots`);
+  weeklyUsage = () => this.request<AccountWeeklyUsage[]>('GET', '/v1/usage/weekly');
+  usageEstimates = () => this.request<UsageEstimateRow[]>('GET', '/v1/usage/estimates');
+  ackUsageAlert = (id: string) => this.request<UsageAlertRecord>('POST', `/v1/usage/alerts/${encodeURIComponent(id)}/ack`, {});
 
   room = (id: string) => this.request<Room>('GET', `/v1/rooms/${encodeURIComponent(id)}`);
   updateRoom = (id: string, input: { name?: string; projectId?: string | null; teamId?: string | null; archived?: boolean }) =>
