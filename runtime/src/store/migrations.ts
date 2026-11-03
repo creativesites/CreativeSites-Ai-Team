@@ -842,6 +842,59 @@ export const MIGRATIONS: Migration[] = [
     `,
   },
   {
+    version: 11,
+    name: '011_intake_triage_departments',
+    // WP2 part 1 (K5, task 2.1/2.2/2.3/2.7). Additive only; independent of v10 columns.
+    sql: `
+      ALTER TABLE jobs ADD COLUMN workflow TEXT CHECK (workflow IS NULL OR workflow IN ('quick','feature','strategic','incident'));
+      ALTER TABLE jobs ADD COLUMN triage_reason TEXT;
+      ALTER TABLE jobs ADD COLUMN urgency TEXT;
+      ALTER TABLE jobs ADD COLUMN impact TEXT;
+      ALTER TABLE jobs ADD COLUMN intake_id TEXT;
+      ALTER TABLE jobs ADD COLUMN okr_kr_id TEXT;
+      ALTER TABLE jobs ADD COLUMN milestone_id TEXT;
+      CREATE INDEX IF NOT EXISTS idx_jobs_intake ON jobs(intake_id);
+
+      ALTER TABLE rooms ADD COLUMN intake_enabled INTEGER;
+
+      CREATE TABLE IF NOT EXISTS intake_requests (
+        id TEXT PRIMARY KEY,
+        raw_text TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('home','room','design','sessions','api','agent','schedule')),
+        source_ref TEXT,
+        project_id TEXT,
+        requested_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        job_id TEXT,
+        duplicate_of_job_id TEXT,
+        dedupe_reason TEXT,
+        classification TEXT NOT NULL DEFAULT '{}'
+      );
+      CREATE INDEX IF NOT EXISTS idx_intake_job ON intake_requests(job_id);
+      CREATE INDEX IF NOT EXISTS idx_intake_project ON intake_requests(project_id);
+
+      CREATE TABLE IF NOT EXISTS departments (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        lead_identity_id TEXT,
+        created_at TEXT NOT NULL
+      );
+      INSERT OR IGNORE INTO departments (id, name, lead_identity_id, created_at) VALUES
+        ('engineering', 'Engineering', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ('platform-runtime', 'Platform & Runtime', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ('quality-verification', 'Quality & Verification', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ('design', 'Design', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ('planning-strategy', 'Planning & Strategy', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ('operations', 'Operations', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+
+      ALTER TABLE identities ADD COLUMN department_id TEXT;
+      ALTER TABLE identities ADD COLUMN seniority TEXT NOT NULL DEFAULT 'member' CHECK (seniority IN ('exec','lead','senior','member'));
+      ALTER TABLE identities ADD COLUMN skills TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE identities ADD COLUMN providers TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE identities ADD COLUMN permissions TEXT NOT NULL DEFAULT '[]';
+    `,
+  },
+  {
     version: 12,
     name: 'agent action interface: session tokens, tool-call audit, blockers (K4)',
     sql: AGENT_TOOLS_SQL,

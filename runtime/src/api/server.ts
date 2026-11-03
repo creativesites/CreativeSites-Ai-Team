@@ -29,6 +29,7 @@ import {
   writeFrameFileToDisk,
 } from '../design-studio.ts';
 import { DesignRunner } from '../design-agent.ts';
+import { createIntake } from '../intake/intake.ts';
 import type { Bridge } from '../bridge.ts';
 import type { Orchestrator } from '../orchestrator.ts';
 import type { TerminalManager } from '../terminal-manager.ts';
@@ -599,6 +600,17 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       }),
     })),
     route('POST', '/v1/jobs', (ctx) => ({ status: 201, body: repo.createJob(ctx.body as unknown as T.CreateJobInput) })),
+    // intake (WP2): the single front door for new work
+    route('POST', '/v1/intake', (ctx) => ({ status: 201, body: createIntake(repo, ctx.body as unknown as T.CreateIntakeInput) })),
+    route('GET', '/v1/intakes', (ctx) => ({
+      status: 200,
+      body: repo.listIntakes({ jobId: ctx.query.get('jobId') ?? undefined, limit: Number(ctx.query.get('limit') ?? 200) }),
+    })),
+    route('GET', '/v1/departments', () => ({ status: 200, body: repo.listDepartments() })),
+    route('POST', '/v1/jobs/:id/triage', (ctx) => ({
+      status: 200,
+      body: repo.overrideTriage(ctx.params.id!, ctx.body as { workflow: string; reason: string; by: string }),
+    })),
     route('GET', '/v1/jobs/:id', (ctx) => ({ status: 200, body: repo.getJob(ctx.params.id!) })),
     route('PATCH', '/v1/jobs/:id', (ctx) => ({ status: 200, body: repo.updateJob(ctx.params.id!, ctx.body as T.UpdateJobInput) })),
     route('POST', '/v1/jobs/:id/stage', (ctx) => ({ status: 200, body: repo.transitionJob(ctx.params.id!, ctx.body as unknown as T.TransitionJobInput) })),

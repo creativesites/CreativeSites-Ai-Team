@@ -6,6 +6,11 @@ import { after, before, test } from 'node:test';
 import { startRuntime, type RunningRuntime } from '../src/app.ts';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'myaos-comm-'));
+// Keep the community mirror inside the temp dir: without this the runtime finds the
+// repository's real community/ folder and writes test threads and inbox notes into it.
+fs.mkdirSync(path.join(dir, 'community', 'inboxes'), { recursive: true });
+fs.mkdirSync(path.join(dir, 'community', 'threads'), { recursive: true });
+process.env.MYAOS_COMMUNITY_ROOT = path.join(dir, 'community');
 let rt: RunningRuntime;
 
 const call = async (method: string, route: string, body?: unknown) => {

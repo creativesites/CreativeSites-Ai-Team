@@ -29,6 +29,7 @@ import type {
   CreateDesignFrameInput,
   CreateEvidenceInput,
   CreateIdentityInput,
+  CreateIntakeInput,
   CreateJobInput,
   CreatePolicyInput,
   CreateProjectFolderInput,
@@ -38,6 +39,7 @@ import type {
   CreateScheduleInput,
   CreateSocialPostInput,
   CreateStandupInput,
+  IntakeResult,
   CreateTaskInput,
   CreateTeamInput,
   CreateThreadInput,
@@ -218,6 +220,8 @@ export class RuntimeClient {
     this.request<Message>('POST', `/v1/rooms/${encodeURIComponent(roomId)}/messages`, input);
   jobs = () => this.request<JobSummary[]>('GET', '/v1/jobs');
   job = (jobId: string) => this.request<JobDetail>('GET', `/v1/jobs/${encodeURIComponent(jobId)}`);
+  /** Unified intake (WP2): keeps the raw request, triages it, and creates one job or links a duplicate. */
+  intake = (input: CreateIntakeInput) => this.request<IntakeResult>('POST', '/v1/intake', input);
   createJob = (input: CreateJobInput) => this.request<JobDetail>('POST', '/v1/jobs', input);
   sessions = () => this.request<Session[]>('GET', '/v1/sessions');
   search = (q: string, limit = 8) => this.request<SearchHit[]>('GET', `/v1/search?q=${encodeURIComponent(q)}&limit=${limit}`);

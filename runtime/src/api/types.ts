@@ -124,6 +124,12 @@ export interface Identity {
   rateLimitResetAt?: string | null;
   rateLimitReason?: string | null;
   lastWokenAt?: string | null;
+  /** K5: department id (see `departments`), set by `applyDepartmentMapping`. */
+  departmentId?: string | null;
+  seniority?: 'exec' | 'lead' | 'senior' | 'member';
+  skills?: string[];
+  providers?: string[];
+  permissions?: string[];
 }
 
 export interface Team {
@@ -188,6 +194,8 @@ export interface Room {
   teamId?: string | null;
   kind?: 'project' | 'squad' | 'adhoc';
   archived?: boolean;
+  /** When true, a non-@mention human message in the room becomes an intake. Default off. */
+  intakeEnabled?: boolean;
 }
 
 export interface RoomMember {
@@ -230,6 +238,14 @@ export interface JobSummary {
   kind?: JobKind;
   shipStatus?: ShipStatus;
   shipPayload?: Record<string, unknown>;
+  /** WP2 triage fields; null on jobs created outside intake. */
+  workflow?: 'quick' | 'feature' | 'strategic' | 'incident' | null;
+  triageReason?: string | null;
+  urgency?: string | null;
+  impact?: string | null;
+  intakeId?: string | null;
+  okrKrId?: string | null;
+  milestoneId?: string | null;
 }
 
 export interface Criterion {
@@ -1706,3 +1722,59 @@ export interface Milestone {
 
 
 
+
+// ---------------------------------------------------------------- intake (WP2)
+
+export type IntakeSource = 'home' | 'room' | 'design' | 'sessions' | 'api' | 'agent' | 'schedule';
+
+export interface IntakeRequest {
+  id: string;
+  rawText: string;
+  source: IntakeSource;
+  sourceRef: string | null;
+  projectId: string | null;
+  requestedBy: string;
+  createdAt: string;
+  jobId: string | null;
+  duplicateOfJobId: string | null;
+  dedupeReason: string | null;
+  classification: Record<string, unknown>;
+}
+
+export interface CreateIntakeInput {
+  text: string;
+  source: IntakeSource;
+  sourceRef?: string | null;
+  projectId?: string | null;
+  roomId?: string | null;
+  requestedBy: string;
+  /** Orchestrator override of the rule-based triage; recorded on the job. */
+  override?: { workflow: 'quick' | 'feature' | 'strategic' | 'incident'; reason: string; by: string };
+}
+
+export interface IntakeResult {
+  intake: IntakeRequest;
+  /** The new job, or the existing open job when `duplicate` is true. */
+  job: JobDetail;
+  duplicate: boolean;
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  leadIdentityId: string | null;
+  createdAt: string;
+  memberCount: number;
+}
+
+export interface DepartmentMappingEntry {
+  department: string;
+  seniority?: 'exec' | 'lead' | 'senior' | 'member';
+}
+
+export interface DepartmentMappingResult {
+  changed: { id: string; department: string; seniority: string; was: { department: string | null; seniority: string } }[];
+  unchanged: string[];
+  missing: string[];
+  leads: { department: string; lead: string }[];
+}

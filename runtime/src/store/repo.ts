@@ -855,7 +855,7 @@ export class Repo {
     return this.getRoom(id);
   }
 
-  updateRoom(id: string, input: { name?: string; projectId?: string | null; teamId?: string | null; archived?: boolean }): T.Room {
+  updateRoom(id: string, input: { name?: string; projectId?: string | null; teamId?: string | null; archived?: boolean; intakeEnabled?: boolean }): T.Room {
     if (!this.one('SELECT id FROM rooms WHERE id = ?', id)) throw new NotFoundError(`room ${id} not found`);
     this.write((events) => {
       const fields: [string, SQLInputValue][] = [];
@@ -863,6 +863,7 @@ export class Repo {
       if (input.projectId !== undefined) fields.push(['project_id', input.projectId]);
       if (input.teamId !== undefined) fields.push(['team_id', input.teamId]);
       if (input.archived !== undefined) fields.push(['archived', input.archived ? 1 : 0]);
+      if (input.intakeEnabled !== undefined) fields.push(['intake_enabled', input.intakeEnabled ? 1 : 0]);
       if (fields.length) {
         this.db.prepare(`UPDATE rooms SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
       }
@@ -1026,14 +1027,20 @@ export class Repo {
   }
 
   createJob(input: T.CreateJobInput): T.JobDetail {
+    const id = newId('job');
+    this.write((events) => this.insertJob(events, id, input));
+    return this.getJob(id);
+  }
+
+  /** Validates and inserts a job plus its stage history and `job.created` event inside the caller's transaction. */
+  private insertJob(events: T.RuntimeEvent[], id: string, input: T.CreateJobInput): void {
     const roomId = required(input.roomId, 'roomId');
     const title = required(input.title, 'title');
     const createdBy = required(input.createdBy, 'createdBy');
     const room = this.one('SELECT * FROM rooms WHERE id = ?', roomId);
     if (!room) throw new NotFoundError(`room ${roomId} not found`);
     if (input.criteria && !Array.isArray(input.criteria)) throw new InputError('criteria must be a list of strings');
-    const id = newId('job');
-    this.write((events) => {
+    {
       const projectId = input.projectId ?? str(room.project_id);
       const ownerId = this.ownerId();
       const t = now();
@@ -1066,8 +1073,7 @@ export class Repo {
         actorKind: 'human',
         subjectType: 'job',
       });
-    });
-    return this.getJob(id);
+    }
   }
 
   updateJob(jobId: string, input: T.UpdateJobInput): T.JobDetail {
@@ -1088,6 +1094,224 @@ export class Repo {
       this.recordEvent(events, { type: 'job.updated', subjectId: jobId, payload: { fields: fields.map(([c]) => c) }, subjectType: 'job' });
     });
     return this.getJob(jobId);
+  }
+
+  // ---------------------------------------------------------------- intake (WP2)
+
+  getIntake(id: string): T.IntakeRequest {
+    const row = this.one('SELECT * FROM intake_requests WHERE id = ?', id);
+    if (!row) throw new NotFoundError(`intake ${id} not found`);
+    return toIntake(row);
+  }
+
+  listIntakes(filter: { jobId?: string; limit?: number } = {}): T.IntakeRequest[] {
+    const limit = Math.min(positiveInt(filter.limit, 'limit', 200) || 200, 1000);
+    return filter.jobId
+      ? this.all(
+          'SELECT * FROM intake_requests WHERE job_id = ? OR duplicate_of_job_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
+          filter.jobId,
+          filter.jobId,
+          limit
+        ).map(toIntake)
+      : this.all('SELECT * FROM intake_requests ORDER BY created_at DESC, rowid DESC LIMIT ?', limit).map(toIntake);
+  }
+
+  /** The project an intake resolves to: explicit project, else the room's project, else none. */
+  resolveIntakeProject(projectId: string | null | undefined, roomId: string | null | undefined): string | null {
+    if (projectId) {
+      if (!this.one('SELECT id FROM projects WHERE id = ?', projectId)) throw new NotFoundError(`project ${projectId} not found`);
+      return projectId;
+    }
+    if (roomId) {
+      const room = this.one('SELECT project_id FROM rooms WHERE id = ?', roomId);
+      if (!room) throw new NotFoundError(`room ${roomId} not found`);
+      return str(room.project_id);
+    }
+    return null;
+  }
+
+  /** Open (not done/cancelled) jobs a new request could duplicate: same project; with no project, same room. */
+  listOpenJobsForDedupe(projectId: string | null, roomId: string | null): { id: string; number: number; title: string; brief: string }[] {
+    const rows = projectId
+      ? this.all("SELECT id, number, title, brief FROM jobs WHERE project_id = ? AND stage NOT IN ('done','cancelled') ORDER BY number", projectId)
+      : this.all(
+          "SELECT id, number, title, brief FROM jobs WHERE project_id IS NULL AND room_id = ? AND stage NOT IN ('done','cancelled') ORDER BY number",
+          roomId ?? ''
+        );
+    return rows.map((r) => ({ id: String(r.id), number: num(r.number), title: String(r.title), brief: String(r.brief ?? '') }));
+  }
+
+  /**
+   * Persists one intake. With `duplicateOf` no job is created and the intake links to the existing job.
+   * Otherwise the job, intake row, `job.created`, `intake.received` and `job.triaged` commit in one transaction.
+   */
+  recordIntake(input: {
+    text: string;
+    source: T.IntakeSource;
+    sourceRef: string | null;
+    projectId: string | null;
+    roomId: string | null;
+    requestedBy: string;
+    title: string;
+    classification: Record<string, unknown> & {
+      workflow: string;
+      urgency: string;
+      impact: string;
+      risk: string;
+      reason: string;
+      by: string;
+      override: boolean;
+    };
+    duplicateOf: { jobId: string; reason: string } | null;
+  }): T.IntakeResult {
+    const intakeId = newId('intake');
+    const requestedBy = required(input.requestedBy, 'requestedBy');
+    let jobId = '';
+    this.write((events) => {
+      const t = now();
+      const c = input.classification;
+      const insertIntake = `INSERT INTO intake_requests
+        (id, raw_text, source, source_ref, project_id, requested_by, created_at, job_id, duplicate_of_job_id, dedupe_reason, classification)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      if (input.duplicateOf) {
+        jobId = input.duplicateOf.jobId;
+        this.db
+          .prepare(insertIntake)
+          .run(intakeId, input.text, input.source, input.sourceRef, input.projectId, requestedBy, t, null, jobId, input.duplicateOf.reason, jsonText(c));
+      } else {
+        // Room: explicit, else a room of the project, else the shared "intake" room.
+        let roomId = input.roomId;
+        if (!roomId && input.projectId) {
+          roomId = str(this.one('SELECT id FROM rooms WHERE project_id = ? AND archived = 0 ORDER BY created_at, rowid LIMIT 1', input.projectId)?.id);
+        }
+        if (!roomId) {
+          roomId = str(this.one("SELECT id FROM rooms WHERE name = 'intake'")?.id);
+          if (!roomId) {
+            roomId = newId('room');
+            this.db.prepare("INSERT INTO rooms (id, name, repo_path, created_at, kind) VALUES (?, 'intake', NULL, ?, 'adhoc')").run(roomId, t);
+            this.recordEvent(events, { type: 'room.created', subjectId: roomId, payload: { name: 'intake' }, subjectType: 'room' });
+          }
+        }
+        jobId = newId('job');
+        this.insertJob(events, jobId, {
+          roomId,
+          title: input.title,
+          brief: input.text,
+          createdBy: requestedBy,
+          projectId: input.projectId ?? undefined,
+          risk: c.risk as T.Risk,
+          priority: c.urgency === 'critical' ? 'urgent' : c.urgency === 'high' ? 'high' : c.urgency === 'low' ? 'low' : 'normal',
+        });
+        this.db
+          .prepare(insertIntake)
+          .run(intakeId, input.text, input.source, input.sourceRef, input.projectId, requestedBy, t, jobId, null, null, jsonText(c));
+        this.db
+          .prepare('UPDATE jobs SET workflow = ?, triage_reason = ?, urgency = ?, impact = ?, intake_id = ? WHERE id = ?')
+          .run(c.workflow, c.reason, c.urgency, c.impact, intakeId, jobId);
+      }
+      this.recordEvent(events, {
+        type: 'intake.received',
+        subjectId: intakeId,
+        subjectType: 'intake',
+        actorId: requestedBy,
+        payload: {
+          intakeId,
+          source: input.source,
+          sourceRef: input.sourceRef,
+          projectId: input.projectId,
+          jobId,
+          duplicate: !!input.duplicateOf,
+          dedupeReason: input.duplicateOf?.reason ?? null,
+        },
+      });
+      if (!input.duplicateOf) {
+        this.recordEvent(events, {
+          type: 'job.triaged',
+          subjectId: jobId,
+          subjectType: 'job',
+          actorId: c.override ? c.by : null,
+          actorKind: c.override ? 'agent' : 'system',
+          payload: { intakeId, workflow: c.workflow, urgency: c.urgency, impact: c.impact, risk: c.risk, reason: c.reason, by: c.by, override: c.override },
+        });
+      }
+    });
+    return { intake: this.getIntake(intakeId), job: this.getJob(jobId), duplicate: !!input.duplicateOf };
+  }
+
+  /** Records an Orchestrator override of a job's triage (workflow and reason), with a `job.triaged` event. */
+  overrideTriage(jobId: string, input: { workflow: string; reason: string; by: string }): T.JobDetail {
+    const job = this.getJob(jobId);
+    const workflow = oneOf(input.workflow, ['quick', 'feature', 'strategic', 'incident'] as const, 'workflow');
+    const reason = required(input.reason, 'reason');
+    const by = required(input.by, 'by');
+    const full = `override by ${by}: ${reason} (was ${job.workflow ?? 'untriaged'}${job.triageReason ? `: ${job.triageReason}` : ''})`;
+    this.write((events) => {
+      this.db.prepare('UPDATE jobs SET workflow = ?, triage_reason = ?, updated_at = ? WHERE id = ?').run(workflow, full, now(), jobId);
+      this.recordEvent(events, {
+        type: 'job.triaged',
+        subjectId: jobId,
+        subjectType: 'job',
+        actorId: by,
+        actorKind: 'agent',
+        payload: { intakeId: job.intakeId ?? null, workflow, reason: full, by, override: true, previousWorkflow: job.workflow ?? null },
+      });
+    });
+    return this.getJob(jobId);
+  }
+
+  // ---------------------------------------------------------------- departments (K5)
+
+  listDepartments(): T.Department[] {
+    return this.all(
+      `SELECT d.*, (SELECT COUNT(*) FROM identities i WHERE i.department_id = d.id) AS member_count FROM departments d ORDER BY d.name`
+    ).map((r) => ({
+      id: String(r.id),
+      name: String(r.name),
+      leadIdentityId: str(r.lead_identity_id),
+      createdAt: String(r.created_at),
+      memberCount: num(r.member_count),
+    }));
+  }
+
+  /** Sets department and seniority for identities that exist; idempotent. Also records the first lead per department. */
+  applyDepartmentMapping(mapping: Record<string, T.DepartmentMappingEntry>): T.DepartmentMappingResult {
+    const result: T.DepartmentMappingResult = { changed: [], unchanged: [], missing: [], leads: [] };
+    const departments = new Set(this.all('SELECT id FROM departments').map((r) => String(r.id)));
+    for (const entry of Object.values(mapping)) {
+      if (!departments.has(entry.department)) throw new InputError(`unknown department ${entry.department}`);
+      if (entry.seniority) oneOf(entry.seniority, ['exec', 'lead', 'senior', 'member'] as const, 'seniority');
+    }
+    this.write((events) => {
+      for (const [rawId, entry] of Object.entries(mapping)) {
+        const id = rawId.toLowerCase();
+        const row = this.one('SELECT id, department_id, seniority FROM identities WHERE id = ?', id);
+        if (!row) {
+          result.missing.push(id);
+          continue;
+        }
+        const seniority = entry.seniority ?? 'member';
+        const was = { department: str(row.department_id), seniority: String(row.seniority ?? 'member') };
+        if (was.department === entry.department && was.seniority === seniority) {
+          result.unchanged.push(id);
+        } else {
+          this.db.prepare('UPDATE identities SET department_id = ?, seniority = ? WHERE id = ?').run(entry.department, seniority, id);
+          this.recordEvent(events, {
+            type: 'identity.updated',
+            subjectId: id,
+            subjectType: 'identity',
+            payload: { departmentId: entry.department, seniority },
+          });
+          result.changed.push({ id, department: entry.department, seniority, was });
+        }
+        if (seniority === 'lead') {
+          const res = this.db
+            .prepare('UPDATE departments SET lead_identity_id = ? WHERE id = ? AND lead_identity_id IS NULL')
+            .run(id, entry.department);
+          if (Number(res.changes) > 0) result.leads.push({ department: entry.department, lead: id });
+        }
+      }
+    });
+    return result;
   }
 
   transitionJob(jobId: string, input: T.TransitionJobInput): T.JobDetail {
@@ -4163,6 +4387,11 @@ const toIdentity = (r: Row): T.Identity => ({
   rateLimitResetAt: str(r.rate_limit_reset_at),
   rateLimitReason: str(r.rate_limit_reason),
   lastWokenAt: str(r.last_woken_at),
+  departmentId: str(r.department_id),
+  seniority: (str(r.seniority) ?? 'member') as NonNullable<T.Identity['seniority']>,
+  skills: parseJson<string[]>(r.skills, []),
+  providers: parseJson<string[]>(r.providers, []),
+  permissions: parseJson<string[]>(r.permissions, []),
 });
 
 const toTeam = (r: Row): T.Team => ({
@@ -4222,6 +4451,7 @@ const toRoom = (r: Row): T.Room => ({
   teamId: str(r.team_id),
   kind: (str(r.kind) ?? 'adhoc') as T.Room['kind'],
   archived: bool(r.archived),
+  intakeEnabled: r.intake_enabled === 1,
 });
 
 const toRoomMember = (r: Row): T.RoomMember => ({
@@ -4263,6 +4493,27 @@ const toJobSummary = (r: Row): T.JobSummary => ({
   kind: (str(r.kind) ?? 'code') as T.JobKind,
   shipStatus: (str(r.ship_status) ?? 'none') as T.ShipStatus,
   shipPayload: parseJson<Record<string, unknown>>(r.ship_payload, {}),
+  workflow: (str(r.workflow) as T.JobSummary['workflow']) ?? null,
+  triageReason: str(r.triage_reason),
+  urgency: str(r.urgency),
+  impact: str(r.impact),
+  intakeId: str(r.intake_id),
+  okrKrId: str(r.okr_kr_id),
+  milestoneId: str(r.milestone_id),
+});
+
+const toIntake = (r: Row): T.IntakeRequest => ({
+  id: String(r.id),
+  rawText: String(r.raw_text),
+  source: String(r.source) as T.IntakeSource,
+  sourceRef: str(r.source_ref),
+  projectId: str(r.project_id),
+  requestedBy: String(r.requested_by),
+  createdAt: String(r.created_at),
+  jobId: str(r.job_id),
+  duplicateOfJobId: str(r.duplicate_of_job_id),
+  dedupeReason: str(r.dedupe_reason),
+  classification: parseJson<Record<string, unknown>>(r.classification, {}),
 });
 
 const toTask = (r: Row): T.Task => ({
