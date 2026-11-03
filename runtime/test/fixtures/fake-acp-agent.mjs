@@ -78,6 +78,21 @@ async function handlePrompt(message) {
   currentPrompt = { id: message.id, cancelled: false };
   agentText('working');
   try {
+    // Dispatcher scenarios: `myaos-slow-ms: N` holds the turn open, `myaos-task-file: <name> <word>`
+    // writes <word> into <name> in the working folder (the task worktree).
+    const slowMs = promptText.match(/myaos-slow-ms: (\d+)/);
+    const taskFile = promptText.match(/myaos-task-file: (\S+) ([^\s"]+)/);
+    if (slowMs || taskFile) {
+      if (slowMs) await sleep(Number(slowMs[1]));
+      if (taskFile) {
+        const result = await request('fs/write_text_file', { sessionId, path: join(cwd, taskFile[1]), content: `${taskFile[2]}\n` });
+        agentText(result.error ? `write failed: ${result.error.message}` : `wrote ${taskFile[1]}`);
+      } else {
+        agentText('slow task done');
+      }
+      respond(message.id, { stopReason: 'end_turn' });
+      return;
+    }
     if (/use myaos tools/i.test(promptText)) {
       // Behave like an MCP client: list the runtime's tools, then report through them.
       const server = mcpServers.find((m) => m.type === 'http' && m.name === 'myaos');

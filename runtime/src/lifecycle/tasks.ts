@@ -13,16 +13,18 @@ export const TASK_STATES: readonly T.TaskStatus[] = [
  * Legal moves. K3's chain plus: any non-terminal state may go to blocked or failed;
  * blocked may resume; failed leaves only through retry or reassignment; a task that
  * fails verification returns to its assignee (needs_review, verified and, for tasks
- * that were auto-completed, done may go back to assigned with a reason).
+ * that were auto-completed, done may go back to assigned with a reason). A task whose
+ * branch cannot be merged into the job branch (K8) goes from needs_review, verified or
+ * done to needs_human.
  */
 export const TASK_TRANSITIONS: Readonly<Record<T.TaskStatus, readonly T.TaskStatus[]>> = {
   pending: ['assigned', 'blocked', 'failed'],
   assigned: ['acknowledged', 'blocked', 'failed'],
   acknowledged: ['running', 'blocked', 'failed'],
   running: ['needs_review', 'done', 'blocked', 'failed'],
-  needs_review: ['verified', 'assigned', 'blocked', 'failed'],
-  verified: ['done', 'assigned', 'blocked', 'failed'],
-  done: ['assigned'],
+  needs_review: ['verified', 'assigned', 'blocked', 'failed', 'needs_human'],
+  verified: ['done', 'assigned', 'blocked', 'failed', 'needs_human'],
+  done: ['assigned', 'needs_human'],
   blocked: ['pending', 'assigned', 'acknowledged', 'running', 'failed'],
   failed: ['retrying', 'reassignment_required'],
   retrying: ['assigned', 'blocked', 'failed'],

@@ -155,7 +155,7 @@ These tables are one ledger, so time and tokens reconcile per agent, task, job a
 - No external AI service processes confidential project data unless that service is on the project's approved list.
 
 ### K8: Worktree policy *(WP4)*
-- Each task gets its own worktree and branch, `myaos/job-<n>/task-<m>`, created from the job's integration branch `myaos/job-<n>` (C2).
+- Each task gets its own worktree and branch, `myaos/job-<n>-task-<id6>`, created from the job's integration branch `myaos/job-<n>` (C2). (Amended 2026-11-03: `myaos/job-<n>/task-<m>` cannot coexist with the ref `myaos/job-<n>` in git.)
 - The runtime merges task branches into the job branch after verification passes.
 - Merging to the base branch happens only through ship plus approval.
 - A conflict creates a `needs_human` item or a conflict-resolution task. Agents never merge to protected branches.

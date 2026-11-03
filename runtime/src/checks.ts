@@ -39,6 +39,24 @@ export interface VerificationOutcome {
   error: string | null;
 }
 
+export interface IntegrationOutcome {
+  status: 'merged' | 'already_integrated' | 'conflict' | 'skipped';
+  taskId: string;
+  branch: string | null;
+  jobBranch: string;
+  commitSha?: string | null;
+  conflicts?: string[];
+  reason?: string;
+}
+
+export function taskShortId(taskId: string): string {
+  return `task-${taskId.replace(/^task[_-]?/, '').slice(-6)}`;
+}
+
+export function taskBranchName(jobNumber: number, taskId: string): string {
+  return `myaos/job-${jobNumber}-${taskShortId(taskId)}`;
+}
+
 export class Checker {
   private readonly repo: Repo;
   private readonly workspaceRoots: string[];
@@ -60,7 +78,7 @@ export class Checker {
     if (task.jobId !== job.id) throw new InputError('This task belongs to a different job');
     const command = task.checkCommand?.trim();
     if (!command) throw new ConflictError('This task has no check command to run');
-    const worktree = await this.worktreeForJob(job);
+    const worktree = await this.workDirFor(job, task.id);
     const result = await runShell(command, worktree.path, this.timeoutMs);
     const evidence = this.recordRun(job.id, task, command, result, worktree.path);
     return { taskId: task.id, command, worktree: worktree.path, result, evidence };
@@ -71,9 +89,9 @@ export class Checker {
    * checkout of exactly what the builder produced. Evidence is Observed: the
    * runtime ran git and kept the commit SHA and patch artifact.
    */
-  async commitWorktree(jobId: string, message = 'session changes'): Promise<{ committed: boolean; commitSha: string; evidence: T.Evidence | null }> {
+  async commitWorktree(jobId: string, message = 'session changes', taskId?: string | null): Promise<{ committed: boolean; commitSha: string; evidence: T.Evidence | null }> {
     const job = this.repo.getJob(jobId);
-    const worktree = await this.worktreeForJob(job);
+    const worktree = await this.workDirFor(job, taskId);
     const status = await runShell('git status --porcelain=v1', worktree.path, 30_000);
     const changed = status.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
     const before = workspaces.workspaceState(worktree.path);
@@ -97,6 +115,7 @@ export class Checker {
     this.repo.addArtifact(statArtifact);
     const evidence = this.repo.appendEvidence({
       jobId: job.id,
+      taskId: taskId ?? null,
       kind: 'diff',
       class: 'OBSERVED',
       summary: `Committed ${changed.length} file${changed.length === 1 ? '' : 's'} at ${commitSha.slice(0, 12)}`,
@@ -119,9 +138,9 @@ export class Checker {
     return { committed: true, commitSha, evidence };
   }
 
-  async snapshot(jobId: string, actorId?: string): Promise<T.Evidence> {
+  async snapshot(jobId: string, actorId?: string, taskId?: string | null): Promise<T.Evidence> {
     const job = this.repo.getJob(jobId);
-    const worktree = await this.worktreeForJob(job);
+    const worktree = await this.workDirFor(job, taskId);
     const status = await runShell('git status --porcelain=v1', worktree.path, 30_000);
     const diff = await runShell('git diff HEAD --no-color --no-ext-diff', worktree.path, 60_000);
     const changed = status.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -229,9 +248,13 @@ export class Checker {
         results.push({ taskId: task.id, ok: false, exitCode: null, evidenceId: null, error: 'No check command' });
         continue;
       }
+      // K8: a task's work lives on its own branch until it is integrated, so verify that head.
+      const taskWt = this.repo.findTaskWorktree(task.id);
+      const taskHead = taskWt && fs.existsSync(path.join(taskWt.path, '.git')) ? workspaces.workspaceState(taskWt.path).headSha : null;
+      const taskBase = taskHead ?? base;
       const cleanPath = path.join(this.worktreeRoot, `verify-${job.number}-${Date.now()}-${task.id.slice(-4)}`);
       try {
-        workspaces.createDetachedWorktree(worktree!.repoPath, cleanPath, base);
+        workspaces.createDetachedWorktree(worktree!.repoPath, cleanPath, taskBase);
       } catch (e) {
         results.push({ taskId: task.id, ok: false, exitCode: null, evidenceId: null, error: (e as Error).message });
         continue;
@@ -243,7 +266,7 @@ export class Checker {
         if (result.exitCode === 0) {
           const verified = this.repo.verifyEvidence(observed.id, {
             verifiedBy: actorId,
-            note: `The runtime re-ran the check in a clean worktree at ${base}`,
+            note: `The runtime re-ran the check in a clean worktree at ${taskBase}`,
             command,
             exitCode: result.exitCode,
             commitSha: state.headSha,
@@ -263,7 +286,7 @@ export class Checker {
         workspaces.removeWorktree(worktree!.repoPath, cleanPath);
       }
     }
-    this.applyVerificationToTasks(job.id, actorId, results);
+    await this.applyVerificationToTasks(job.id, actorId, results);
     return { ok: results.every((r) => r.ok), base, results };
   }
 
@@ -274,7 +297,7 @@ export class Checker {
    * verify stage goes back to build. Results that never ran a check (the verifier is
    * the assignee, no command, no worktree) change nothing.
    */
-  private applyVerificationToTasks(jobId: string, actorId: string, results: VerificationOutcome[]): void {
+  private async applyVerificationToTasks(jobId: string, actorId: string, results: VerificationOutcome[]): Promise<void> {
     const failures: { taskId: string; reason: string }[] = [];
     for (const r of results) {
       let task: T.Task;
@@ -290,6 +313,7 @@ export class Checker {
           } catch (e) {
             if (!(e instanceof ConflictError)) throw e;
           }
+          await this.integrateTaskSafely(jobId, task.id);
         }
         continue;
       }
@@ -444,6 +468,138 @@ export class Checker {
     this.repo.recordWorktree({ jobId: job.id, path: worktreePath, branch: `myaos/job-${job.number}`, baseSha: created.headSha ?? base });
     this.repo.setJobBaseSha(job.id, created.headSha ?? base);
     return { path: worktreePath, baseSha: created.headSha ?? base, repoPath };
+  }
+
+  /** The task's own worktree when one was created for it, otherwise the job worktree. */
+  private async workDirFor(job: T.JobDetail, taskId?: string | null): Promise<Worktree> {
+    if (taskId) {
+      const tw = this.repo.findTaskWorktree(taskId);
+      if (tw && fs.existsSync(path.join(tw.path, '.git'))) {
+        return { path: tw.path, baseSha: tw.baseSha ?? 'HEAD', repoPath: this.jobRepoPath(job) };
+      }
+    }
+    return this.worktreeForJob(job);
+  }
+
+  /**
+   * K8: one worktree and branch per task, `myaos/job-<n>-task-<id>`, created from the job's
+   * integration branch `myaos/job-<n>`. (Git cannot hold both `myaos/job-<n>` and
+   * `myaos/job-<n>/task-<m>`: one ref would be a file and a directory, so the separator is `-`.)
+   */
+  async worktreeForTask(job: T.JobDetail, task: T.Task): Promise<Worktree & { branch: string; jobBranch: string }> {
+    const jobWt = await this.worktreeForJob(job); // creates the integration branch from the base when missing
+    const jobBranch = `myaos/job-${job.number}`;
+    const branch = taskBranchName(job.number, task.id);
+    const existing = this.repo.findTaskWorktree(task.id);
+    if (existing && fs.existsSync(path.join(existing.path, '.git'))) {
+      if (existing.state !== 'active') this.repo.setWorktreeState(existing.id, 'active');
+      return { path: existing.path, baseSha: existing.baseSha ?? 'HEAD', repoPath: jobWt.repoPath, branch: existing.branch ?? branch, jobBranch };
+    }
+    const base = workspaces.workspaceState(jobWt.path).headSha ?? jobWt.baseSha;
+    const worktreePath = path.join(this.worktreeRoot, `job-${job.number}-${job.id.slice(-6)}-${taskShortId(task.id)}`);
+    workspaces.ensureWorktree(jobWt.repoPath, worktreePath, branch, base);
+    this.repo.recordWorktree({ jobId: job.id, taskId: task.id, path: worktreePath, branch, baseSha: base });
+    return { path: worktreePath, baseSha: base, repoPath: jobWt.repoPath, branch, jobBranch };
+  }
+
+  private readonly integrationQueue = new Map<string, Promise<unknown>>();
+
+  /**
+   * K8: merges the task branch into the job branch with a merge commit (no fast-forward),
+   * once the task is verified or done. Serialised per job because every merge happens in
+   * the job worktree. A merge that fails is aborted cleanly, the task goes to needs_human
+   * with the conflicting paths in the reason, and both branches stay as they were.
+   */
+  integrateTask(job: T.JobDetail, task: T.Task): Promise<IntegrationOutcome> {
+    const prior = this.integrationQueue.get(job.id) ?? Promise.resolve();
+    const run = prior.catch(() => undefined).then(() => this.integrateTaskNow(job.id, task.id));
+    this.integrationQueue.set(job.id, run);
+    return run;
+  }
+
+  /** integrateTask for hooks: never throws, because completion handling must not fail on a merge. */
+  async integrateTaskSafely(jobId: string, taskId: string): Promise<IntegrationOutcome | null> {
+    try {
+      const job = this.repo.getJob(jobId);
+      const task = this.repo.getTask(taskId);
+      if (task.status !== 'done' && task.status !== 'verified') return null;
+      return await this.integrateTask(job, task);
+    } catch (e) {
+      console.error('[checker] task integration failed:', (e as Error).message);
+      return null;
+    }
+  }
+
+  private async integrateTaskNow(jobId: string, taskId: string): Promise<IntegrationOutcome> {
+    const job = this.repo.getJob(jobId);
+    const task = this.repo.getTask(taskId);
+    const jobBranch = `myaos/job-${job.number}`;
+    const tw = this.repo.findTaskWorktree(task.id);
+    if (!tw || !tw.branch || !fs.existsSync(path.join(tw.path, '.git'))) {
+      return { status: 'skipped', taskId, branch: null, jobBranch, reason: 'the task has no worktree' };
+    }
+    if (task.status !== 'done' && task.status !== 'verified') {
+      return { status: 'skipped', taskId, branch: tw.branch, jobBranch, reason: `the task is ${task.status}` };
+    }
+    const jobWt = await this.worktreeForJob(job);
+    // Whatever the agent left uncommitted is part of the task; the job worktree must be clean to merge.
+    await this.commitWorktree(job.id, `task ${task.title}`.slice(0, 120), task.id);
+    await this.commitDirty(jobWt.path, `myaos job ${job.number}: job worktree changes before integrating ${tw.branch}`);
+
+    const already = await runShell(`git merge-base --is-ancestor ${tw.branch} ${jobBranch}`, jobWt.path, 30_000);
+    if (already.exitCode === 0) {
+      this.repo.setWorktreeState(tw.id, 'integrated');
+      return { status: 'already_integrated', taskId, branch: tw.branch, jobBranch, commitSha: workspaces.workspaceState(jobWt.path).headSha ?? null };
+    }
+    const message = `Merge ${tw.branch}: ${task.title.replace(/['"\\\n]/g, ' ').slice(0, 120)}`;
+    const merge = await runShell(
+      `git -c user.name=MyaOS -c user.email=myaos@localhost merge --no-ff -m '${message}' ${tw.branch}`,
+      jobWt.path,
+      120_000
+    );
+    if (merge.exitCode === 0) {
+      const sha = workspaces.workspaceState(jobWt.path).headSha ?? null;
+      this.repo.setWorktreeState(tw.id, 'integrated');
+      this.repo.appendEvidence({
+        jobId: job.id,
+        taskId: task.id,
+        kind: 'command',
+        class: 'OBSERVED',
+        summary: `Integrated ${tw.branch} into ${jobBranch} at ${(sha ?? '').slice(0, 12)}`,
+        payload: { branch: tw.branch, jobBranch, mergeCommit: sha },
+        command: `git merge --no-ff ${tw.branch}`,
+        exitCode: 0,
+        commitSha: sha,
+        worktree: jobWt.path,
+        recordedBy: 'runtime',
+        recordedByKind: 'system',
+      });
+      return { status: 'merged', taskId, branch: tw.branch, jobBranch, commitSha: sha };
+    }
+    const conflicts = (await runShell('git diff --name-only --diff-filter=U', jobWt.path, 30_000)).stdout
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    await runShell('git merge --abort', jobWt.path, 30_000);
+    const reason = conflicts.length
+      ? `merge conflict integrating ${tw.branch} into ${jobBranch}: ${conflicts.join(', ')}`
+      : `could not merge ${tw.branch} into ${jobBranch}: ${(merge.stderr || merge.stdout).trim().slice(-300)}`;
+    try {
+      this.repo.transitionTask(task.id, 'needs_human', { actorId: 'runtime:integration', actorKind: 'system', reason });
+    } catch (e) {
+      if (!(e instanceof ConflictError)) throw e;
+    }
+    return { status: 'conflict', taskId, branch: tw.branch, jobBranch, conflicts, reason };
+  }
+
+  private async commitDirty(dir: string, message: string): Promise<void> {
+    const status = await runShell('git status --porcelain=v1', dir, 30_000);
+    if (!status.stdout.trim()) return;
+    await runShell(
+      `git add -A && git -c user.name=MyaOS -c user.email=myaos@localhost commit --quiet -m '${message.replace(/'/g, '').slice(0, 240)}'`,
+      dir,
+      120_000
+    );
   }
 
   private jobRepoPath(job: T.JobDetail): string {
