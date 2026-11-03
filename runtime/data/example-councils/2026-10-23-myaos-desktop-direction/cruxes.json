@@ -1,0 +1,27 @@
+{
+  "cruxes": [
+    {
+      "question": "Build the loop first, or sell before building?",
+      "sides": [
+        { "position": "Build the loop on one store, then sell", "seats": ["Bezos", "Buffett", "Wickman", "Elon"] },
+        { "position": "Sell a paid pilot first, build only what buyers ask for", "seats": ["Graham", "Hormozi"] }
+      ]
+    },
+    {
+      "question": "Does verification sell on its own, before the full loop?",
+      "sides": [
+        { "position": "Yes, sell a hand-run proof report now", "seats": ["Graham"] },
+        { "position": "No, the wedge only holds inside the full loop", "seats": ["Bezos", "Buffett", "Wickman", "Elon"] }
+      ]
+    },
+    {
+      "question": "How much cash is really there, and how fast does it burn?",
+      "sides": [
+        { "position": "About 3 months of runway", "seats": ["Bezos", "Graham"] },
+        { "position": "A $40k burn gives $120k to $360k", "seats": ["Buffett"] }
+      ]
+    }
+  ],
+  "unanimous": false,
+  "note": "The room is fighting over whether to build the one-store loop first or to sell a paid pilot first, and how much time the cash allows for either."
+}

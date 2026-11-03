@@ -32,6 +32,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { teamRepo, workspacePath } from '../services/appConfig';
 
 export interface AutopilotTask {
   id: string;
@@ -100,7 +101,7 @@ export const AutomationView: React.FC<AutomationViewProps> = ({
   // Batch Ingestion Modal / State
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [batchName, setBatchName] = useState('Overnight Autonomous Batch');
-  const [batchWorkspace, setBatchWorkspace] = useState('/Users/winstonzulu/Documents/GitHub/DeployFleet');
+  const [batchWorkspace, setBatchWorkspace] = useState(workspacePath('DeployFleet') || teamRepo());
   const [batchAgent, setBatchAgent] = useState('atlas');
   const [batchPromptText, setBatchPromptText] = useState(
     'Refactor error handling to custom Result types\nImplement strict request schema validation\nAuthor regression unit tests for router handlers\nOptimize SQL queries with index hints'

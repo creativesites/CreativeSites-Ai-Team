@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Send, FolderGit2, Users, AlertTriangle, Terminal } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { configuredWorkspaces } from '../services/appConfig';
 
 interface IntentBarProps {
   currentWorkspace: string;
@@ -8,15 +9,8 @@ interface IntentBarProps {
   onMissionDispatched: (task: any) => void;
   onQuickLaunchClaude: () => void;
   onQuickLaunchGemini: () => void;
-  onWakeTeam: () => void;
 }
 
-export const WORKSPACES = [
-  { id: 'CreativeSites-Ai-Team', name: 'CreativeSites AI Team', path: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team' },
-  { id: 'DeployFleet', name: 'DeployFleet Core', path: '/Users/winstonzulu/Documents/GitHub/DeployFleet' },
-  { id: 'DeployFleet-website', name: 'DeployFleet Website', path: '/Users/winstonzulu/Documents/GitHub/DeployFleet-website' },
-  { id: 'DeployFleet-Team', name: 'DeployFleet Team', path: '/Users/winstonzulu/Documents/GitHub/DeployFleet-Team' },
-];
 
 export const IntentBar: React.FC<IntentBarProps> = ({
   currentWorkspace,
@@ -24,7 +18,6 @@ export const IntentBar: React.FC<IntentBarProps> = ({
   onMissionDispatched,
   onQuickLaunchClaude,
   onQuickLaunchGemini,
-  onWakeTeam,
 }) => {
   const [intent, setIntent] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('orchestrator');
@@ -38,14 +31,16 @@ export const IntentBar: React.FC<IntentBarProps> = ({
     try {
       setIsSubmitting(true);
       const assignee = selectedAgent === 'orchestrator' ? null : selectedAgent;
-      const currentWs = WORKSPACES.find((w) => w.path === currentWorkspace) || WORKSPACES[0];
+      const workspaces = configuredWorkspaces();
+      const currentWs = workspaces.find((w) => w.path === currentWorkspace);
+      const wsName = currentWs?.name ?? (currentWorkspace || 'an unconfigured workspace');
 
       const newTask = await invoke<any>('myaos_create_task', {
         title: intent.trim(),
-        description: `Executive intent dispatched via MyaDesktop Cockpit in ${currentWs.name}`,
+        description: `Executive intent dispatched via MyaDesktop Cockpit in ${wsName}`,
         assigneeId: assignee,
         priority,
-        repo: currentWs.id,
+        repo: currentWs?.id ?? null,
       });
 
       setIntent('');
@@ -83,7 +78,7 @@ export const IntentBar: React.FC<IntentBarProps> = ({
             onChange={(e) => onWorkspaceChange(e.target.value)}
             className="bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer shadow-sm hover:bg-slate-100 transition"
           >
-            {WORKSPACES.map((w) => (
+            {configuredWorkspaces().map((w) => (
               <option key={w.path} value={w.path}>
                 {w.name}
               </option>
@@ -176,13 +171,6 @@ export const IntentBar: React.FC<IntentBarProps> = ({
               className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-[11px] font-bold transition cursor-pointer border border-indigo-200/70"
             >
               ♊ Gemini CLI
-            </button>
-            <button
-              type="button"
-              onClick={onWakeTeam}
-              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-[11px] font-bold transition cursor-pointer border border-emerald-200/70"
-            >
-              ☀️ Wake Team
             </button>
           </div>
         </div>

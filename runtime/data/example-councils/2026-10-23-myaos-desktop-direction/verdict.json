@@ -1,0 +1,43 @@
+{
+  "label": "GO WITH CONDITIONS",
+  "call": "Take option A, cut to one job with one agent and one verifier, and make the runtime the only task store. Cap total cash out at $60k from this week. Build past the store spike only after one named team pays $1,500 in cash and three non-friend developers have paid for a verification report, both by week 6.",
+  "recommended": "A",
+  "why": [
+    { "point": "The task store is the one-way door, so one runtime store with a named owner is signed this week.", "seat": "Bezos", "framework": "Type 1 and Type 2 decisions" },
+    { "point": "Cash is the clock. A $1,500 pilot cannot fund a build at a $40k monthly burn, so pilots are a gate, not a funding source.", "seat": "Buffett", "framework": "Birds in the bush" },
+    { "point": "Delete before adding: fake progress, hard-coded coworkers, and invented numbers go first.", "seat": "Elon", "framework": "The algorithm" }
+  ],
+  "minority": { "seat": "Hormozi", "quote": "Five paid pilots by week six or it is B, and the cap counts every dollar you spend, not just build.", "would_have_to_be_true": "One paying team is an anecdote, so the company needs volume before spending past the cap." },
+  "next_steps": [
+    { "when": "This week", "action": "Sign the store decision, name the Integrator, write down burn and cash, delete the fake data, start ten developer conversations." },
+    { "when": "By 6 November 2026", "action": "Store spike done, with one runtime change shipped by someone other than the founder." },
+    { "when": "By 4 December 2026 (week 6)", "action": "One team paid $1,500 cash and three report payers. Either missing means B." },
+    { "when": "By 18 December 2026 (week 8)", "action": "One real repo runs the loop end to end. Continue, or drop to B." }
+  ],
+  "kill_criteria": "No paid team at week 6, a store spike past two weeks, or burn above $40k a month with under four months of runway: drop to B.",
+  "conditions": [
+    "Store decision signed this week: the runtime owns task data",
+    "Real monthly burn and cash written down this week; burn above $40k a month with under four months of runway means B",
+    "A named Integrator who is not the founder owns the week-8 Scorecard and runs GWC before the store spike starts",
+    "Store spike finishes in under two weeks, and one runtime change ships by someone other than the founder",
+    "Week 6: one named team pays $1,500 in cash, and three non-friend developers have paid for a verification report",
+    "Scale gate: five named teams paid in cash before spending past the $60k cap",
+    "Week 8: one real repo runs the loop end to end with captured diff and test evidence; week-8 cash at least $40k"
+  ],
+  "fights": [
+    { "crux": "Build the loop first, or sell before building?", "story": "Bezos, Buffett, Wickman, and Elon wanted the one-store loop built first, with a paid pilot in parallel. Graham and Hormozi wanted money before build spend. They met on a week-6 gate of one paid team plus a $60k cap. Graham moved from 3 to 5 on A, and Hormozi from 7 to 6." },
+    { "crux": "Does verification sell on its own?", "story": "Graham said yes. The other five said the wedge needs the loop. Nobody moved fully. Graham's test runs in parallel, and build spend past the spike waits for three report payers at week 6." },
+    { "crux": "How much cash is there?", "story": "Unknown. Buffett's $40k a month is a placeholder. Every seat asked the founder for the real burn this week." }
+  ],
+  "amendments": [
+    { "seat": "Bezos", "amendment": "One paid team at week 6 is the build gate; five paid teams is a week-8 scale gate.", "adopted": true, "reason": "Matches the majority on the week-6 gate. Volume kept as the gate for spending past the cap." },
+    { "seat": "Elon", "amendment": "One paid team at week 6 is the gate, five is the price of spending past $60k, and week-8 cash goes on the Scorecard from week one.", "adopted": true, "reason": "Same reasoning. The weekly cash number answers Buffett's burn check." },
+    { "seat": "Buffett", "amendment": "Condition 4 is $1,500 in cash, not a refund-backed deposit, before the migration closes.", "adopted": true, "reason": "A deposit is a promise. The gate needs cash in hand." },
+    { "seat": "Wickman", "amendment": "A named Integrator who is not the founder, and one runtime change shipped by someone other than the founder within two weeks.", "adopted": true, "reason": "No seat argued the founder can be builder, seller, and auditor. The two-week test checks the structure." },
+    { "seat": "Graham", "amendment": "Three non-friend developers pay for the report, counted at week 6, as a gate before build spend past the spike.", "adopted": true, "reason": "Counted at week 6 as asked. The 22 November date is dropped." },
+    { "seat": "Hormozi", "amendment": "Five named teams at week 6, and the $60k cap all-in cash, burn included.", "adopted": false, "reason": "Five teams adopted as the scale gate for spending past the cap. One team kept as the week-6 build gate. All-in cash adopted. Hormozi's endorsement of this version is not confirmed." }
+  ],
+  "cheapest_test": "Run one real Claude Code task by hand, capture the diff and test exit status, and send the report to ten developers this week for a card number.",
+  "revisit": "At week 8, with the real repo result, week-8 cash, and the count of paying teams.",
+  "override_note": "Ruin cap: Hormozi rated A RUIN RISK: likely in Round 2. He voted endorse with amendment in Round 3, and his cap-and-gate mitigation is in the resolution. The Chair counts the cap as met on that basis. If Hormozi does not confirm it, the verdict is RESHAPE."
+}

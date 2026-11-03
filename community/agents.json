@@ -660,6 +660,386 @@
       "status": "WORKING",
       "current_task": "Thread 044: Design Studio and app polish",
       "evidence_source": "Self-registered 2026-11-03 at Winston direction (Claude Code session, branch claude/desktop-app-ai-team-direction-ab19d3)."
+    },
+    {
+      "id": "orion",
+      "name": "Orion",
+      "symbol": "\ud83c\udff9",
+      "status": "LIVE",
+      "primary_domain": "Full-Stack Systems Architecture, Odoo & Rostering Engines",
+      "org_roles": [
+        "Systems Architect",
+        "Backend & Rostering Engine Lead",
+        "Full-Stack Systems Engineer"
+      ],
+      "capabilities": [
+        "odoo19",
+        "python",
+        "owl",
+        "postgresql",
+        "rostering-algorithms",
+        "systems-architecture",
+        "verification"
+      ],
+      "repositories": [
+        "DogFrce Security Services Custom Odoo Modules",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [
+        "custom_addons/",
+        "docs/planning/"
+      ],
+      "current_task": null,
+      "last_seen": "2026-10-20T08:12:09.180Z"
+    },
+    {
+      "id": "sirius",
+      "name": "Sirius",
+      "symbol": "\ud83d\udc15",
+      "status": "LIVE",
+      "primary_domain": "Odoo Operations, UI Components & Mobile Client Integration",
+      "org_roles": [
+        "Operations Engineer",
+        "Frontend & Mobile Specialist",
+        "Rapid Deployment Lead"
+      ],
+      "capabilities": [
+        "odoo19",
+        "python",
+        "owl",
+        "react-native",
+        "expo",
+        "mobile-api"
+      ],
+      "repositories": [
+        "DogFrce Security Services Custom Odoo Modules",
+        "mobile/"
+      ],
+      "owned_paths": [
+        "custom_addons/",
+        "mobile/"
+      ],
+      "current_task": null,
+      "last_seen": "2026-10-20T08:12:15.440Z"
+    },
+    {
+      "id": "synapse",
+      "name": "Synapse",
+      "symbol": "\u26a1",
+      "status": "AVAILABLE",
+      "primary_domain": "MeetingMind Squad Architecture & Multi-Agent Orchestration",
+      "org_roles": [
+        "Squad Architect",
+        "Permanent MeetingMind Orchestrator",
+        "Task Router",
+        "Release Coordinator"
+      ],
+      "capabilities": [
+        "orchestration",
+        "multi-agent-coordination",
+        "task-routing",
+        "workflow-design",
+        "consensus-management",
+        "build-release-coordination",
+        "quality-gating"
+      ],
+      "repositories": [
+        "MeetingMind",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [
+        "projects/meetingmind/"
+      ],
+      "current_task": null,
+      "last_seen": "2026-10-21T12:36:10.795Z"
+    },
+    {
+      "id": "mira",
+      "name": "Mira",
+      "symbol": "\u273a",
+      "status": "UNKNOWN",
+      "primary_domain": "MeetingMind product and engineering planning",
+      "org_roles": [
+        "Independent MeetingMind Planner",
+        "Product and Engineering Challenge Reviewer"
+      ],
+      "capabilities": [
+        "product-planning",
+        "engineering-planning",
+        "requirements-analysis",
+        "acceptance-criteria-review"
+      ],
+      "repositories": [
+        "MeetingMind",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [],
+      "current_task": null,
+      "last_seen": "2026-10-21T12:49:53.853Z",
+      "confidence_provenance": "DECLARED",
+      "evidence_source": "Self-registration at Winston\u2019s direction on 2026-10-21; advisory scope, no MyaOS runtime registered."
+    },
+    {
+      "id": "themis",
+      "name": "Themis",
+      "symbol": "\u2696\ufe0f",
+      "status": "AVAILABLE",
+      "primary_domain": "MeetingMind Product Planning, UX & Privacy Guardrails",
+      "org_roles": [
+        "Product Planner",
+        "UX Architect",
+        "Consensus Council Member"
+      ],
+      "capabilities": [
+        "product-planning",
+        "ux-design",
+        "accessibility",
+        "privacy-governance"
+      ],
+      "repositories": [
+        "MeetingMind",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [],
+      "current_task": null,
+      "last_seen": "2026-10-21T16:33:08.000Z",
+      "confidence_provenance": "DECLARED",
+      "evidence_source": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Product Planner brief); no MyaOS runtime registered."
+    },
+    {
+      "id": "daedalus",
+      "name": "Daedalus",
+      "symbol": "\u2699\ufe0f",
+      "status": "AVAILABLE",
+      "primary_domain": "MeetingMind Systems Architecture, Concurrency & Technical Planning",
+      "org_roles": [
+        "Engineering Planner",
+        "Technical Risk Guardian",
+        "Consensus Council Member"
+      ],
+      "capabilities": [
+        "technical-planning",
+        "room-migrations",
+        "android-architecture",
+        "lifecycle-resilience"
+      ],
+      "repositories": [
+        "MeetingMind",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [],
+      "current_task": null,
+      "last_seen": "2026-10-21T16:36:30.000Z",
+      "confidence_provenance": "DECLARED",
+      "evidence_source": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Engineering Planner brief); no MyaOS runtime registered."
+    },
+    {
+      "id": "forge",
+      "name": "Forge",
+      "symbol": "\ud83d\udee0\ufe0f",
+      "status": "AVAILABLE",
+      "primary_domain": "Android Kotlin & Jetpack Compose Engineering",
+      "org_roles": [
+        "Android Implementer",
+        "Bugfix Specialist"
+      ],
+      "capabilities": [
+        "kotlin",
+        "jetpack-compose",
+        "ui-engineering",
+        "unit-testing"
+      ],
+      "repositories": [
+        "MeetingMind"
+      ],
+      "owned_paths": [],
+      "current_task": null,
+      "last_seen": "2026-10-21T16:36:49.000Z",
+      "confidence_provenance": "DECLARED",
+      "evidence_source": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Android Engineer brief); no MyaOS runtime registered."
+    },
+    {
+      "id": "sentinel",
+      "name": "Sentinel",
+      "symbol": "\ud83d\udee1\ufe0f",
+      "status": "AVAILABLE",
+      "primary_domain": "Independent Quality Assurance, Regression Verification & Reliability",
+      "org_roles": [
+        "Lead Verifier",
+        "Reliability Guardian",
+        "Quality Gatekeeper"
+      ],
+      "capabilities": [
+        "qa-verification",
+        "regression-testing",
+        "zero-mock-audit",
+        "test-analysis"
+      ],
+      "repositories": [
+        "MeetingMind"
+      ],
+      "owned_paths": [],
+      "current_task": null,
+      "last_seen": "2026-10-21T16:38:00.000Z",
+      "confidence_provenance": "DECLARED",
+      "evidence_source": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind QA & Reliability Engineer brief); no MyaOS runtime registered."
+    },
+    {
+      "id": "gantry",
+      "name": "Gantry",
+      "symbol": "\ud83d\udce6",
+      "status": "AVAILABLE",
+      "primary_domain": "Android Build Pipelines, Release Packaging & Diagnostic Auditing",
+      "org_roles": [
+        "Build Engineer",
+        "Release Guardian"
+      ],
+      "capabilities": [
+        "gradle-builds",
+        "apk-packaging",
+        "credential-scanning",
+        "release-gating"
+      ],
+      "repositories": [
+        "MeetingMind"
+      ],
+      "owned_paths": [],
+      "current_task": null,
+      "last_seen": "2026-10-21T16:40:54.000Z",
+      "confidence_provenance": "DECLARED",
+      "evidence_source": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Build & Release Engineer brief); no MyaOS runtime registered."
+    },
+    {
+      "id": "ledger",
+      "name": "Ledger",
+      "symbol": "\ud83d\udcdc",
+      "status": "AVAILABLE",
+      "primary_domain": "Issue Intake, Context Preservation & Workflow Routing",
+      "org_roles": [
+        "Triage Lead",
+        "Context Keeper",
+        "Backlog Scribe"
+      ],
+      "capabilities": [
+        "triage",
+        "context-management",
+        "deduplication",
+        "adr-tracking"
+      ],
+      "repositories": [
+        "MeetingMind"
+      ],
+      "owned_paths": [],
+      "current_task": null,
+      "last_seen": "2026-10-21T16:48:25.000Z",
+      "confidence_provenance": "DECLARED",
+      "evidence_source": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Triage & Context Keeper brief); no MyaOS runtime registered."
+    },
+    {
+      "id": "hermes",
+      "name": "Hermes",
+      "symbol": "\ud83e\udebd",
+      "status": "AVAILABLE",
+      "primary_domain": "Cloudflare Workers, Firebase Security Rules, R2 Media Storage & API Gateways",
+      "org_roles": [
+        "Backend Systems Engineer",
+        "API Gateway Guardian",
+        "Cloud Security Guardian"
+      ],
+      "capabilities": [
+        "cloudflare-workers",
+        "wrangler",
+        "typescript",
+        "firestore-rules",
+        "r2-storage",
+        "api-gateways"
+      ],
+      "repositories": [
+        "MeetingMind",
+        "CreativeSites-Ai-Team"
+      ],
+      "owned_paths": [
+        "server/"
+      ],
+      "current_task": null,
+      "last_seen": "2026-10-21T20:07:36.000Z",
+      "confidence_provenance": "DECLARED",
+      "evidence_source": "Self-registration at Winston's direction on 2026-10-21 (MeetingMind Backend Engineer brief); no MyaOS runtime registered."
+    },
+    {
+      "id": "cinder",
+      "name": "Cinder",
+      "symbol": "\ud83d\udd25",
+      "status": "AVAILABLE",
+      "primary_domain": "Circles Cloud Infrastructure, Cloudflare Workers & Firebase Security",
+      "org_roles": [
+        "Circles Backend Specialist",
+        "Cloud Infrastructure Guardian"
+      ],
+      "capabilities": [
+        "cloudflare-workers",
+        "firestore-rules",
+        "r2-storage",
+        "firebase-auth",
+        "backend-testing",
+        "api-contract-design"
+      ],
+      "repositories": [
+        "MeetingMind"
+      ],
+      "owned_paths": [
+        "server/circles-api",
+        "firestore.rules"
+      ],
+      "current_task": null,
+      "last_seen": "2026-10-21T21:21:59.208Z"
+    },
+    {
+      "identity": {
+        "id": "loom",
+        "name": "Loom",
+        "symbol": "\ud83e\udea1",
+        "primary_domain": "Workspaces UI engineer"
+      },
+      "declared_capabilities": [
+        "ui",
+        "react",
+        "typescript"
+      ],
+      "declared_responsibilities": [
+        "Workspaces UI engineer"
+      ],
+      "declared_repository_ownership": [],
+      "runtime_session_identity": "claude",
+      "observed_liveness": "UNKNOWN",
+      "confidence_provenance": "DECLARED",
+      "status": "AVAILABLE",
+      "last_seen": null,
+      "current_task": null
+    },
+    {
+      "identity": {
+        "id": "quill",
+        "name": "Quill",
+        "symbol": "\ud83e\udeb6",
+        "primary_domain": "Dev mode terminal engineer"
+      },
+      "declared_capabilities": [
+        "pty",
+        "terminal",
+        "rust",
+        "typescript"
+      ],
+      "declared_responsibilities": [
+        "Dev mode terminal engineer"
+      ],
+      "declared_repository_ownership": [],
+      "runtime_session_identity": "claude",
+      "observed_liveness": "UNKNOWN",
+      "confidence_provenance": "DECLARED",
+      "status": "AVAILABLE",
+      "last_seen": null,
+      "current_task": null
     }
   ]
 }

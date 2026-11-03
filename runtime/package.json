@@ -1,0 +1,21 @@
+{
+  "name": "@myaos/runtime",
+  "version": "0.1.0",
+  "description": "MyaOS runtime: owns the v2 store, serves the local API the desktop reads, and (from Phase 1) drives agents over ACP",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "import:v1": "node scripts/apply-import.mjs",
+    "smoke": "node scripts/smoke-adapter.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.7.0"
+  }
+}

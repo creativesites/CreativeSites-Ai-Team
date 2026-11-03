@@ -122,6 +122,31 @@ npm run desktop:build
 npm run desktop:dmg
 ```
 
+### Desktop v2 and the runtime (in progress)
+
+> Current workstream: read `community/proposals/DESKTOP_V2_HANDOFF.md` (API map + UI tasks), `DESKTOP_V2_DECISIONS.md` (accepted product decisions) and `ACP_SPIKE_FINDINGS.md` (adapter reality). The runtime foundation, ACP session manager, council engine and team bridge are implemented on `claude/desktop-app-ai-teams-2fa62f`; the app screens still need wiring.
+
+The new app (`apps/desktop/`) and its engine (`runtime/`) are being built per `community/proposals/DESKTOP_V2_BUILD_PLAN.md`. The desktop shows the runtime's records and makes no AI calls of its own.
+
+```bash
+npm run desktop2:dev   # the app; it starts the runtime itself if none is running
+npm run runtime        # the runtime alone (Node 24+, no other dependencies)
+npm run runtime:test
+```
+
+- The runtime keeps its own store at `~/.myaos/runtime.db` (or `$MYAOS_RUNTIME_DB`) and publishes its address and token in `~/.myaos/runtime.json`, readable only by you. `data/myaos.db` keeps serving the current app and the team.
+- `node bin/myaos.js status` reports the runtime as well.
+- During development, `#/preview/<screen>` shows each screen with the design's sample data. The live app never shows sample data.
+- The Design Studio has two entry points: "Design something new" (a feature, page or app, in 1 to 4 directions) and "Bring in existing UI" (an agent recreates the project's current screens so they can be iterated on).
+- Both run as a real agent session. Agent-built designs are written as HTML files to `~/.myaos/designs/<board>/` (under `$MYAOS_HOME` when set), and appear on the canvas as the agent writes them.
+- Approving a design frame records Observed evidence for that exact version.
+
+### Machine config and the database:
+
+- Paths that differ per machine (team repo, project repos per agent, workspace list) live in `~/.myaos/config.json`, or the file named by `$MYAOS_CONFIG`. Copy `myaos.config.example.json` to start. Nothing in the code hard-codes a home directory.
+- The SQLite store `data/myaos.db` is **not in git**: it changes on every run. A fresh clone gets an empty store built from `data/myaos.schema.sql`. Point everything at another file with `$MYAOS_DB_PATH`.
+- Order of precedence everywhere (CLI, desktop, dashboard): environment variable, then config file, then this repository.
+
 ---
 
 ## 🔒 Security & Human Escalation Policy

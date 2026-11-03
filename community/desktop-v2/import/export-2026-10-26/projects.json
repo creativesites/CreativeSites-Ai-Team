@@ -1,0 +1,441 @@
+{
+  "projects": {
+    "dbProjects": [
+      {
+        "humanOwner": "Winston",
+        "id": "proj_chatbot",
+        "name": "Myavana AI Chatbot & Streaming Core",
+        "ownerIdentityIds": [
+          "astra",
+          "atlas"
+        ],
+        "repo": "Myavana-Chatbot",
+        "source": "data/myaos.db#projects",
+        "status": "active",
+        "targetDate": null,
+        "title": "Myavana AI Chatbot & Streaming Core"
+      },
+      {
+        "humanOwner": "Winston",
+        "id": "proj_deployfleet",
+        "name": "DeployFleet Continuous Cloud Orchestration",
+        "ownerIdentityIds": [],
+        "repo": "/Users/winstonzulu/Documents/GitHub/DeployFleet",
+        "source": "data/myaos.db#projects",
+        "status": "active",
+        "targetDate": "2026-11-15",
+        "title": "DeployFleet Continuous Cloud Orchestration"
+      },
+      {
+        "humanOwner": "Winston",
+        "id": "proj_hair_journey",
+        "name": "WordPress Hair Journey Integration",
+        "ownerIdentityIds": [
+          "vela"
+        ],
+        "repo": "myavana-hair-journey-next",
+        "source": "data/myaos.db#projects",
+        "status": "active",
+        "targetDate": null,
+        "title": "WordPress Hair Journey Integration"
+      },
+      {
+        "humanOwner": "Winston",
+        "id": "proj_meetingmind",
+        "name": "MeetingMind Engineering Squad & Stabilization",
+        "ownerIdentityIds": [
+          "synapse"
+        ],
+        "repo": "/Users/winstonzulu/Documents/GitHub/MeetingMind",
+        "source": "data/myaos.db#projects",
+        "status": "active",
+        "targetDate": "2026-11-30",
+        "title": "MeetingMind Engineering Squad & Stabilization"
+      },
+      {
+        "humanOwner": "Winston",
+        "id": "proj_mobile_sdk",
+        "name": "Myavana React Native Mobile SDK",
+        "ownerIdentityIds": [
+          "lyra"
+        ],
+        "repo": "packages/react-native-sdk",
+        "source": "data/myaos.db#projects",
+        "status": "active",
+        "targetDate": null,
+        "title": "Myavana React Native Mobile SDK"
+      },
+      {
+        "humanOwner": "Winston",
+        "id": "proj_myaos",
+        "name": "MyaOS Orchestration & Telemetry Platform",
+        "ownerIdentityIds": [
+          "iris",
+          "meridian",
+          "nexus"
+        ],
+        "repo": "CreativeSites-Ai-Team",
+        "source": "data/myaos.db#projects",
+        "status": "active",
+        "targetDate": null,
+        "title": "MyaOS Orchestration & Telemetry Platform"
+      }
+    ],
+    "repositories": [
+      {
+        "candidates": [
+          {
+            "git": {
+              "branch": "mya-sdk-prod",
+              "dirtyFileCount": 49,
+              "headSha": "79ca4a3126038c6edd89155bf7b0c453ff618565",
+              "isGitRepo": true,
+              "remote": "https://github.com/winstoncvm/Myavana-Chatbot.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot",
+            "role": "primary"
+          }
+        ],
+        "dbProject": {
+          "humanOwner": "Winston",
+          "id": "proj_chatbot",
+          "name": "Myavana AI Chatbot & Streaming Core",
+          "ownerIdentityIds": [
+            "astra",
+            "atlas"
+          ],
+          "repo": "Myavana-Chatbot",
+          "source": "data/myaos.db#projects",
+          "status": "active",
+          "targetDate": null,
+          "title": "Myavana AI Chatbot & Streaming Core"
+        },
+        "dbProjectId": "proj_chatbot",
+        "key": "myavana-chatbot",
+        "label": "Myavana-Chatbot",
+        "observed": true,
+        "observedPath": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot"
+      },
+      {
+        "candidates": [
+          {
+            "git": {
+              "branch": "main",
+              "dirtyFileCount": 3,
+              "headSha": "81ec7fe30b7e82416d1c1c8e6d95aa83bc88606c",
+              "isGitRepo": true,
+              "remote": "https://github.com/creativesites/Chatbot-Dashboard.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard",
+            "role": "primary"
+          }
+        ],
+        "dbProject": null,
+        "dbProjectId": null,
+        "key": "myavana-chatbot-dashboard",
+        "label": "Myavana-Chatbot-Dashboard",
+        "observed": true,
+        "observedPath": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard"
+      },
+      {
+        "candidates": [
+          {
+            "git": {
+              "branch": "site-growth-upsell",
+              "dirtyFileCount": 2,
+              "headSha": "a59519e3b82121f60d1ef551c6edc18b5e6f74ef",
+              "isGitRepo": true,
+              "remote": "https://github.com/creativesites/Myavana-Hair-Journey-Plugin.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/Local Sites/myavana-hair-journey/app/public/wp-content/plugins/myavana-hair-journey-next",
+            "role": "primary"
+          },
+          {
+            "git": {
+              "branch": "main",
+              "dirtyFileCount": 1,
+              "headSha": "cbd86d113520d45b23ef158703d25671a6c9980e",
+              "isGitRepo": true,
+              "remote": "https://github.com/winstoncvm/Myavana-Hair-Journey.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/Documents/GitHub/Myavana-Hair-Journey",
+            "role": "related-checkout"
+          }
+        ],
+        "dbProject": {
+          "humanOwner": "Winston",
+          "id": "proj_hair_journey",
+          "name": "WordPress Hair Journey Integration",
+          "ownerIdentityIds": [
+            "vela"
+          ],
+          "repo": "myavana-hair-journey-next",
+          "source": "data/myaos.db#projects",
+          "status": "active",
+          "targetDate": null,
+          "title": "WordPress Hair Journey Integration"
+        },
+        "dbProjectId": "proj_hair_journey",
+        "key": "myavana-hair-journey-next",
+        "label": "myavana-hair-journey-next",
+        "observed": true,
+        "observedPath": "/Users/winstonzulu/Local Sites/myavana-hair-journey/app/public/wp-content/plugins/myavana-hair-journey-next"
+      },
+      {
+        "candidates": [
+          {
+            "git": {
+              "branch": "mya-sdk-prod",
+              "dirtyFileCount": 49,
+              "headSha": "79ca4a3126038c6edd89155bf7b0c453ff618565",
+              "isGitRepo": true,
+              "remote": "https://github.com/winstoncvm/Myavana-Chatbot.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot/packages/react-native-sdk",
+            "role": "primary"
+          },
+          {
+            "git": {
+              "branch": "mya-sdk-adoption",
+              "dirtyFileCount": 0,
+              "headSha": "75c42447b45b299df7b244e322beeeb42ebee5a7",
+              "isGitRepo": true,
+              "remote": "https://github.com/MyavanaTechnology/MyAvana_FrontEnd_RN.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/WebstormProjects/MyAvana_FrontEnd_RN",
+            "role": "related-checkout"
+          }
+        ],
+        "dbProject": {
+          "humanOwner": "Winston",
+          "id": "proj_mobile_sdk",
+          "name": "Myavana React Native Mobile SDK",
+          "ownerIdentityIds": [
+            "lyra"
+          ],
+          "repo": "packages/react-native-sdk",
+          "source": "data/myaos.db#projects",
+          "status": "active",
+          "targetDate": null,
+          "title": "Myavana React Native Mobile SDK"
+        },
+        "dbProjectId": "proj_mobile_sdk",
+        "key": "react-native-sdk",
+        "label": "React Native SDK",
+        "observed": true,
+        "observedPath": "/Users/winstonzulu/WebstormProjects/Myavana-Chatbot/packages/react-native-sdk"
+      },
+      {
+        "candidates": [
+          {
+            "git": {
+              "branch": "main",
+              "dirtyFileCount": 21,
+              "headSha": "d866c097eddb0049f432c21690e45d41f4167dff",
+              "isGitRepo": true,
+              "remote": "https://github.com/creativesites/DogFrce-Security-Services-Custom-Odoo-Modules.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/Documents/GitHub/DogFrce Security Services Custom Odoo Modules",
+            "role": "primary"
+          }
+        ],
+        "dbProject": null,
+        "dbProjectId": null,
+        "key": "dogforce-odoo",
+        "label": "DogForce Odoo",
+        "observed": true,
+        "observedPath": "/Users/winstonzulu/Documents/GitHub/DogFrce Security Services Custom Odoo Modules"
+      },
+      {
+        "candidates": [
+          {
+            "git": {
+              "branch": "release/1.0-paid-launch",
+              "dirtyFileCount": 0,
+              "headSha": "3880d23d32f169bd089046c3244810daf560ad3d",
+              "isGitRepo": true,
+              "remote": "https://github.com/creativesites/MeetingMind.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/Documents/GitHub/MeetingMind",
+            "role": "primary"
+          }
+        ],
+        "dbProject": {
+          "humanOwner": "Winston",
+          "id": "proj_meetingmind",
+          "name": "MeetingMind Engineering Squad & Stabilization",
+          "ownerIdentityIds": [
+            "synapse"
+          ],
+          "repo": "/Users/winstonzulu/Documents/GitHub/MeetingMind",
+          "source": "data/myaos.db#projects",
+          "status": "active",
+          "targetDate": "2026-11-30",
+          "title": "MeetingMind Engineering Squad & Stabilization"
+        },
+        "dbProjectId": "proj_meetingmind",
+        "key": "meetingmind",
+        "label": "MeetingMind",
+        "observed": true,
+        "observedPath": "/Users/winstonzulu/Documents/GitHub/MeetingMind"
+      },
+      {
+        "candidates": [
+          {
+            "git": {
+              "branch": "claude/deployfleet-architecture-planning-ed2gel",
+              "dirtyFileCount": 0,
+              "headSha": "39c9e1654c508acc1a419d3cbbcff0e150d5d6b2",
+              "isGitRepo": true,
+              "remote": "https://github.com/creativesites/DeployFleet.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/Documents/GitHub/DeployFleet",
+            "role": "primary"
+          },
+          {
+            "git": {
+              "branch": "main",
+              "dirtyFileCount": 0,
+              "headSha": "d446badbc5bf52b1c3785f84cba118d63d36db1b",
+              "isGitRepo": true,
+              "remote": "https://github.com/creativesites/DeployFleet-Team.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/Documents/GitHub/DeployFleet-Team",
+            "role": "related-checkout"
+          },
+          {
+            "git": {
+              "branch": "main",
+              "dirtyFileCount": 0,
+              "headSha": "918ccb81d86c7bf8360ff18b60c07b2de6e13a0a",
+              "isGitRepo": true,
+              "remote": "https://github.com/creativesites/DeployFleet-website.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/Documents/GitHub/DeployFleet-website",
+            "role": "related-checkout"
+          }
+        ],
+        "dbProject": {
+          "humanOwner": "Winston",
+          "id": "proj_deployfleet",
+          "name": "DeployFleet Continuous Cloud Orchestration",
+          "ownerIdentityIds": [],
+          "repo": "/Users/winstonzulu/Documents/GitHub/DeployFleet",
+          "source": "data/myaos.db#projects",
+          "status": "active",
+          "targetDate": "2026-11-15",
+          "title": "DeployFleet Continuous Cloud Orchestration"
+        },
+        "dbProjectId": "proj_deployfleet",
+        "key": "deployfleet",
+        "label": "DeployFleet",
+        "observed": true,
+        "observedPath": "/Users/winstonzulu/Documents/GitHub/DeployFleet"
+      },
+      {
+        "candidates": [
+          {
+            "git": {
+              "branch": "main",
+              "dirtyFileCount": 53,
+              "headSha": "9d287fe206e911b2c3b80c7602f00f77fb19f490",
+              "isGitRepo": true,
+              "remote": "https://github.com/creativesites/CreativeSites-Ai-Team.git"
+            },
+            "observed": true,
+            "path": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team",
+            "role": "primary"
+          }
+        ],
+        "dbProject": {
+          "humanOwner": "Winston",
+          "id": "proj_myaos",
+          "name": "MyaOS Orchestration & Telemetry Platform",
+          "ownerIdentityIds": [
+            "iris",
+            "meridian",
+            "nexus"
+          ],
+          "repo": "CreativeSites-Ai-Team",
+          "source": "data/myaos.db#projects",
+          "status": "active",
+          "targetDate": null,
+          "title": "MyaOS Orchestration & Telemetry Platform"
+        },
+        "dbProjectId": "proj_myaos",
+        "key": "creativesites-ai-team",
+        "label": "CreativeSites-Ai-Team",
+        "observed": true,
+        "observedPath": "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team"
+      }
+    ],
+    "rootsProbed": [
+      {
+        "observed": true,
+        "path": "/Users/winstonzulu/WebstormProjects"
+      },
+      {
+        "observed": true,
+        "path": "/Users/winstonzulu/Documents/GitHub"
+      },
+      {
+        "observed": false,
+        "path": "/Users/winstonzulu/Local-Sites"
+      },
+      {
+        "observed": true,
+        "path": "/Users/winstonzulu/Local Sites"
+      }
+    ]
+  },
+  "schemaVersion": 1,
+  "source": {
+    "agentsRegistryMarkdown": {
+      "identityCount": 23,
+      "path": "community/AGENTS_REGISTRY.md",
+      "sha256": "94c284233601415b6896719abe59d816bd6ea5ee15641bb867d35457218a9213"
+    },
+    "communityAgentsJson": {
+      "entryCount": 25,
+      "path": "community/agents.json",
+      "sha256": "23a4b8e634b40cca03e713fd564011dad6854af9854126b4a91402184dd4a3d4"
+    },
+    "decisions": {
+      "decisionIds": [
+        "D3",
+        "D7",
+        "D10"
+      ],
+      "path": "community/proposals/DESKTOP_V2_DECISIONS.md"
+    },
+    "v1Db": {
+      "path": "data/myaos.db",
+      "rowCounts": {
+        "agentCapabilities": 65,
+        "events": 122,
+        "evidence": 24,
+        "facts": 19,
+        "identities": 26,
+        "missionMessages": 12,
+        "missionPlans": 4,
+        "projects": 6,
+        "provenanceLog": 35,
+        "tasks": 45,
+        "teams": 3,
+        "tokenLedger": 16
+      },
+      "sha256": "f031e9fd1e86af8cc26961445dab1ec65bc1c9348ecca66234b2b11dd67ad0ee"
+    }
+  }
+}

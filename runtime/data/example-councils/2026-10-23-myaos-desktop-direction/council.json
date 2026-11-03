@@ -1,0 +1,24 @@
+{
+  "title": "Where to take the MyaOS desktop app",
+  "decision": "Pick one direction (A to F) for the MyaOS desktop app and one owner for task data.",
+  "mode": "full",
+  "options": [
+    { "id": "A", "label": "Mission Control: one real job end to end" },
+    { "id": "B", "label": "Developer cockpit only" },
+    { "id": "C", "label": "Verification layer is the product" },
+    { "id": "D", "label": "Coworker app for non-developers" },
+    { "id": "E", "label": "Runtime first, thin desktop later" },
+    { "id": "F", "label": "Keep the app as it is" }
+  ],
+  "weights": {
+    "bezos": { "weight": 3, "reason": "Choosing the direction and its reversibility is this pillar" },
+    "graham": { "weight": 2, "reason": "Real demand is open with no paying customer" },
+    "hormozi": { "weight": 2, "reason": "Who pays and how much, pillar materially affected" },
+    "wickman": { "weight": 2, "reason": "Can the runtime and desktop run without the founder holding them together" },
+    "buffett": { "weight": 2, "reason": "Cash over 3 to 9 months, and the downside of a long rebuild" },
+    "musk": { "weight": 2, "reason": "The real constraint, and how much of the app can be cut" }
+  },
+  "seats": ["bezos", "graham", "hormozi", "wickman", "buffett", "musk"],
+  "brief": "MyaOS desktop app is mostly simulated: jobs, approvals, and dashboard numbers are not real, and its SQLite store is split from the Node runtime's task files. Pre-revenue, 3 to 9 months runway, no fixed deadline, no paying customer yet. The team leans to A with the runtime owning task data.",
+  "assumptions": ["Small founding team, founder time is the scarce resource (assumed)", "Code-level findings only; the app has not been run end to end"]
+}

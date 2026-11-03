@@ -14,5 +14,17 @@ desktop/node_modules/
 desktop/dist/
 desktop/src-tauri/target/
 
+# Live runtime state: changes on every run, so it is not kept in git.
+# A fresh clone gets an empty store from data/myaos.schema.sql (src/paths.js).
+data/myaos.db
+data/provenance.log
+data/verification/
+
+# Desktop v2 build output
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+*.tsbuildinfo
+
 # Local worktrees
 .claude/worktrees/

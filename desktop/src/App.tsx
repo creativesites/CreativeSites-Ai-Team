@@ -33,13 +33,10 @@ import { appendTerminalBuffer, clearTerminalBuffer } from './components/XTermTer
 import {
   DEFAULT_COWORKERS,
   DEFAULT_CONNECTED_TOOLS,
-  DEFAULT_JOBS,
-  DEFAULT_APPROVALS,
-  DEFAULT_ROUTINES,
   DEFAULT_SKILLS,
-  DEFAULT_ACTIVITIES,
 } from './services/normalModeData';
 import { Job, Artifact, Coworker, ConnectedTool, Approval, Routine, Skill, ActivityItem } from './types/normalMode';
+import { teamRepo } from './services/appConfig';
 
 export interface PtySession {
   session_id: string;
@@ -59,14 +56,14 @@ export function App() {
   const [workView, setWorkView] = useState<WorkViewType>('home');
 
   // Normal Mode Data State
-  const [jobs, setJobs] = useState<Job[]>(DEFAULT_JOBS);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [coworkers, setCoworkers] = useState<Coworker[]>(DEFAULT_COWORKERS);
   const [connectedTools, setConnectedTools] = useState<ConnectedTool[]>(DEFAULT_CONNECTED_TOOLS);
-  const [approvals, setApprovals] = useState<Approval[]>(DEFAULT_APPROVALS);
-  const [routines, setRoutines] = useState<Routine[]>(DEFAULT_ROUTINES);
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [routines, setRoutines] = useState<Routine[]>([]);
   const [skills, setSkills] = useState<Skill[]>(DEFAULT_SKILLS);
-  const [activities, setActivities] = useState<ActivityItem[]>(DEFAULT_ACTIVITIES);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
 
   const [selectedAgentId, setSelectedAgentId] = useState<string>('astra');
   const [summary, setSummary] = useState<any>(null);
@@ -75,9 +72,7 @@ export function App() {
   const [sessions, setSessions] = useState<PtySession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sleepPrevented, setSleepPrevented] = useState(false);
-  const [currentWorkspace, setCurrentWorkspace] = useState(
-    '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team'
-  );
+  const [currentWorkspace, setCurrentWorkspace] = useState(teamRepo());
   const [fleetDrawerOpen, setFleetDrawerOpen] = useState(false);
 
   // Global keyboard shortcut to toggle navigation sidebar (⌘B)
@@ -357,24 +352,6 @@ export function App() {
     }
   };
 
-  const handleWakeTeam = async () => {
-    try {
-      await invoke('myaos_wake_all_agents');
-      await fetchState();
-    } catch (e) {
-      console.error('Failed to wake agents:', e);
-    }
-  };
-
-  const handleSleepTeam = async () => {
-    try {
-      await invoke('myaos_sleep_all_agents');
-      await fetchState();
-    } catch (e) {
-      console.error('Failed to sleep agents:', e);
-    }
-  };
-
   // Normal Mode Job Creators & Action Handlers
   const handleStartNormalJob = (
     userPrompt: string,
@@ -479,8 +456,6 @@ export function App() {
         pendingApprovalsCount={approvals.filter((a) => a.status === 'pending').length}
         sleepPrevented={sleepPrevented}
         onToggleSleepPrevention={handleToggleSleepPrevention}
-        onWakeTeam={handleWakeTeam}
-        onSleepTeam={handleSleepTeam}
         currentWorkspace={currentWorkspace}
         onStartNewJob={() => setWorkView('home')}
       />
@@ -700,8 +675,6 @@ export function App() {
                   onSpawnClaude={handleSpawnClaude}
                   onSpawnGemini={handleSpawnGemini}
                   onSpawnShell={handleSpawnShell}
-                  onWakeTeam={handleWakeTeam}
-                  onSleepTeam={handleSleepTeam}
                   onRefreshState={fetchState}
                 />
               )}

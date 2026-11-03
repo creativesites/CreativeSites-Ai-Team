@@ -14,6 +14,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
+import { appConfig } from '../services/appConfig';
 
 interface AddProjectModalProps {
   isOpen: boolean;
@@ -34,14 +35,14 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
 
   // Form states
   const [repoUrl, setRepoUrl] = useState('');
-  const [cloneParentDir, setCloneParentDir] = useState('/Users/winstonzulu/Documents/GitHub');
+  const [cloneParentDir, setCloneParentDir] = useState(appConfig().cloneParentDir ?? appConfig().home ?? '');
   const [folderName, setFolderName] = useState('');
 
   const [localPath, setLocalPath] = useState('');
   const [customName, setCustomName] = useState('');
 
   const [newProjectName, setNewProjectName] = useState('');
-  const [newProjectParentDir, setNewProjectParentDir] = useState('/Users/winstonzulu/WebstormProjects');
+  const [newProjectParentDir, setNewProjectParentDir] = useState(appConfig().newProjectParentDir ?? appConfig().home ?? '');
   const [selectedTemplate, setSelectedTemplate] = useState<'vite-react' | 'nextjs' | 'fastapi' | 'custom'>('vite-react');
 
   if (!isOpen) return null;
@@ -255,7 +256,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
               </label>
               <input
                 type="text"
-                placeholder="/Users/winstonzulu/Documents/GitHub/my-project"
+                placeholder="/path/to/my-project"
                 value={localPath}
                 onChange={(e) => setLocalPath(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-white border border-black/10 rounded-xl text-xs text-zinc-800 focus:outline-hidden focus:ring-2 focus:ring-zinc-800 font-mono shadow-2xs"

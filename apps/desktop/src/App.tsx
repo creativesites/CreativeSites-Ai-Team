@@ -1,0 +1,309 @@
+import * as React from 'react';
+import type { AdapterInfo, Identity, JobSummary, Project, Room, Session, Team } from '@runtime/types';
+import { RuntimeBanner, Sidebar, useMode } from '@/components/app/shell';
+import { EmptyState } from '@/components/app/status';
+import { Toaster } from '@/components/app/toaster';
+import { href, useRoute, type Route } from '@/lib/route';
+import { RuntimeProvider, useRuntime, useRuntimeData, type Loadable } from '@/lib/runtime-context';
+import { cn } from '@/lib/utils';
+import { ApprovalsScreen } from '@/screens/approvals';
+import { TeamScreen } from '@/screens/team';
+import { JobsScreen } from '@/screens/jobs';
+import { SettingsScreen } from '@/screens/settings';
+import { WorkspacesScreen } from '@/screens/workspaces';
+import { DevScreen } from '@/screens/dev';
+import { HomeScreen, type StartJobRequest } from '@/screens/home';
+import { JobScreen } from '@/screens/job';
+import { CouncilRoomScreen } from '@/screens/council-room';
+import { DesignStudioScreen } from '@/screens/design-studio';
+import { CommunicationScreen } from '@/screens/communication';
+import { RoomScreen } from '@/screens/room';
+import { OkrsScreen } from '@/screens/okrs';
+import { ProjectsScreen } from '@/screens/projects';
+
+const DEFAULT_OWNER_ID = 'winston';
+const DEFAULT_OWNER_NAME = 'Winston';
+
+// Sample data lives only in the dev build, behind #/preview/<screen>.
+const Preview = import.meta.env.DEV ? React.lazy(() => import('@/preview/preview')) : null;
+
+const list = <T,>(l: Loadable<T[]>): T[] => (l.status === 'ready' ? l.data : []);
+
+export default function App() {
+  const route = useRoute();
+  if (route.name === 'preview') {
+    return Preview ? (
+      <React.Suspense fallback={null}>
+        <Preview screen={route.screen} />
+      </React.Suspense>
+    ) : (
+      <p className="p-6 text-sm text-muted-foreground">Previews exist only in development builds.</p>
+    );
+  }
+  return (
+    <RuntimeProvider>
+      <Workspace route={route} />
+    </RuntimeProvider>
+  );
+}
+
+function Workspace({ route }: { route: Route }) {
+  const [mode, setMode] = useMode();
+  const rooms = useRuntimeData((c) => c.rooms());
+  const jobs = useRuntimeData((c) => c.jobs());
+  const identities = useRuntimeData((c) => c.identities());
+  const sessions = useRuntimeData((c) => c.sessions());
+  const adapters = useRuntimeData((c) => c.adapters());
+  const projects = useRuntimeData((c) => c.projects());
+  const teams = useRuntimeData((c) => c.teams());
+  const settings = useRuntimeData((c) => c.settings());
+
+  const idList = list(identities);
+  const ownerIdentity = idList.find((i) => i.isOwner);
+  const ownerId =
+    (settings.status === 'ready' && typeof settings.data.ownerId === 'string' && settings.data.ownerId) ||
+    ownerIdentity?.id ||
+    DEFAULT_OWNER_ID;
+  const ownerName = ownerIdentity?.name || DEFAULT_OWNER_NAME;
+
+  const isFullWindowRoute = route.name === 'council' || route.name === 'verdict' || route.name === 'design-studio';
+
+  return (
+    <div className="flex h-screen flex-col gap-3 overflow-hidden p-3 md:flex-row">
+      <Sidebar
+        route={route}
+        mode={mode}
+        onModeChange={setMode}
+        ownerName={ownerName}
+        ownerId={ownerId}
+        rooms={list(rooms)}
+        jobs={list(jobs)}
+        identities={idList}
+        sessions={list(sessions)}
+      />
+      <div
+        className={cn(
+          'flex h-full min-h-0 min-w-0 flex-1 flex-col',
+          isFullWindowRoute ? 'overflow-hidden gap-0 pr-0' : 'gap-3 overflow-y-auto pr-1'
+        )}
+      >
+        <RuntimeBanner />
+        <Screen
+          route={route}
+          rooms={list(rooms)}
+          jobs={list(jobs)}
+          identities={idList}
+          sessions={list(sessions)}
+          adapters={list(adapters)}
+          projects={list(projects)}
+          teams={list(teams)}
+          ownerId={ownerId}
+          ownerName={ownerName}
+        />
+      </div>
+      <Toaster />
+    </div>
+  );
+}
+
+function Screen({
+  route,
+  rooms,
+  jobs,
+  identities,
+  sessions,
+  adapters,
+  projects,
+  teams,
+  ownerId,
+  ownerName,
+}: {
+  route: Route;
+  rooms: Room[];
+  jobs: JobSummary[];
+  identities: Identity[];
+  sessions: Session[];
+  adapters: AdapterInfo[];
+  projects: Project[];
+  teams: Team[];
+  ownerId: string;
+  ownerName: string;
+}) {
+  const { client } = useRuntime();
+
+  const startJob = async (req: StartJobRequest) => {
+    if (!client) throw new Error('The runtime is not reachable.');
+    const roomId = req.roomId ?? (await client.createRoom({ name: req.newRoomName!, projectId: req.projectId ?? undefined })).id;
+    // The title is the brief's first sentence; the whole text stays as the brief.
+    const first = req.text.split('\n')[0].split(/(?<=[.!?])\s/)[0].replace(/[.]$/, '');
+    const title = first.length > 90 ? `${first.slice(0, 87)}…` : first;
+    const job = await client.createJob({ roomId, title, brief: req.text, createdBy: ownerId });
+    await client.postMessage(roomId, { authorId: ownerId, authorKind: 'human', body: req.text, jobId: job.id });
+    window.location.hash = href({ name: 'room', roomId });
+  };
+
+  switch (route.name) {
+    case 'home':
+      return <HomeScreen rooms={rooms} jobs={jobs} identities={identities} sessions={sessions} projects={projects} onStartJob={client ? startJob : undefined} />;
+    case 'approvals':
+      return <ApprovalsScreen />;
+    case 'jobs':
+      return <JobsScreen />;
+    case 'room':
+      return <RoomContainer roomId={route.roomId} rooms={rooms} jobs={jobs} identities={identities} ownerId={ownerId} ownerName={ownerName} />;
+    case 'job':
+      return <JobContainer jobId={route.jobId} rooms={rooms} identities={identities} ownerName={ownerName} />;
+    case 'council':
+      return <CouncilRoomScreen jobId={route.jobId} identities={identities} ownerId={ownerId} />;
+    case 'verdict':
+      return <CouncilRoomScreen jobId={route.jobId} initialOpenVerdict identities={identities} ownerId={ownerId} />;
+    case 'design-studio':
+      return (
+        <DesignStudioScreen
+          initialBoardId={route.boardId}
+          jobs={jobs}
+          rooms={rooms}
+          projects={projects}
+          identities={identities}
+          ownerId={ownerId}
+        />
+      );
+    case 'dev':
+      return <DevContainer jobId={route.jobId ?? jobs[0]?.id} jobs={jobs} identities={identities} sessions={sessions} />;
+    case 'workspaces':
+      return (
+        <WorkspacesScreen
+          projects={projects}
+          rooms={rooms}
+          teams={teams}
+          jobs={jobs}
+          sessions={sessions}
+          identities={identities}
+          ownerId={ownerId}
+          onStartJob={client ? startJob : undefined}
+        />
+      );
+    case 'projects':
+      return (
+        <ProjectsScreen
+          projects={projects}
+          identities={identities}
+          jobs={jobs}
+          rooms={rooms}
+          initialSubpage={route.subpage}
+          initialProjectId={route.projectId}
+          ownerId={ownerId}
+          ownerName={ownerName}
+          onStartJob={client ? startJob : undefined}
+        />
+      );
+    case 'okrs':
+      return (
+        <OkrsScreen
+          identities={identities}
+          jobs={jobs}
+          rooms={rooms}
+          initialQuarter={route.quarter}
+          ownerId={ownerId}
+          ownerName={ownerName}
+          onStartJob={client ? async (r) => void (await startJob({ text: r.text, roomId: r.roomId ?? null, newRoomName: null, projectId: null })) : undefined}
+        />
+      );
+    case 'settings':
+      return <SettingsScreen identities={identities} adapters={adapters} projects={projects} />;
+    case 'team':
+      return (
+        <TeamScreen
+          identities={identities}
+          sessions={sessions}
+          adapters={adapters}
+          teams={teams}
+          jobs={jobs}
+          selectedAgentId={route.agentId}
+          ownerName={ownerName}
+          ownerId={ownerId}
+          defaultTab="all"
+          onCreate={client ? async (i) => void (await client.createIdentity(i)) : undefined}
+          onUpdate={client ? async (id, i) => void (await client.updateIdentity(id, i)) : undefined}
+        />
+      );
+    case 'communication':
+      return (
+        <CommunicationScreen
+          initialTab={route.tab}
+          identities={identities}
+          sessions={sessions}
+          ownerId={ownerId}
+          ownerName={ownerName}
+        />
+      );
+    case 'coworkers':
+      return (
+        <TeamScreen
+          identities={identities}
+          sessions={sessions}
+          adapters={adapters}
+          teams={teams}
+          jobs={jobs}
+          selectedAgentId={undefined}
+          ownerName={ownerName}
+          ownerId={ownerId}
+          defaultTab="all"
+          onCreate={client ? async (i) => void (await client.createIdentity(i)) : undefined}
+          onUpdate={client ? async (id, i) => void (await client.updateIdentity(id, i)) : undefined}
+        />
+      );
+    default:
+      return null;
+  }
+}
+
+function Loading({ what }: { what: Loadable<unknown> }) {
+  if (what.status === 'error') return <EmptyState title="Could not load this">{what.message}</EmptyState>;
+  if (what.status === 'offline') return <EmptyState title="Waiting for the runtime" />;
+  return <p className="p-4 text-sm text-muted-foreground">Loading…</p>;
+}
+
+function RoomContainer({ roomId, rooms, jobs, identities, ownerId, ownerName }: { roomId: string; rooms: Room[]; jobs: JobSummary[]; identities: Identity[]; ownerId: string; ownerName: string }) {
+  const { client } = useRuntime();
+  const messages = useRuntimeData((c) => c.messages(roomId), [roomId]);
+  const roomJobs = jobs.filter((j) => j.roomId === roomId);
+  const focusId = roomJobs.find((j) => !['done', 'cancelled'].includes(j.stage))?.id;
+  const focus = useRuntimeData((c) => (focusId ? c.job(focusId) : Promise.resolve(null)), [focusId]);
+  const room = rooms.find((r) => r.id === roomId);
+  if (!room) return rooms.length ? <EmptyState title="This room does not exist" /> : <Loading what={messages} />;
+  if (messages.status !== 'ready') return <Loading what={messages} />;
+  return (
+    <RoomScreen
+      room={room}
+      messages={messages.data}
+      jobs={roomJobs}
+      identities={identities}
+      focusJob={focus.status === 'ready' ? focus.data : null}
+      ownerName={ownerName}
+      onSend={client ? async (body) => void (await client.postMessage(roomId, { authorId: ownerId, authorKind: 'human', body })) : undefined}
+      onStartJob={
+        client
+          ? async (text) => {
+              const first = text.split('\n')[0]!.split(/(?<=[.!?])\s/)[0]!.replace(/[.]$/, '');
+              const title = first.length > 90 ? `${first.slice(0, 87)}…` : first;
+              const job = await client.createJob({ roomId, title, brief: text, createdBy: ownerId });
+              await client.postMessage(roomId, { authorId: ownerId, authorKind: 'human', body: text, jobId: job.id });
+              window.location.hash = href({ name: 'job', jobId: job.id });
+            }
+          : undefined
+      }
+    />
+  );
+}
+
+function JobContainer({ jobId, rooms, identities, ownerName }: { jobId: string; rooms: Room[]; identities: Identity[]; ownerName: string }) {
+  const job = useRuntimeData((c) => c.job(jobId), [jobId]);
+  if (job.status !== 'ready') return <Loading what={job} />;
+  return <JobScreen job={job.data} room={rooms.find((r) => r.id === job.data.roomId)} identities={identities} ownerName={ownerName} />;
+}
+
+function DevContainer({ jobId, jobs, identities, sessions }: { jobId?: string; jobs: JobSummary[]; identities: Identity[]; sessions: Session[] }) {
+  const job = useRuntimeData((c) => (jobId ? c.job(jobId) : Promise.resolve(null)), [jobId]);
+  return <DevScreen sessions={sessions} identities={identities} jobs={jobs} job={job.status === 'ready' ? job.data : null} />;
+}

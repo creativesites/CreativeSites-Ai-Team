@@ -1,0 +1,19 @@
+{
+  "name": "@myaos/runtime-spikes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 0.6 ACP probe harness. Spike-only; not part of the runtime build.",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "spike": "node run-spike.js",
+    "spike:claude": "node run-spike.js --adapter claude",
+    "spike:gemini": "node run-spike.js --adapter gemini",
+    "spike:codex": "node run-spike.js --adapter codex",
+    "spike:dsh": "node run-spike.js --adapter dsh",
+    "probe": "node run-spike.js --probe"
+  },
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.95.0"
+  }
+}

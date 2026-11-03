@@ -27,6 +27,37 @@ function parseFlags(argv) {
   return flags;
 }
 
+/**
+ * The v2 runtime (runtime/), read through its local API: the same records the
+ * new desktop app shows. Says plainly when it is not running.
+ */
+async function printRuntimeV2() {
+  const os = require('os');
+  const file = process.env.MYAOS_RUNTIME_FILE || path.join(process.env.MYAOS_HOME || path.join(os.homedir(), '.myaos'), 'runtime.json');
+  console.log('\n🧭 RUNTIME v2 (runtime/, read through its API)');
+  console.log('------------------------------------------------------');
+  let info;
+  try {
+    info = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    console.log(`Not running (no ${file}). Start it with: npm start --prefix runtime`);
+    return;
+  }
+  try {
+    const get = async (route) => {
+      const res = await fetch(`${info.url}${route}`, { headers: { Authorization: `Bearer ${info.token}` }, signal: AbortSignal.timeout(2000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status} on ${route}`);
+      return res.json();
+    };
+    const health = await get('/health');
+    const s = await get('/v1/summary');
+    console.log(`Running at ${info.url} (pid ${health.pid}, v${health.version}, schema ${health.schemaVersion})`);
+    console.log(`Coworkers ${s.identities} · Rooms ${s.rooms} · Open jobs ${s.openJobs} · Waiting on you ${s.pendingApprovals} · Live sessions ${s.liveSessions}`);
+  } catch (e) {
+    console.log(`Not reachable at ${info.url}: ${e.message}. The info file may be left from a runtime that stopped.`);
+  }
+}
+
 async function main() {
   switch (command) {
     case 'status': {
@@ -86,6 +117,7 @@ async function main() {
       for (const e of recentEvents) {
         console.log(`[${e.timestamp.slice(11, 19)}] ${e.type.padEnd(20)} from @${e.sender}`);
       }
+      await printRuntimeV2();
       console.log('\n');
       break;
     }
@@ -131,7 +163,7 @@ async function main() {
         console.error('Usage: myaos wake <agent>');
         process.exit(1);
       }
-      const dbPath = path.resolve(baseDir, 'data/myaos.db');
+      const dbPath = require('../src/paths').dbPath(baseDir);
       const clean = agentName.toLowerCase().trim();
 
       // Durable, real observation first (writes to identities+runtimes in
@@ -209,28 +241,12 @@ async function main() {
       }
 
       if (taskId) {
-        console.log(`[MyaOS Worker] Claiming and executing task ${taskId}...`);
-        myaos.taskManager.startTask(taskId, agentName);
-
-        // Execute task workload: if automated execution payload exists, process it
-        const task = myaos.taskManager.getTask(taskId);
-        const artifactDir = path.resolve(baseDir, 'data/artifacts');
-        if (!fs.existsSync(artifactDir)) fs.mkdirSync(artifactDir, { recursive: true });
-        
-        const artifactPath = path.join(artifactDir, `${taskId.toLowerCase()}_proof.json`);
-        fs.writeFileSync(artifactPath, JSON.stringify({
-          task_id: taskId,
-          worker: agentName,
-          pid,
-          cwd: process.cwd(),
-          timestamp: new Date().toISOString(),
-          status: 'SUCCESS'
-        }, null, 2), 'utf8');
-
-        console.log(`[MyaOS Worker] Generated artifact at ${artifactPath}`);
-        myaos.taskManager.completeTask(taskId, agentName, [artifactPath]);
-        console.log(`[MyaOS Worker] Task ${taskId} completed by @${agentName}. Exiting worker.`);
-        process.exit(0);
+        // This worker has no agent behind it, so it cannot do a task's work.
+        // It used to write a SUCCESS proof file and complete the task anyway;
+        // it now refuses and leaves the task untouched.
+        console.error(`[MyaOS Worker] Refusing task ${taskId}: the process worker cannot execute task work. ` +
+          'Run the task in an agent session instead. The task was not claimed or completed.');
+        process.exit(2);
       } else {
         // Long-lived worker mode: wait for SIGTERM or SIGINT
         console.log(`[MyaOS Worker] Idle listening mode. Press Ctrl+C to exit.`);
@@ -323,132 +339,6 @@ async function main() {
       break;
     }
 
-    case 'execute-chain': {
-      printHeader();
-      console.log('\n⛓️ EXECUTING VERIFIABLE AUTONOMOUS AGENT CHAIN\n');
-      const { spawnSync } = require('child_process');
-      const taskId = `TASK_LIVE_${Date.now().toString().slice(-4)}`;
-      const downstreamId = `TASK_LIVE_${(parseInt(Date.now().toString().slice(-4), 10) + 1)}`;
-      
-      console.log(`1. Creating real upstream task ${taskId} and downstream task ${downstreamId}...`);
-      const task1 = myaos.taskManager.createTask({
-        id: taskId,
-        title: 'Generate Production State Proof & Hash Ledger',
-        description: 'Autonomous worker execution generating physical proof artifact with machine verification',
-        required_capabilities: ['platform']
-      });
-      const task2 = myaos.taskManager.createTask({
-        id: downstreamId,
-        title: 'Ingest Verified State to Telemetry Bus',
-        description: 'Downstream consumer dependent on upstream completion',
-        required_capabilities: ['dashboard'],
-        dependencies: [taskId]
-      });
-      
-      myaos.taskManager.assignTask(task1.id, 'Atlas');
-      myaos.taskManager.assignTask(task2.id, 'Iris');
-      task2.status = 'BLOCKED';
-      myaos.taskManager.save();
-      console.log(`   ├─ Assigned ${taskId} to @Atlas`);
-      console.log(`   └─ Assigned ${downstreamId} to @Iris (Status: BLOCKED)`);
-
-      console.log('\n2. Issuing cryptographic registration handshake token...');
-      const workerRuntimeId = `rt_proc_atlas_${Date.now()}`;
-      const handshakeToken = myaos.runtime.handshakeManager.issueToken({
-        runtime_id: workerRuntimeId,
-        agent_id: 'Atlas',
-        runtime_type: 'REAL_PROCESS'
-      });
-      console.log(`   ├─ Generated Runtime ID: ${workerRuntimeId}`);
-      console.log(`   └─ Handshake Token:      ${handshakeToken.slice(0, 16)}...`);
-
-      console.log('\n3. Spawning real OS child process worker...');
-      const claimedAt = new Date().toISOString();
-      const workerRun = spawnSync(process.execPath, [
-        path.resolve(__dirname, 'myaos.js'),
-        'worker',
-        '--agent', 'Atlas',
-        '--task', taskId,
-        '--runtime-id', workerRuntimeId,
-        '--handshake-token', handshakeToken
-      ], {
-        cwd: baseDir,
-        encoding: 'utf8',
-        env: { ...process.env, PATH: `/opt/homebrew/bin:/usr/local/bin:${process.env.PATH || ''}`, MYAOS_BASE_DIR: baseDir }
-      });
-
-      if (workerRun.status !== 0) {
-        console.error('Worker failed:', workerRun.stderr || workerRun.stdout);
-        process.exit(1);
-      }
-      console.log(workerRun.stdout.trim().split('\n').map(l => `   │ ${l}`).join('\n'));
-
-      const artifactPath = path.resolve(baseDir, `data/artifacts/${taskId.toLowerCase()}_proof.json`);
-      if (!fs.existsSync(artifactPath)) {
-        console.error('Artifact file missing on disk:', artifactPath);
-        process.exit(1);
-      }
-      const artifactContent = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
-      const artifactHash = myaos.proofBundle.computeFileHash(artifactPath);
-      console.log(`   ├─ Artifact On Disk: ${artifactPath}`);
-      console.log(`   └─ Artifact SHA-256: ${artifactHash}`);
-
-      console.log('\n4. Dispatching independent verifier (@Kael)...');
-      const verifCmd = `node -e "const d = require('${artifactPath}'); if (d.status !== 'SUCCESS' || !d.pid) process.exit(1);"`;
-      const verification = myaos.verifier.verifyTaskArtifacts(taskId, 'Kael', {
-        requiredFiles: [artifactPath],
-        testCommand: verifCmd,
-        cwd: baseDir
-      });
-      console.log(`   ├─ Verifier:    @Kael (Independent, claimant != verifier)`);
-      console.log(`   ├─ Exit Code:   ${verification.exit_code}`);
-      console.log(`   └─ Result:      ${verification.status} (${verification.resolution})`);
-
-      console.log('\n5. Assembling cryptographic Proof Bundle...');
-      const bundleRes = myaos.proofBundle.createBundle({
-        taskId,
-        taskTitle: task1.title,
-        creator: task1.creator,
-        workerAgent: 'Atlas',
-        workerRuntime: workerRuntimeId,
-        workerPid: artifactContent.pid,
-        claimedAt,
-        artifacts: [artifactPath],
-        completedAt: artifactContent.timestamp,
-        verifierAgent: 'Kael',
-        verifierRuntime: `rt_proc_kael_${Date.now()}`,
-        verifierPid: process.pid,
-        verificationCommand: verifCmd,
-        verificationExitCode: verification.exit_code,
-        verificationOutput: verification.command_output,
-        verifiedAt: new Date().toISOString(),
-        downstreamTaskId: downstreamId
-      });
-
-      console.log(`   ├─ Bundle Path: ${bundleRes.bundle_path}`);
-      console.log(`   └─ Bundle Hash: ${bundleRes.bundle.bundle_hash}`);
-
-      console.log('\n6. Unblocking downstream task via event bus...');
-      myaos.eventBus.emit('verification.passed', 'Kael', { taskId });
-      myaos.taskManager.data = myaos.taskManager.load();
-      const unblockedTask2 = myaos.taskManager.getTask(downstreamId);
-      console.log(`   └─ Downstream Task ${downstreamId} status: ${unblockedTask2.status}`);
-
-      console.log('\n======================================================');
-      console.log('   EPISTEMIC AUDIT QUESTIONS ANSWERED');
-      console.log('======================================================');
-      console.log(`WHO acted?               @Atlas`);
-      console.log(`WHICH runtime acted?     ${workerRuntimeId}`);
-      console.log(`WHICH process acted?     PID ${artifactContent.pid}`);
-      console.log(`WHAT happened?           Executed ${taskId}, generated verifiable hash ledger`);
-      console.log(`WHEN did it happen?      ${artifactContent.timestamp}`);
-      console.log(`WHAT evidence proves it? File: ${artifactPath}`);
-      console.log(`                         SHA-256: ${artifactHash}`);
-      console.log(`WHO verified it?         @Kael (Exit code: ${verification.exit_code})`);
-      console.log(`PROOF BUNDLE:            ${bundleRes.bundle_path}\n`);
-      break;
-    }
-
     default: {
       printHeader();
       console.log('\nUsage: myaos <command> [options]');
@@ -457,11 +347,10 @@ async function main() {
       console.log('  observe                        Machine-observe runtime sockets, processes, and identity');
       console.log('  doctor                         Run system health diagnostics');
       console.log('  test [cmd]                     Run test suite and record machine verification proof');
-      console.log('  execute-chain                  Execute verifiable end-to-end autonomous agent chain');
       console.log('  proof-bundle <taskId>          Inspect and verify cryptographic proof bundle');
       console.log('  wake <agent>                   Request wake transition for an agent');
       console.log('  sleep <agent>                  Put an agent to sleep (SLEEPING state)');
-      console.log('  worker --agent <name> [--task] Run a real OS process worker');
+      console.log('  worker --agent <name> [--task] Register a process session (cannot execute tasks)');
       console.log('  verify <taskId>                Run independent verification on task artifacts');
       console.log('  orchestrator                   Run an autonomous coordination cycle\n');
     }

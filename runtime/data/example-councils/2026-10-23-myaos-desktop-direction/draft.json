@@ -1,0 +1,25 @@
+{
+  "option": "A",
+  "label": "GO WITH CONDITIONS",
+  "recommendation": "Take A, cut to one job: one agent, one verifier, the runtime as the only task store. Total cash out is capped at $60k from this week. One team must pay $1,500 in cash by week 6, and three non-friend developers must pay for a verification report. Five paid teams is the price of spending past the cap.",
+  "conditions": [
+    "Store decision signed this week: the runtime owns task data",
+    "Founder confirms real monthly burn and cash this week; burn above $40k a month with under four months of runway means B",
+    "A named Integrator who is not the founder owns the week-8 Scorecard and runs GWC before the store spike starts",
+    "Store migration spike finishes in under two weeks, and one runtime change ships by someone other than the founder within those two weeks",
+    "Week 6 build gate: one named developer team pays $1,500 in cash, no deposits",
+    "Week 6 demand gate: three developers who are not friends of the founders have paid for a verification report; build spend past the store spike waits for this",
+    "Scale gate: five named teams paid in cash is the price of spending past the $60k cap",
+    "Week 8: one real repo runs the loop end to end, with captured diff and test evidence checked by a second agent; week-8 cash on the Scorecard every week from week one",
+    "Week 1: fake 35% progress, hard-coded coworkers, and invented dashboard numbers deleted or labeled as demo",
+    "Ten developer conversations start this week, in parallel with the build"
+  ],
+  "next_steps": [
+    "By 30 October 2026: store decision signed, Integrator named, burn and cash written down, fake data removed, developer conversations started",
+    "By 6 November 2026: store migration spike done, and one runtime change shipped by someone other than the founder, or cut to B",
+    "By 4 December 2026 (week 6): build gate (one team paid $1,500 cash) and demand gate (three report payers); either missing means B",
+    "By 18 December 2026 (week 8): one real repo runs the loop end to end, week-8 cash at least $40k; continue or drop to B"
+  ],
+  "cheapest_test": "Run one real Claude Code task by hand, capture the diff and test exit status, and send the report to ten developers this week for a card number.",
+  "kill_criteria": "No paid team at week 6, or a store spike past two weeks, or burn above $40k a month with under four months of runway: drop to B."
+}

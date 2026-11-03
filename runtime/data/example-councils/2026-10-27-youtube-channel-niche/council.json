@@ -1,0 +1,31 @@
+{
+  "title": "Which YouTube niche to commit to",
+  "decision": "Start an AI-narrated YouTube channel, and if so, which niche to commit to.",
+  "mode": "full",
+  "options": [
+    { "id": "A", "label": "Hybrid: science and history as stories, what-if lead" },
+    { "id": "B", "label": "Space and science what-if only" },
+    { "id": "C", "label": "Untold history of science and space" },
+    { "id": "D", "label": "Comedy-tinged AI and tech stories" },
+    { "id": "E", "label": "Keep doing Odoo work, no channel" },
+    { "id": "F", "label": "90-day pilot of one format, then decide" }
+  ],
+  "weights": {
+    "garyvee": { "weight": 3, "reason": "Channel growth is an attention and distribution problem" },
+    "martell": { "weight": 3, "reason": "Six to ten hours a week and product work are the binding limit" },
+    "bezos": { "weight": 2, "reason": "Niche switching is the one-way door" },
+    "graham": { "weight": 2, "reason": "Whether people want this and whether it grows" },
+    "hormozi": { "weight": 2, "reason": "Revenue per view against the value of Odoo hours" },
+    "buffett": { "weight": 2, "reason": "Cash under $500 and downside to Odoo revenue" },
+    "naval": { "weight": 2, "reason": "Owned asset versus rented time" }
+  },
+  "seats": ["bezos", "graham", "hormozi", "garyvee", "martell", "buffett", "naval"],
+  "brief": "A solo founder in Lusaka builds Odoo SaaS. He wants a 30 to 40 minute AI-narrated YouTube channel to grow fast and earn revenue, with about 6 to 10 hours a week and under $500 cash. Choose a niche and format, and test his worries about crowding, factual trust, and algorithm confusion.",
+  "assumptions": [
+    "Monthly revenue under $1,000 (founder's answer)",
+    "Cash under $500 total, tools under $50 a month (founder's answer)",
+    "6 to 10 hours a week, first video in 4 weeks (founder's answer)",
+    "Success targets from founder's example: monetized in 6 months, 1,000 subs and 4,000 watch hours in 12 months (assumed)",
+    "Vendor RPM and retention figures are directional only"
+  ]
+}
