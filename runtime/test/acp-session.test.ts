@@ -250,3 +250,21 @@ test('multi-turn session resumes existing acpSessionId via session/load when sup
     delete process.env.MYAOS_AGENT_ENV_PASS;
   }
 });
+
+test('an agent session is offered the MyaOS MCP server and acts through it with a session-bound token (K4)', async () => {
+  const started = await call('POST', `/v1/jobs/${jobId}/sessions`, { agentId: 'atlas', adapterId: 'fake', prompt: 'use myaos tools' });
+  assert.equal(started.status, 202, JSON.stringify(started.json));
+  const sessionId = started.json.id as string;
+  const transcript = await waitFor(async () => {
+    const res = await call('GET', `/v1/sessions/${sessionId}/transcript`);
+    const text = (res.json as any[]).map((e) => e.payload?.text ?? '').join('\n');
+    return /myaos tools:/.test(text) ? text : null;
+  });
+  assert.match(transcript, /task_report/);
+  assert.match(transcript, /task_report isError=false/);
+  const evidence = (await call('GET', `/v1/jobs/${jobId}/evidence`)).json as any[];
+  const note = evidence.find((e) => e.summary === 'fake agent progress via MCP');
+  assert.ok(note, 'the tool call wrote evidence');
+  assert.equal(note.recordedBy, 'atlas', 'actor comes from the session token');
+  assert.equal(note.class, 'DECLARED');
+});

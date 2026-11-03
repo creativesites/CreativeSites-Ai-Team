@@ -69,6 +69,8 @@ async function runTerminal(command, args) {
   };
 }
 
+let mcpServers = [];
+
 async function handlePrompt(message) {
   const promptText = (message.params?.prompt ?? [])
     .map((part) => (part?.type === 'text' ? part.text : ''))
@@ -76,6 +78,26 @@ async function handlePrompt(message) {
   currentPrompt = { id: message.id, cancelled: false };
   agentText('working');
   try {
+    if (/use myaos tools/i.test(promptText)) {
+      // Behave like an MCP client: list the runtime's tools, then report through them.
+      const server = mcpServers.find((m) => m.type === 'http' && m.name === 'myaos');
+      if (!server) {
+        agentText('no myaos MCP server offered');
+        respond(message.id, { stopReason: 'end_turn' });
+        return;
+      }
+      const headers = Object.fromEntries((server.headers ?? []).map((h) => [h.name, h.value]));
+      const rpc = async (method, params) => {
+        const res = await fetch(server.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }) });
+        return res.json();
+      };
+      const list = await rpc('tools/list', {});
+      const names = (list.result?.tools ?? []).map((t) => t.name).join(',');
+      const report = await rpc('tools/call', { name: 'task_report', arguments: { summary: 'fake agent progress via MCP' } });
+      agentText(`myaos tools: ${names}; task_report isError=${report.result?.isError}`);
+      respond(message.id, { stopReason: 'end_turn' });
+      return;
+    }
     if (/report usage/i.test(promptText)) {
       update({
         sessionUpdate: 'usage_update',
@@ -247,15 +269,17 @@ rl.on('line', (line) => {
     case 'initialize':
       respond(message.id, {
         protocolVersion: 1,
-        agentCapabilities: { loadSession: process.env.FAKE_LOAD_SESSION === '1' },
+        agentCapabilities: { loadSession: process.env.FAKE_LOAD_SESSION === '1', mcpCapabilities: { http: process.env.FAKE_NO_MCP !== '1' } },
         agentInfo: { name: 'fake-acp-agent', title: 'Fake ACP agent (harness self-test)', version: '0.1.0' },
         authMethods: [],
       });
       break;
     case 'session/new':
+      mcpServers = message.params?.mcpServers ?? [];
       respond(message.id, { sessionId });
       break;
     case 'session/load':
+      mcpServers = message.params?.mcpServers ?? [];
       sessionId = message.params?.sessionId ?? sessionId;
       agentText(`resumed session: ${sessionId}`);
       respond(message.id, { sessionId });

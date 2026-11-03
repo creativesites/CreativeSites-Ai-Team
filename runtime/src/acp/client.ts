@@ -165,11 +165,27 @@ export class AcpClient {
   }
 
   async newSession(timeoutMs = 60_000): Promise<string> {
-    const result = (await this.request('session/new', { cwd: this.opts.worktree, mcpServers: this.opts.mcpServers ?? [] }, timeoutMs)) as { sessionId?: string };
+    const result = (await this.request('session/new', { cwd: this.opts.worktree, mcpServers: this.offeredMcpServers() }, timeoutMs)) as { sessionId?: string };
     if (!result?.sessionId) throw new AcpError(-32002, 'session/new returned no sessionId');
     this.sessionId = result.sessionId;
     return result.sessionId;
   }
+
+  /**
+   * MCP servers the agent can actually use. ACP agents must support stdio; HTTP is optional and
+   * advertised as `agentCapabilities.mcpCapabilities.http`. HTTP servers are dropped for agents
+   * that do not advertise it (they fall back to bracket directives), and that is recorded.
+   */
+  offeredMcpServers(): unknown[] {
+    const servers = this.opts.mcpServers ?? [];
+    const caps = ((this.initializeResult?.agentCapabilities ?? {}) as { mcpCapabilities?: { http?: boolean } }).mcpCapabilities;
+    const kept = servers.filter((sv) => (sv as { type?: string }).type !== 'http' || caps?.http === true);
+    this.mcpDropped = servers.length - kept.length;
+    return kept;
+  }
+
+  /** How many offered MCP servers the agent could not take (0 when all were offered). */
+  mcpDropped = 0;
 
   /** True when the adapter advertised `agentCapabilities.loadSession` during initialize. */
   get canLoadSession(): boolean {
@@ -186,7 +202,7 @@ export class AcpClient {
     if (!this.canLoadSession) throw new AcpError(-32601, 'adapter does not advertise session/load');
     const result = (await this.request(
       'session/load',
-      { sessionId: acpSessionId, cwd: this.opts.worktree, mcpServers: this.opts.mcpServers ?? [] },
+      { sessionId: acpSessionId, cwd: this.opts.worktree, mcpServers: this.offeredMcpServers() },
       timeoutMs
     )) as { sessionId?: string } | undefined;
     const resolvedId = result?.sessionId || acpSessionId;

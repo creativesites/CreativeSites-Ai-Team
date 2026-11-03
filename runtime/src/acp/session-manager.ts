@@ -1,4 +1,6 @@
 import os from 'node:os';
+import type { DatabaseSync } from 'node:sqlite';
+import { issueAgentToken, revokeSessionTokens } from '../agent-tools/tokens.ts';
 import path from 'node:path';
 import type * as T from '../api/types.ts';
 import { ADAPTER_PRESETS, adapterBlockReason, adapterInfo, findExecutable } from '../adapters.ts';
@@ -425,6 +427,27 @@ export class SessionManager {
     this.hooks = hooks;
   }
 
+  private agentTools: { db: DatabaseSync; url: () => string | null } | null = null;
+
+  /** Enables the agent action interface (K4): each agent process gets a fresh session-bound token. */
+  enableAgentTools(opts: { db: DatabaseSync; url: () => string | null }): void {
+    this.agentTools = opts;
+  }
+
+  /**
+   * MCP servers offered to an agent process. Any earlier token for the session is revoked first,
+   * so only the live process can act. The actor of every call is the token's identity.
+   */
+  private agentToolServers(sessionId: string, agent: T.Identity, jobId: string | null, taskId: string | null): unknown[] {
+    const tools = this.agentTools;
+    const base = tools?.url();
+    if (!tools || !base) return [];
+    revokeSessionTokens(tools.db, sessionId);
+    const role = agent.approvalLevel === 'lead' || agent.approvalLevel === 'owner' ? 'lead' : /plan/i.test(agent.role ?? '') ? 'planner' : 'member';
+    const { token } = issueAgentToken(tools.db, { identityId: agent.id, sessionId, jobId, taskId, role });
+    return [{ type: 'http', name: 'myaos', url: `${base}/mcp`, headers: [{ name: 'Authorization', value: `Bearer ${token}` }] }];
+  }
+
   async start(input: StartSessionInput): Promise<T.Session> {
     const agent = this.repo.getIdentity(input.agentId);
     const job = input.jobId ? this.repo.getJob(input.jobId) : null;
@@ -502,7 +525,9 @@ export class SessionManager {
       args: adapter.args,
       cwd: worktreePath,
       worktree: worktreePath,
-      env: { ...process.env, ...this.env, ...(adapter.env ?? {}) },
+      // Only runtime-provided extras here: AcpClient adds the allowlisted part of process.env (security S3).
+      env: { ...this.env, ...(adapter.env ?? {}) },
+      mcpServers: this.agentToolServers(session.id, agent, job?.id ?? null, task?.id ?? null),
       handlers: {
         onUpdate: (_acpSessionId, update) => {
           if (!live.closed) this.handleUpdate(session.id, update);
@@ -687,7 +712,8 @@ export class SessionManager {
       args: adapter.args,
       cwd: worktreePath,
       worktree: worktreePath,
-      env: { ...process.env, ...this.env, ...(adapter.env ?? {}) },
+      env: { ...this.env, ...(adapter.env ?? {}) },
+      mcpServers: this.agentToolServers(sessionId, agent, existing.jobId ?? null, existing.taskId ?? null),
       handlers: {
         onUpdate: (_acpSessionId, update) => {
           if (!resumedLive.closed) this.handleUpdate(sessionId, update);
@@ -1240,6 +1266,13 @@ export class SessionManager {
       '  - Self-checkpoint at the end of every turn (preserves your hot working memory across token-lean session relays):',
       '    [STATE: done=<what you finished> | active=<files/focus> | next=<immediate next step>]'
     );
+    if (this.agentTools) {
+      teamStatusLines.push(
+        'MyaOS tools (MCP server "myaos", if your client lists it): job_get (read your job), task_report (short progress),',
+        '  evidence_add (tests/commits you produced; stored as DECLARED), thread_post (job room), blocker_raise (you need a decision or access),',
+        '  usage_report / context_report. You act only as yourself, only on this job and task. You cannot mark work verified or done.'
+      );
+    }
 
     if (override?.trim()) {
       return [override.trim(), ...teamStatusLines].join('\n');

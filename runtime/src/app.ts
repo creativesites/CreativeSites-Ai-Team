@@ -136,11 +136,16 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   }, 60_000);
   sweep.unref();
 
+  // Agent action interface (K4): sessions get a session-bound token for POST /mcp once the API is up.
+  let apiUrl: string | null = null;
+  sessions.enableAgentTools({ db, url: () => apiUrl });
+
   await new Promise<void>((resolve, reject) => {
     api.server.once('error', reject);
     api.server.listen(opts.port ?? 0, '127.0.0.1', () => resolve());
   });
   const port = (api.server.address() as AddressInfo).port;
+  apiUrl = `http://127.0.0.1:${port}`;
 
   return {
     url: `http://127.0.0.1:${port}`,
