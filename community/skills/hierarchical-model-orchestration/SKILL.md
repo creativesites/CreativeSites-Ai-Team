@@ -10,6 +10,9 @@ description: >
   per token and dollar, not merely the lowest token consumption.
 version: 1.0.0
 owner: unassigned
+triggers: [delegate, subagent, multi-step, orchestration, cheaper model]
+workflows: []
+roles: [lead]
 inputs:
   - assignment: string            # user request or approved implementation plan
   - target_repo: string

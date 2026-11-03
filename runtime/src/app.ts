@@ -16,6 +16,7 @@ import { Repo } from './store/repo.ts';
 import { Ledger } from './ledger/ledger.ts';
 import { gitAvailable } from './workspaces.ts';
 import { syncCommunity } from './community-sync.ts';
+import { attachSkillService } from './skills/service.ts';
 
 export const VERSION = '0.2.0';
 
@@ -31,6 +32,8 @@ export interface StartOptions {
   worktreeRoot?: string;
   artifactsDir?: string;
   teamRepo?: string | null;
+  /** Overrides the skills root (default: setting skillsRoot, env MYAOS_SKILLS_ROOT, then community/skills). */
+  skillsRoot?: string | null;
 }
 
 export interface RunningRuntime {
@@ -74,6 +77,12 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     },
     legacyDbPath
   );
+  const skills = attachSkillService(repo, db, { skillsRoot: opts.skillsRoot });
+  try {
+    skills.sync();
+  } catch (err) {
+    console.warn('[runtime] initial skill sync:', (err as Error).message);
+  }
   const checker = new Checker({ repo, workspaceRoots: wsRoots, worktreeRoot: wtRoot, artifactsDir: artDir });
   const sessions = new SessionManager({ repo, checker, env: readAdapterEnv(cfg) });
   const orchestrator = new Orchestrator({ repo, sessions, checker });

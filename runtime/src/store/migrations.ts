@@ -1045,4 +1045,34 @@ export const MIGRATIONS: Migration[] = [
     name: 'workforce time ledger: activity intervals and engagements (K6, WP9)',
     sql: LEDGER_SQL,
   },
+  {
+    version: 18,
+    name: 'runtime-loaded versioned skills and per-task pinned selection (WP8)',
+    sql: `
+      CREATE TABLE IF NOT EXISTS skills (
+        id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        path TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        triggers TEXT NOT NULL DEFAULT '[]',
+        workflows TEXT NOT NULL DEFAULT '[]',
+        roles TEXT NOT NULL DEFAULT '[]',
+        body TEXT NOT NULL DEFAULT '',
+        loaded_at TEXT NOT NULL,
+        PRIMARY KEY (id, content_hash)
+      );
+
+      CREATE TABLE IF NOT EXISTS task_skills (
+        task_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        selected_at TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        PRIMARY KEY (task_id, skill_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_skills_task ON task_skills(task_id);
+    `,
+  },
 ];

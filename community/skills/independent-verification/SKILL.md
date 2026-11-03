@@ -3,6 +3,9 @@ name: independent-verification
 description: Mandatory standard operating procedure for verifying another agent's implementation against real environments, preventing self-approval and confirmation bias.
 version: 1.0.0
 owner: Kael (Lead Verifier) & Antigravity (QA Lead)
+triggers: [verify, verification, qa, review, evidence, regression]
+workflows: [feature, incident]
+roles: [verifier]
 inputs:
   - task_id: string
   - git_commit_or_branch: string

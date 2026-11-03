@@ -8,6 +8,7 @@ import type { Checker } from '../checks.ts';
 import { ConflictError, InputError, type Repo } from '../store/repo.ts';
 import { compileBatonCapsule, shouldRotateSession } from './baton.ts';
 import { AcpClient, AcpError, type PermissionOption, type PermissionOutcome, type PermissionRequest } from './client.ts';
+import { skillServiceFor } from '../skills/service.ts';
 
 export interface StartSessionInput {
   jobId?: string | null;
@@ -1217,6 +1218,20 @@ export class SessionManager {
     return { id: preset.id, command: binary, args: preset.args, name: preset.name, env: pathEnv(binary, requires) };
   }
 
+  /** Skills for this task (WP8): selected once when the task's session starts, pinned by content hash. */
+  private skillBlockFor(job: T.JobDetail, task: T.Task | null): string {
+    const svc = skillServiceFor(this.repo);
+    if (!svc || !task) return '';
+    try {
+      svc.selectSkills(task, job);
+      const packet = svc.skillPacket(task.id);
+      return packet ? `\nSkills for this task (follow them; skill_read gives the full text):\n${packet}` : '';
+    } catch (e) {
+      console.warn('[runtime] skills: could not prepare the skill packet:', (e as Error).message);
+      return '';
+    }
+  }
+
   private buildPrompt(job: T.JobDetail | null, room: T.Room | null, task: T.Task | null, agent: T.Identity, override?: string): string {
     if (override?.trim()) {
       if (/^(echo ok|write outside|sleep|create a file|edit\.txt|exit 3|simulate rate limit|emit directive:|report usage)/i.test(override.trim())) {
@@ -1287,6 +1302,7 @@ export class SessionManager {
     }
 
     const criteria = job.criteria.map((c, idx) => `${idx + 1}. ${c.text}`).join('\n');
+    const skillBlock = this.skillBlockFor(job, task);
     return [
       `Job #${job.number}: ${job.title} (kind: ${job.kind ?? 'code'})`,
       job.brief ? `\nBrief:\n${job.brief}` : '',
@@ -1295,6 +1311,7 @@ export class SessionManager {
       task ? `\nYour task (${agent.name}): ${task.title}` : '',
       task?.checkCommand ? `Check command the runtime will run after your turn: ${task.checkCommand}` : '',
       '\nWork only inside the current workspace directory.',
+      skillBlock,
       ...teamStatusLines,
     ]
       .filter(Boolean)

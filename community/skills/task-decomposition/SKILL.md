@@ -3,6 +3,9 @@ name: task-decomposition
 description: Standard operating procedure for turning a high-level goal or planner verdict into structured, falsifiable task contracts in SQLite with clear dependencies.
 version: 1.0.0
 owner: Orion & Cadence
+triggers: [decompose, breakdown, break down, task graph, dependencies, acceptance criteria]
+workflows: [feature, strategic]
+roles: [planner, lead]
 inputs:
   - plan_or_goal: string
   - target_repo: string
