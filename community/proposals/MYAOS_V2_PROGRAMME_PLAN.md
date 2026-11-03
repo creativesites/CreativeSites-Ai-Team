@@ -87,7 +87,7 @@ pending → assigned → acknowledged → running → needs_review → verified 
 - Fallback: when an adapter ignores `mcpServers`, it keeps the bracket directives. The runtime records `protocol=directive` on the session so the gap is visible.
 
 ### K5: Organisation and identity model *(WP2 schema, WP11 UI)*
-- **New table** `departments(id, name, lead_identity_id)`. Seed it with the six departments in §3.2.
+- **New table** `departments(id, name, lead_identity_id)`. Seed it with the six approved departments in §13.
 - **New identity columns:** `department_id`, `seniority (exec|lead|senior|member)`, `skills` (array of skill IDs), `providers` (array of adapter IDs, ordered by preference) and `permissions` (array of action names).
 - `approval_level` stays as the authority used by the approvals engine.
 - An identity is an employee and a session is an employee's working session, as the code already implements. Usage, time and performance records hang off `identity_id`, never off the session alone.
@@ -431,11 +431,12 @@ At 3–4 parallel agents, that is roughly 6–8 calendar weeks after WP0, with a
 1. **Approved:** merge V2 into `main` and retire v1 as legacy. Done in WP0-T1 and T5.
 2. **Contract engagement:** terms received. They are held only in the local `engagements.local.json` (K6 confidentiality rule). Billing model: only Winston's logged hours are billable; agent hours are non-billable but can be linked.
 3. **AI usage:** subscription plans, not API. Track plan % per account (K6, WP10 10.2b–c). Three accounts. The client account is isolated (K9).
-4. **Departments:** proposal in §13, waiting for one-pass approval.
+4. **Departments:** approved, with a sixth department, Planning & Strategy, for the planners (§13).
+5. **Client repository:** after the team and desktop app are complete, client work moves to a separate, client-specific repository. Until then this repo is private, at the owner's direction (2026-11-03), and K9 still applies: no client-confidential content in shared files.
 
-## 13. Department proposal (waiting for Winston's approval)
+## 13. Departments (approved by Winston, 2026-11-03)
 
-Departments: **Engineering**, **Platform & Runtime**, **Quality & Verification**, **Design**, **Operations**. The basis is each agent's declared `primary_domain` in `community/agents.json` (34 identities after the merge: 20 on `main`, plus 14 that existed only on the V2 branch).
+Departments: **Engineering**, **Platform & Runtime**, **Quality & Verification**, **Design**, **Planning & Strategy**, **Operations**. The basis is each agent's declared `primary_domain` in `community/agents.json` (34 identities after the merge: 20 on `main`, plus 14 that existed only on the V2 branch).
 
 | Agent | Department | Basis |
 |---|---|---|
@@ -468,10 +469,10 @@ Departments: **Engineering**, **Platform & Runtime**, **Quality & Verification**
 | orchestrator | Operations | Coordination and task dispatch (lead) |
 | ledger | Operations | Intake, context and workflow routing |
 | synapse | Operations | MeetingMind squad orchestration |
-| mira | Operations | MeetingMind planning |
-| themis | Operations | Product planning, UX and privacy guardrails |
-| daedalus | Operations | Systems architecture and technical planning |
+| mira | Planning & Strategy | MeetingMind planning |
+| themis | Planning & Strategy | Product planning, UX and privacy guardrails |
+| daedalus | Planning & Strategy | Systems architecture and technical planning |
 | codex | Operations | Workflow analysis and documentation |
 | wren | Operations | Site growth, analytics and SEO |
 
-Open point: the vision (§3.2) has a separate **Planning & Strategy** department. With five departments, the planners (mira, themis, daedalus) sit in Operations. Adding a sixth department would move them there.
+Planning & Strategy also hosts the Planning Council seats (WP3). These departments seed the `departments` table in migration v11 (K5, task 2.7).
