@@ -134,12 +134,11 @@ function Screen({
   const startJob = async (req: StartJobRequest) => {
     if (!client) throw new Error('The runtime is not reachable.');
     const roomId = req.roomId ?? (await client.createRoom({ name: req.newRoomName!, projectId: req.projectId ?? undefined })).id;
-    // The title is the brief's first sentence; the whole text stays as the brief.
-    const first = req.text.split('\n')[0].split(/(?<=[.!?])\s/)[0].replace(/[.]$/, '');
-    const title = first.length > 90 ? `${first.slice(0, 87)}…` : first;
-    const job = await client.createJob({ roomId, title, brief: req.text, createdBy: ownerId });
-    await client.postMessage(roomId, { authorId: ownerId, authorKind: 'human', body: req.text, jobId: job.id });
-    window.location.hash = href({ name: 'room', roomId });
+    // Home goes through the unified intake: the raw text is kept, triaged by rules and de-duplicated
+    // against open jobs. A duplicate links to the existing job instead of creating another.
+    const { job, duplicate } = await client.intake({ text: req.text, source: 'home', roomId, requestedBy: ownerId });
+    if (!duplicate) await client.postMessage(roomId, { authorId: ownerId, authorKind: 'human', body: req.text, jobId: job.id });
+    window.location.hash = href({ name: 'room', roomId: duplicate ? job.roomId : roomId });
   };
 
   switch (route.name) {
