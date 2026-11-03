@@ -1195,6 +1195,9 @@ function AiEnginesSection({
 
                   <div className="text-muted-foreground text-xs leading-relaxed">
                     {adapter.auth?.detail || 'No detail provided.'}
+                    {adapter.auth?.account?.label ? (
+                      <div className="mt-1">Account: {adapter.auth.account.label}</div>
+                    ) : null}
                   </div>
 
                   {adapter.abilities && Object.keys(adapter.abilities).length > 0 && (

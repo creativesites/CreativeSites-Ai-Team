@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AdapterAuth, AdapterInfo } from './api/types.ts';
+import type { AdapterAccount, AdapterAuth, AdapterInfo } from './api/types.ts';
 import { readAdapterEnv } from './adapter-env.ts';
 
 // Adapter presets. These are configuration, not claims: `installed`, `version`
@@ -129,6 +129,65 @@ function runCapture(binary: string, args: string[], timeout = 4000): { status: n
   };
 }
 
+function str(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v.trim() : null;
+}
+
+/** Reads the signed-in Claude account from `claude auth status` JSON, falling back to ~/.claude.json. */
+export function claudeAccount(status: Record<string, unknown>, home = process.env.HOME ?? ''): AdapterAccount | null {
+  const email = str(status.email) ?? str(status.emailAddress) ?? str(status.accountEmail);
+  const org = str(status.orgName) ?? str(status.organizationName) ?? str(status.orgId) ?? str(status.organizationUuid);
+  if (email || org) {
+    return { id: email ?? org, label: [email, org, str(status.subscriptionType)].filter(Boolean).join(' · '), source: 'claude auth status' };
+  }
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8')) as { oauthAccount?: Record<string, unknown> };
+    const a = cfg.oauthAccount ?? {};
+    const e = str(a.emailAddress);
+    const o = str(a.organizationName) ?? str(a.organizationUuid);
+    if (e || o) return { id: e ?? o, label: [e, o].filter(Boolean).join(' · '), source: '~/.claude.json' };
+  } catch {
+    /* not available */
+  }
+  return null;
+}
+
+/** Reads the active Google account used by the Gemini CLI. */
+export function geminiAccount(home = process.env.HOME ?? ''): AdapterAccount | null {
+  try {
+    const f = JSON.parse(fs.readFileSync(path.join(home, '.gemini', 'google_accounts.json'), 'utf8')) as { active?: unknown };
+    const active = str(f.active);
+    return active ? { id: active, label: active, source: '~/.gemini/google_accounts.json' } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Reads the email claim from the Codex id_token (no network, no verification: it only labels the account). */
+export function codexAccount(home = process.env.HOME ?? ''): AdapterAccount | null {
+  try {
+    const f = JSON.parse(fs.readFileSync(path.join(home, '.codex', 'auth.json'), 'utf8')) as { tokens?: { id_token?: string } };
+    const part = f.tokens?.id_token?.split('.')[1];
+    if (!part) return null;
+    const claims = JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as Record<string, unknown>;
+    const email = str(claims.email);
+    return email ? { id: email, label: email, source: '~/.codex/auth.json' } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether an adapter may receive work. Only states that are known to fail block dispatch;
+ * `unknown` (e.g. a custom override) is allowed so it can prove itself on a real turn.
+ */
+export function adapterBlockReason(info: Pick<AdapterInfo, 'name' | 'installed' | 'auth'>): string | null {
+  if (!info.installed || info.auth.state === 'missing_binary') return `${info.name} is not installed. ${info.auth.detail}`;
+  if (info.auth.state === 'needs_login') return `${info.name} is not signed in. ${info.auth.detail}`;
+  if (info.auth.state === 'unsupported') return `${info.name} cannot run as an agent. ${info.auth.detail}`;
+  return null;
+}
+
 function claudeAuth(adapterInstalled: boolean): AdapterAuth {
   if (!adapterInstalled) return { state: 'missing_binary', detail: 'claude-agent-acp is not installed' };
   const cli = findExecutable('claude');
@@ -136,10 +195,10 @@ function claudeAuth(adapterInstalled: boolean): AdapterAuth {
   try {
     const out = runCapture(cli, ['auth', 'status']).text;
     const start = out.indexOf('{');
-    const status = JSON.parse(out.slice(start)) as { loggedIn?: boolean; authMethod?: string; subscriptionType?: string };
+    const status = JSON.parse(out.slice(start)) as Record<string, unknown> & { loggedIn?: boolean; authMethod?: string; subscriptionType?: string };
     if (status.loggedIn) {
       const via = [status.authMethod, status.subscriptionType].filter(Boolean).join(' · ');
-      return { state: 'ready', detail: via ? `Signed in (${via})` : 'Signed in' };
+      return { state: 'ready', detail: via ? `Signed in (${via})` : 'Signed in', account: claudeAccount(status) };
     }
     return { state: 'needs_login', detail: 'Claude Code is not signed in; run `claude` and log in' };
   } catch {
@@ -154,7 +213,7 @@ function codexAuth(adapterInstalled: boolean): AdapterAuth {
   try {
     const out = runCapture(cli, ['login', 'status']).text;
     return /logged in/i.test(out)
-      ? { state: 'ready', detail: out.split('\n')[0]?.slice(0, 120) || 'Signed in' }
+      ? { state: 'ready', detail: out.split('\n')[0]?.slice(0, 120) || 'Signed in', account: codexAccount() }
       : { state: 'needs_login', detail: 'Codex is not signed in; run `codex login`' };
   } catch {
     return { state: 'unknown', detail: 'Could not read Codex auth status' };
@@ -171,7 +230,7 @@ function geminiAuth(adapterInstalled: boolean): AdapterAuth {
     const file = path.join(process.env.HOME ?? '', '.gemini', 'oauth_creds.json');
     const creds = JSON.parse(fs.readFileSync(file, 'utf8')) as { expiry_date?: number; refresh_token?: string };
     if (creds.expiry_date && creds.expiry_date > Date.now()) {
-      return { state: 'ready', detail: `OAuth token valid until ${new Date(creds.expiry_date).toISOString()}` };
+      return { state: 'ready', detail: `OAuth token valid until ${new Date(creds.expiry_date).toISOString()}`, account: geminiAccount() };
     }
     return {
       state: 'needs_login',

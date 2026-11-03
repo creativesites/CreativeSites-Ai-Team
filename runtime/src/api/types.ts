@@ -460,6 +460,20 @@ export interface Budget {
 export interface AdapterAuth {
   state: 'ready' | 'configured' | 'needs_login' | 'missing_binary' | 'unsupported' | 'unknown';
   detail: string;
+  /**
+   * Which account the adapter is signed in to, when the CLI exposes it locally.
+   * Used for AI-account isolation (programme plan K9). Never sent off the machine.
+   */
+  account?: AdapterAccount | null;
+}
+
+export interface AdapterAccount {
+  /** Stable identifier when available (email or organisation id). */
+  id: string | null;
+  /** Human label (email, organisation name, plan). */
+  label: string | null;
+  /** Where it was read from, e.g. `claude auth status`, `~/.gemini/google_accounts.json`. */
+  source: string;
 }
 
 export interface AdapterInfo {

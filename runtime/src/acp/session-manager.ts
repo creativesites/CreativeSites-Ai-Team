@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import type * as T from '../api/types.ts';
-import { ADAPTER_PRESETS, findExecutable } from '../adapters.ts';
+import { ADAPTER_PRESETS, adapterBlockReason, adapterInfo, findExecutable } from '../adapters.ts';
 import type { Checker } from '../checks.ts';
 import { ConflictError, InputError, type Repo } from '../store/repo.ts';
 import { compileBatonCapsule, shouldRotateSession } from './baton.ts';
@@ -1138,6 +1138,10 @@ export class SessionManager {
     if (!binary) {
       throw new ConflictError(`${preset.name} is not installed (looked for ${preset.command}). Nothing was started.`);
     }
+    // WP0-T6: an adapter that is known to be unusable (signed out, unsupported) receives no work.
+    const probed = adapterInfo(preset.id);
+    const blocked = probed ? adapterBlockReason(probed) : null;
+    if (blocked) throw new ConflictError(`${blocked} Nothing was started.`);
     const requires = preset.id === 'codex' ? findExecutable('codex') : null;
     return { id: preset.id, command: binary, args: preset.args, name: preset.name, env: pathEnv(binary, requires) };
   }
