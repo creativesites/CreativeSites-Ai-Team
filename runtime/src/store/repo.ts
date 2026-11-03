@@ -3608,25 +3608,8 @@ export class Repo {
         }
       }
 
-      // Default seed if no legacy data found
-      this.write(() => {
-        const t = now();
-        this.db.prepare(
-          `INSERT OR IGNORE INTO okr_objectives (id, title, description, owner_id, quarter, progress_percent, status, created_at, updated_at)
-           VALUES
-           ('OBJ_1', 'Elevate Myavana Chatbot to Executive-Grade 0-Drop Quality', 'Flawless UI widget streaming, native audio chimes, and verified regression pipelines', 'astra', 'Q4-2026', 75, 'on_track', ?, ?),
-           ('OBJ_2', 'Complete Autonomous Substrate Verification & Reality Sync', 'Enforce un-mocked verification across all agent turns with 100% truthfulness in SQLite', 'kael', 'Q4-2026', 88, 'on_track', ?, ?)`
-        ).run(t, t, t, t);
-
-        this.db.prepare(
-          `INSERT OR IGNORE INTO okr_key_results (id, objective_id, title, metric_type, current_value, target_value, unit, progress_percent, telemetry_query, created_at, updated_at)
-           VALUES
-           ('KR_1_1', 'OBJ_1', 'Widget streaming latency below 200ms', 'numeric', 180.0, 200.0, 'ms', 85, 'SELECT AVG(latency) FROM turns', ?, ?),
-           ('KR_1_2', 'OBJ_1', 'Zero un-handled exceptions in Chatbot turns', 'percentage', 96.0, 100.0, '%', 96, 'SELECT (1 - errors/total)*100', ?, ?),
-           ('KR_2_1', 'OBJ_2', '100% of implementing agent turns audited by Lead Verifier Kael', 'percentage', 88.0, 100.0, '%', 88, 'SELECT COUNT(*) FROM evidence WHERE passed = 1', ?, ?),
-           ('KR_2_2', 'OBJ_2', 'Automated Reality Engine reconciliation run continuously', 'binary', 1.0, 1.0, 'status', 100, NULL, ?, ?)`
-        ).run(t, t, t, t, t, t, t, t);
-      });
+      // No legacy source: leave OKRs empty. Never seed made-up objectives or
+      // progress numbers (vision §2.5; gap audit §11).
     } catch {
       // best-effort
     }

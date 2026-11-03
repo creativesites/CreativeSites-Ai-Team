@@ -64,11 +64,8 @@ test('1. OKR substrate initializes and lists objectives & measured key results',
   const data = await ok('GET', '/v1/okrs');
   assert.ok(Array.isArray(data.objectives));
   assert.ok(Array.isArray(data.keyResults));
-  assert.ok(data.objectives.length >= 1, 'Should have seeded objectives');
-
-  const obj1 = data.objectives.find((o: any) => o.id === 'OBJ_1');
-  assert.ok(obj1);
-  assert.equal(obj1.owner_id, 'astra');
+  // Objectives come only from a real legacy store or from users; none are fabricated.
+  for (const o of data.objectives) assert.ok(typeof o.id === 'string' && o.id.length > 0);
 });
 
 test('2. Create, update, and cascade progress on objectives and key results', async () => {

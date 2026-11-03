@@ -1044,10 +1044,10 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const reply = repo.postThreadReply(ctx.params.id!, input);
       try {
         const thread = repo.getThread(ctx.params.id!);
-        if (thread.originalFilePath && fs.existsSync(thread.originalFilePath)) {
+        if (thread.original_file_path && fs.existsSync(thread.original_file_path)) {
           const stamp = new Date().toISOString();
-          const replyBlock = `\n\n### Reply from @${reply.from} (${stamp})\n\n${reply.body}\n`;
-          fs.appendFileSync(thread.originalFilePath, replyBlock, 'utf8');
+          const replyBlock = `\n\n### Reply from @${reply.from_identity ?? input.from} (${stamp})\n\n${reply.body}\n`;
+          fs.appendFileSync(thread.original_file_path, replyBlock, 'utf8');
         }
       } catch {
         /* best effort */
