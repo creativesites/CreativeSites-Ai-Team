@@ -110,20 +110,34 @@ These tables are one ledger, so time and tokens reconcile per agent, task, job a
 - **Corrections:** an adjustment is a new row with `source=adjustment` and `adjusts_interval_id`. Original rows are never updated (§6.4).
 - **Restart safety:** an interval left open across a runtime restart is closed at the session's `last_event_at`, marked `closed_by=recovery`.
 
-**`engagements`**: client, contract_ref, hourly_rate_minor, currency, min_weekly_hours, max_weekly_hours, start/end, billable_categories, allow_agent_billing (default **0**), period (weekly), approval_required. Seeded with *Freeing Returns, 20–40 h/week*. Rate and currency are null until Winston enters them, and billable value shows `unknown` until then.
+**`engagements`**: client, contract_ref, role, hourly_rate_minor, currency, min_weekly_hours, max_weekly_hours, start/end, external_time_system (e.g. Gusto), external_task_system (e.g. Jira), pay_schedule (may be `unknown`), billable_categories, `allow_agent_billing` (default **0**), period (weekly), approval_required.
+- **Confidentiality rule:** engagement rows are created **only** in the local `runtime.db`, from an untracked file `~/.myaos/engagements.local.json`. Client names, rates, people and contract terms are never written to this repository, which is public, or to `community/`.
+- **Billing model (owner decision, 2026-11-03):** only Winston's own human hours, as logged in the external time system, are billable. Agent hours are always `non_billable`. An agent interval can carry `supports_interval_id`, which links it to the human billable interval for the same task, so you can see what the AI did inside a billed hour without billing it separately.
 
 **`timesheets`**: engagement_id, period_start, totals snapshot, state (`draft|submitted|approved`), approved_by, export_hash. An export is a CSV and PDF rebuilt from the intervals, and its hash proves the two reconcile (§18.3).
 
-**`usage` (extended)**:
-- **New columns:** `agent_id, task_id, project_id, provider, model_id, cached_input_tokens, cache_write_tokens, reasoning_tokens, measurement (actual|estimated|unavailable), context_used, context_size, cost_minor, cost_currency, cost_source (provider|price_table|unknown)`.
+**`usage` (extended, per-turn token data where an adapter exposes it)**:
+- **New columns:** `agent_id, task_id, project_id, provider, model_id, cached_input_tokens, cache_write_tokens, reasoning_tokens, measurement (actual|estimated|unavailable), context_used, context_size`. No cost columns: the team uses subscription plans, not per-token API billing (owner decision).
 - **Mapper fix:** read the ACP `usage_update` fields `{used, size, cost}`. This is the adapter-fidelity risk in the audit.
 - **Unique key** `(session_id, turn_id, kind)`.
 
-**`model_registry`**: provider, model_id, context_window, price per million tokens for input, output and cache, price_source, price_date. Prices are declared by Winston. Without a price, cost is `unknown`; it is never invented (this keeps the legacy `tokenTelemetry` principle).
+**`model_registry`**: provider, model_id, context_window. No prices (subscription plans, owner decision).
 
-**`budgets` (extended)**:
+**`ai_accounts`**: id, provider (`anthropic|google`), plan (`claude_pro`, `claude_team_or_client`, `google_ai_pro`), owner_scope (`client:<engagement_id>` or `personal`), surfaces (claude.ai / Claude Code / desktop share one limit; Gemini app; Gemini CLI), limit_model (`claude_5h_weekly_pct`, `gemini_app_5h_weekly_pct`, `gemini_cli_requests_per_day` with quota 1500). No token caps are stored, because neither provider publishes them.
+
+**`account_limit_snapshots`**: account_id, captured_at, session_pct, session_resets_at, weekly_pct, weekly_resets_at, requests_today (Gemini CLI), source (`manual` from Claude Code `/usage` or Settings → Usage | `cli_capture` | `runtime_count`), measurement (`actual` for a read value | `estimated`).
+
+**`task_usage`**: task_id, session_id, account_id, agent_id, model_id, started_at, ended_at, session_pct_before/after, weekly_pct_before/after, requests (Gemini CLI), `concurrent_tasks_on_account`, `attributed_weekly_pct`, measurement = **`estimated`** always. When several tasks share an account at once, the weekly delta is split by active time and the split is flagged.
+
+**Per-task-type estimates:** median `attributed_weekly_pct` per (task type, model, agent), shown as estimates with sample size.
+
+**Priority metric:** weekly % used per account, and which agents and task types consume it fastest.
+
+**Alert:** when any account passes **70% of its weekly limit before the midpoint of its own weekly window** (measured from `weekly_resets_at`, not calendar Wednesday), raise a Needs You item and a `budget.warning` event.
+
+**`budgets` (extended; for subscriptions a budget is a % of an account's weekly limit, never money)**:
 - **Scopes:** add `agent`, `task`, `department` and `session`.
-- **Kinds:** `tokens` and `cost`.
+- **Kinds:** `weekly_pct`, `session_pct`, `requests_per_day`, and `tokens` where an adapter reports them.
 - **Thresholds:** `warn_pct` and `hard_pct`.
 - **Enforcement point:** each prompt send, not only session start. This fixes `assertBudget(job,0)`.
 
@@ -132,6 +146,13 @@ These tables are one ledger, so time and tokens reconcile per agent, task, job a
 - When `context_size` is unknown, fall back to the current absolute thresholds (36k soft, 64k hard), labelled `estimated` (C6).
 - The existing baton capsule becomes the §7.3 continuation package. Add the vision fields it lacks: discoveries, decisions, commits, blockers, acceptance criteria and next actions. It is stored as an artifact and can be inspected from the desktop.
 - Triggers: threshold crossed, unusual consumption (tokens per turn above 3× the agent's median), or manual. Each renewal emits `session.renewed` with the old and new session IDs.
+
+### K9: AI account isolation *(WP0 follow-up; enforced from S1 onward)*
+- Every project has `ai_account_id`. A job inherits it, and so does every session started for the job.
+- **Client work runs only on that client's account; that account runs only that client's work.** Example: all work for a client engagement uses that client's Claude account, and nothing else does. Personal projects use Claude Pro or Google AI Pro. This is a contract security rule, not a preference.
+- The dispatcher refuses (409 plus a Needs You item) any session whose adapter login is not the project's account. Adapter readiness (WP0-T6) records which account each adapter is signed in to.
+- Projects marked `confidential` are excluded from `community-sync`. Their threads, inboxes and stand-up lines stay in `runtime.db` and are never written to the repository.
+- No external AI service processes confidential project data unless that service is on the project's approved list.
 
 ### K8: Worktree policy *(WP4)*
 - Each task gets its own worktree and branch, `myaos/job-<n>/task-<m>`, created from the job's integration branch `myaos/job-<n>` (C2).
@@ -149,7 +170,7 @@ These tables are one ledger, so time and tokens reconcile per agent, task, job a
 | v11 | WP2 | Job columns: `workflow (quick|feature|strategic|incident)`, `triage_reason`, `urgency`, `impact`, `intake_id`, `okr_kr_id`, `milestone_id`. New tables: `intake_requests`, `departments`. Identity columns (K5). |
 | v12 | WP4 | `tool_calls` (audit), `session_tokens`, `handoffs`, `blockers`. `worktrees.task_id` brought into use. |
 | v13 | WP6 | Schedule columns: `name` UNIQUE, `timezone`. New table: `schedule_runs` (due_at, ran_at, status, catch_up). `standups` unique per (team, date). Inbox `delivery_state`. Message links to job, task and project. `decisions` table. |
-| v14 | WP9/10 | `activity_intervals`, `engagements`, `timesheets`, `model_registry`. Extended `usage` and `budgets`. |
+| v14 | WP9/10 | `activity_intervals`, `engagements`, `timesheets`, `model_registry`, `ai_accounts`, `account_limit_snapshots`, `task_usage`. Extended `usage` and `budgets`. Project columns `ai_account_id`, `confidential` (K9). |
 | v15 | WP7 | KR `kind`, `source`, `weight`. `archived_at` on tasks and jobs. |
 | v16 | WP8 | `skills` (id, version, content_hash, path). `task_skills` (task_id, skill_id, hash). |
 | v17 | WP12 | Design frame status widened to add `review` and `superseded`. `design_task_id`. |
@@ -246,7 +267,7 @@ A `skills.ts` loader for `community/skills/*/SKILL.md` (frontmatter as in the ca
 | 9.1 | `activity_intervals` writer from turn start and end (K6) | S | 4 concurrent agents for 1 h → 4.0 agent-hours, 1.0 h elapsed (test) |
 | 9.2 | Reconnect, restart and renewal safety | S | Replay or reconnect adds 0 ms; restart closes open intervals at `last_event_at` |
 | 9.3 | Human timers and manual entries (desktop, plus `time.start` and `time.stop` for Winston only) | S | Agents can never create `actor_kind=human` rows (authorisation test) |
-| 9.4 | Engagement profiles; Freeing Returns seeded at 20–40 h/week; agent hours non-billable by default | H | Weekly view shows remaining hours against the minimum and maximum; billable value `unknown` until a rate is set |
+| 9.4 | Engagement profiles loaded from `~/.myaos/engagements.local.json`; agent hours always non-billable; agent intervals linkable to the human billable interval | H | Weekly view shows remaining hours against the min/max; pay schedule shows `unknown` when unset; no engagement data in any tracked file (grep test in CI) |
 | 9.5 | Adjustments as an audit trail | H | Original row unchanged; net total includes the adjustment |
 | 9.6 | Timesheet draft → approve → CSV and PDF export with a reconciliation hash | S | Export total equals the sum of intervals; editing after approval needs a new revision |
 | 9.7 | Time & Productivity screen: daily, weekly and monthly views (§6.3) | S | Every number links through to its intervals |
@@ -255,11 +276,13 @@ A `skills.ts` loader for `community/skills/*/SKILL.md` (frontmatter as in the ca
 | ID | Task | Tier | Accept |
 |---|---|---|---|
 | 10.1 | Usage mapper fix for the ACP `{used,size,cost}` fields; extended columns; measurement label | S | Fixture of each adapter's real payload → correct rows; missing data → `unavailable`, never 0 presented as actual |
-| 10.2 | `model_registry` and a real `model_id` on sessions (today it stores the agent name) | H | Context % computed only when the window is known |
+| 10.2 | `model_registry` (windows only), `ai_accounts`, a real `model_id` on sessions (today it stores the agent name) | H | Context % computed only when the window is known |
+| 10.2b | Account limit snapshots: manual entry from `/usage` (desktop form, about 10 s), a spike to capture it automatically from Claude Code, Gemini CLI requests counted by the runtime; `task_usage` before/after per task | S | Each task row has account, agent, model, times and before/after %; values labelled `estimated`; reset times recorded |
+| 10.2c | 70%-before-mid-window alert per account | H | Injected snapshots: 71% at 40% of the window raises one alert; 71% at 60% does not |
 | 10.3 | K7 policy resolution and percentage thresholds; capsule extended to the §7.3 fields | S | Injected usage crosses 85% → renewal; new generation has the same identity and the task continues |
-| 10.4 | Budgets: scopes, kinds, enforcement on each prompt; actions (continue with approval, renew, cheaper model, reassign, escalate) | O | A budget exceeded mid-task produces a Needs You item and stops work; no silent overrun |
+| 10.4 | Budgets as weekly-% limits per account, agent, task and project; enforcement on each prompt; actions (continue with approval, renew, smaller model, reassign, escalate) | O | A budget exceeded mid-task produces a Needs You item and stops work; no silent overrun |
 | 10.5 | Anomaly detection (more than 3× median tokens per turn) | H | Seeded spike → `session.context_threshold` recommendation |
-| 10.6 | AI Resources screen: organisation, agent and project views (§7.5) | S | Totals reconcile with `usage` rows; estimated and actual shown separately |
+| 10.6 | AI Resources screen, led by **weekly % per account**, then usage by agent and task type, then per-project usage (§7.5, with cost replaced by plan usage) | S | Every number traces to snapshots or `task_usage`; estimates labelled |
 
 ### WP11: Unified desktop integration *(L, continuous; lead: Iris with Tessera on design; verifier: Antigravity)*
 - **Navigation:** rework to the 15 items in §14.2.
@@ -348,7 +371,8 @@ Maximum concurrency after S1 is 4 implementation agents.
 | Merging V2 into `main` loses community data | Lost identities or threads | T1 identity-diff script; the PR is reviewable and reversible |
 | `repo.ts`/`server.ts` contention | Merge conflicts | New modules, single writer, contracts first |
 | Time numbers used for billing are wrong | Contractual and financial harm | Human time only from explicit entries; agent time never billable by default; timesheet approval; reconciliation hash |
-| Prices unknown | Cost dashboards misleading | `cost_source=unknown` rather than estimates; Winston declares prices |
+| No published token caps on subscription plans | Usage reported in tokens would be invented | Track plan % from `/usage`, label per-task attribution `estimated`, never derive token caps |
+| Client work processed on the wrong account, or published | Contract and security breach | K9 isolation enforced by the dispatcher; confidential projects excluded from community sync; public-repo grep in CI |
 | Live DB migration corrupts data | Data loss | T7 backups, dry-run on a copy, additive migrations only |
 | Agent spoofs `actorId` | Bypassed gates | T9 binds actor to token; K4 session tokens |
 | Usage limits starve work | Stalls | Rate-limit fallback (exists); budget-aware dispatch |
@@ -402,11 +426,52 @@ A release candidate additionally passes:
 
 At 3–4 parallel agents, that is roughly 6–8 calendar weeks after WP0, with a re-plan after S1. Expected tier mix: about 45% Haiku, 45% Sonnet and 10% Opus (contracts, security, council rework, budget enforcement). No token figures are given, because no measured per-task baseline exists yet. WP10 creates that baseline.
 
-## 12. Decisions reserved for Winston
+## 12. Decisions (recorded 2026-11-03)
 
-1. **Approve this plan and K1:** merge V2 into `main` and retire v1 as legacy.
-2. **Freeing Returns profile:** hourly rate, currency, billing week start, and whether agent hours can ever be billable. Default is no, and billable value shows `unknown` until you answer.
-3. **Model prices for `model_registry`:** declare them, or accept cost showing `unknown`.
-4. **Department mapping:** one review of the 20 identities' departments (2.7).
+1. **Approved:** merge V2 into `main` and retire v1 as legacy. Done in WP0-T1 and T5.
+2. **Contract engagement:** terms received. They are held only in the local `engagements.local.json` (K6 confidentiality rule). Billing model: only Winston's logged hours are billable; agent hours are non-billable but can be linked.
+3. **AI usage:** subscription plans, not API. Track plan % per account (K6, WP10 10.2b–c). Three accounts. The client account is isolated (K9).
+4. **Departments:** proposal in §13, waiting for one-pass approval.
 
-Defaults when there is no answer: items 2–4 stay on their safe defaults and do not block work. Item 1 blocks WP0-T1 only. WP0 T2, T3 and T6–T9 can be prepared on a branch from the V2 line in the meantime.
+## 13. Department proposal (waiting for Winston's approval)
+
+Departments: **Engineering**, **Platform & Runtime**, **Quality & Verification**, **Design**, **Operations**. The basis is each agent's declared `primary_domain` in `community/agents.json` (34 identities after the merge: 20 on `main`, plus 14 that existed only on the V2 branch).
+
+| Agent | Department | Basis |
+|---|---|---|
+| atlas | Platform & Runtime | Platform, Cloud Run, Git & Security |
+| nexus | Platform & Runtime | Orchestration platform engineering |
+| cadence | Platform & Runtime | V2 workflow engine |
+| gemini_cli | Platform & Runtime | CLI substrate operations |
+| gantry | Platform & Runtime | Android build pipelines, release packaging |
+| cinder | Platform & Runtime | Cloud infrastructure, Cloudflare Workers, Firebase security |
+| hermes | Platform & Runtime | API gateways, Workers, R2, Firebase rules |
+| vela | Engineering | WordPress system of record and host bridge |
+| iris | Engineering | Dashboard and operator console |
+| astra | Engineering | Widget SDK and AI protocol |
+| lyra | Engineering | Mobile and React Native SDK |
+| sol | Engineering | DogForce Odoo platform |
+| orion | Engineering | Full-stack systems, Odoo and rostering engines |
+| sirius | Engineering | Odoo operations, UI and mobile client |
+| forge | Engineering | Android Kotlin / Compose |
+| vega | Engineering | MeetingMind CTO: review and release (lead) |
+| loom | Engineering | Workspaces UI |
+| quill | Engineering | Dev-mode terminal |
+| kael | Quality & Verification | QA, testing and verification (lead) |
+| sentinel | Quality & Verification | Independent QA, regression, reliability |
+| antigravity | Quality & Verification | Automated browser QA and production testing |
+| corona | Quality & Verification | Script and claim-ledger verifier |
+| tessera | Design | Desktop product design, Design Studio |
+| faraday | Design | AI generation lead (visuals) |
+| helios | Design | Team leader and AI generation lead (Carrington) |
+| reel | Design | Showrunner, editing and sound |
+| orchestrator | Operations | Coordination and task dispatch (lead) |
+| ledger | Operations | Intake, context and workflow routing |
+| synapse | Operations | MeetingMind squad orchestration |
+| mira | Operations | MeetingMind planning |
+| themis | Operations | Product planning, UX and privacy guardrails |
+| daedalus | Operations | Systems architecture and technical planning |
+| codex | Operations | Workflow analysis and documentation |
+| wren | Operations | Site growth, analytics and SEO |
+
+Open point: the vision (§3.2) has a separate **Planning & Strategy** department. With five departments, the planners (mira, themis, daedalus) sit in Operations. Adding a sixth department would move them there.

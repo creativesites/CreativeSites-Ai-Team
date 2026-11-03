@@ -28,3 +28,6 @@ apps/desktop/src-tauri/gen/
 
 # Local worktrees
 .claude/worktrees/
+
+# Client engagement terms (programme plan K6/K9): never commit
+engagements.local.json

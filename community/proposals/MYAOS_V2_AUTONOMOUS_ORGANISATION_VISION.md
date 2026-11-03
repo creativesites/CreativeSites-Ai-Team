@@ -176,13 +176,13 @@ A core capability, not an optional report. MyaOS must provide accurate, detailed
 **Collective time** — total agent-hours, total human hours, combined labour, project-, job- and department-level time, daily/weekly/monthly summaries. **Parallel agent-hours are distinct from elapsed wall-clock time** (four agents for one hour = four agent-hours in one elapsed hour); the desktop makes this explicit.
 
 ### 6.2 Contractor time tracking
-Initial use case: Winston is a contractor for **Freeing Returns**, with a contractual commitment of **20–40 hours per week**.
+Initial use case: Winston's first contractor engagement, with a weekly minimum and maximum of contracted hours. Client details and terms are held only in the local runtime (programme plan K6 and K9), never in this public repository.
 
 Configurable **engagement profiles**: client, contract reference, hourly rate, currency, minimum and maximum weekly hours, contract start/end, billing rules, billable activity categories, reporting period, approval requirements.
 
 A contractor time dashboard calculates: weekly human hours, weekly agent hours, combined team contribution, billable human hours, billable agent hours (only where the contract explicitly permits), non-billable time, remaining contractual hours, project and client allocation, estimated billable value.
 
-**Agent execution time must not automatically be treated as billable contractor time.** Labour contribution and billing eligibility are distinct. For Winston's engagement, the 20–40-hour commitment is tracked against approved human working hours unless the contract explicitly says otherwise. Support manual corrections, notes, timesheet approval and export.
+**Agent execution time must not automatically be treated as billable contractor time.** Labour contribution and billing eligibility are distinct. For Winston's engagement, the weekly commitment is tracked against approved human working hours unless the contract explicitly says otherwise. Support manual corrections, notes, timesheet approval and export.
 
 ### 6.3 Time tracking dashboard
 - **Daily** — human hours, agent-hours by employee, total team contribution, project allocation, billable vs non-billable.
