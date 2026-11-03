@@ -3,6 +3,10 @@
 /**
  * MyaOS Daily Standup Aggregator & Generator
  *
+ * LEGACY (v1), kept running on purpose: it is currently the only producer of
+ * daily stand-ups. It is replaced by the V2 runtime stand-up pipeline in
+ * WP6 (programme plan 6.1-6.4) and retired then. Do not extend it.
+ *
  * Runs autonomously (via daily cron at 10:00 CAT / 08:00 UTC, or on first boot catch-up).
  * 1. Scans ~/.myaos/runtime.db (v2 canonical) and data/myaos.db (v1 fallback).
  * 2. Gathers verified completions, blockers, and queued work from the last 24 hours.
