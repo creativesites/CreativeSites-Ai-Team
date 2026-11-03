@@ -834,6 +834,20 @@ export class Orchestrator {
               } catch {
                 /* stage gate might need criteria link */
               }
+              // S1: when every criterion has the evidence its gate needs, hand the job to the owner for
+              // delivery approval (it appears in Needs You). The gates decide; nothing is forced.
+              try {
+                if (this.repo.getJob(job.id).stage === 'verify') {
+                  this.repo.transitionJob(job.id, {
+                    to: 'approve',
+                    actorId: 'runtime',
+                    actorKind: 'system',
+                    note: 'Verified; waiting for the owner to approve delivery',
+                  });
+                }
+              } catch {
+                /* a criterion still lacks evidence: the job waits in verify */
+              }
             }
           }
         }
