@@ -6,7 +6,7 @@ import { CommandPalette } from '@/components/app/command-palette';
 import { Tag } from '@/components/app/status';
 import { buttonVariants } from '@/components/ui/button';
 import { href, type Route } from '@/lib/route';
-import { useRuntime } from '@/lib/runtime-context';
+import { useRuntime, useRuntimeData } from '@/lib/runtime-context';
 import { cn } from '@/lib/utils';
 
 export type Mode = 'work' | 'dev';
@@ -112,7 +112,10 @@ export function Sidebar({
       return next;
     });
   };
-  const needsYou = jobs.filter((j) => j.pendingApprovals > 0 || j.stage === 'approve').length;
+  const needsYouFeed = useRuntimeData((c) => c.needsYou(), []);
+  // The aggregate /v1/needs-you list is the source of truth; fall back to the job summaries until it loads.
+  const needsYou =
+    needsYouFeed.status === 'ready' ? needsYouFeed.data.length : jobs.filter((j) => j.pendingApprovals > 0 || j.stage === 'approve').length;
   const rateLimitedCount = identities.filter((i) => i.statusState === 'rate_limited').length;
   const activeJobs = jobs.filter((j) => !['done', 'cancelled'].includes(j.stage)).length;
   const liveAgents = new Set(sessions.filter(isLive).map((s) => s.agentId));
