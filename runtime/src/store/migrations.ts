@@ -4,6 +4,13 @@ export interface Migration {
   version: number;
   name: string;
   sql: string;
+  /**
+   * Run with foreign-key enforcement off (SQLite's documented table-rebuild procedure).
+   * Needed when a table that other tables reference must be rebuilt: dropping it with
+   * enforcement on would cascade-delete the children. `migrate` checks that the
+   * rebuild introduced no new foreign-key violations.
+   */
+  foreignKeysOff?: boolean;
 }
 
 // Evidence classes match src/provenance.js. The UI shows OBSERVED as Observed,
@@ -837,6 +844,67 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE projects ADD COLUMN status TEXT DEFAULT 'active';
       ALTER TABLE projects ADD COLUMN repo TEXT;
       ALTER TABLE projects ADD COLUMN updated_at TEXT;
+    `,
+  },
+  {
+    version: 10,
+    name: '010_task_lifecycle_and_event_envelope',
+    // WP1 (K2, K3). tasks.status carries a CHECK that SQLite cannot widen, and sessions,
+    // evidence, worktrees and task_criteria reference tasks(id), so the table is rebuilt
+    // with foreign keys off, preserving every row and column. Events gain the K2 envelope
+    // columns plus a partial unique index on idempotency_key. Nothing is dropped except
+    // the old tasks table after its rows are copied.
+    foreignKeysOff: true,
+    sql: `
+      CREATE TABLE tasks_v10 (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        assignee_id TEXT,
+        check_command TEXT,
+        gate TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending','assigned','acknowledged','running','needs_review','verified','done','blocked','failed','retrying','reassignment_required','needs_human')),
+        created_at TEXT NOT NULL,
+        position INTEGER NOT NULL DEFAULT 0,
+        plan_task_id TEXT,
+        mode TEXT NOT NULL DEFAULT 'build',
+        started_at TEXT,
+        ended_at TEXT,
+        updated_at TEXT,
+        evidence_required INTEGER NOT NULL DEFAULT 1,
+        depends_on TEXT NOT NULL DEFAULT '[]',
+        priority INTEGER NOT NULL DEFAULT 0,
+        attempt INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        acknowledged_at TEXT,
+        ack_deadline_at TEXT,
+        next_retry_at TEXT,
+        parent_task_id TEXT,
+        required_skills TEXT NOT NULL DEFAULT '[]',
+        budget_tokens INTEGER,
+        verification_required INTEGER NOT NULL DEFAULT 0,
+        legacy_project_task_id TEXT,
+        last_event_at TEXT
+      );
+      INSERT INTO tasks_v10 (id, job_id, title, assignee_id, check_command, gate, status, created_at, position,
+        plan_task_id, mode, started_at, ended_at, updated_at, evidence_required, last_event_at)
+      SELECT id, job_id, title, assignee_id, check_command, gate, status, created_at, position,
+        plan_task_id, mode, started_at, ended_at, updated_at, evidence_required,
+        COALESCE(updated_at, started_at, created_at)
+      FROM tasks;
+      DROP TABLE tasks;
+      ALTER TABLE tasks_v10 RENAME TO tasks;
+      CREATE INDEX IF NOT EXISTS idx_tasks_job ON tasks(job_id, position);
+      CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+      CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id, status);
+
+      ALTER TABLE events ADD COLUMN idempotency_key TEXT;
+      ALTER TABLE events ADD COLUMN job_id TEXT;
+      ALTER TABLE events ADD COLUMN task_id TEXT;
+      ALTER TABLE events ADD COLUMN session_id TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS events_idempotency ON events(idempotency_key) WHERE idempotency_key IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS events_task ON events(task_id, seq) WHERE task_id IS NOT NULL;
     `,
   },
 ];

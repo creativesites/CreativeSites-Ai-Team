@@ -93,9 +93,14 @@ export function migrate(db: DatabaseSync, migrations: Migration[] = MIGRATIONS):
   );
   for (const m of [...migrations].sort((a, b) => a.version - b.version)) {
     if (applied.has(m.version)) continue;
+    if (m.foreignKeysOff) db.exec('PRAGMA foreign_keys = OFF');
     db.exec('BEGIN');
     try {
+      const violationsBefore = m.foreignKeysOff ? foreignKeyViolations(db) : 0;
       db.exec(m.sql);
+      if (m.foreignKeysOff && foreignKeyViolations(db) > violationsBefore) {
+        throw new Error('the table rebuild introduced foreign-key violations');
+      }
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
         m.version,
         m.name,
@@ -105,9 +110,15 @@ export function migrate(db: DatabaseSync, migrations: Migration[] = MIGRATIONS):
     } catch (e) {
       db.exec('ROLLBACK');
       throw new Error(`Migration ${m.version} (${m.name}) failed: ${(e as Error).message}`);
+    } finally {
+      if (m.foreignKeysOff) db.exec('PRAGMA foreign_keys = ON');
     }
   }
   return schemaVersion(db);
+}
+
+function foreignKeyViolations(db: DatabaseSync): number {
+  return db.prepare('PRAGMA foreign_key_check').all().length;
 }
 
 export function schemaVersion(db: DatabaseSync): number {
