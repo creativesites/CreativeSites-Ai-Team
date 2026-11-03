@@ -621,7 +621,27 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     }),
     route('GET', '/v1/jobs/:id/tasks', (ctx) => ({ status: 200, body: repo.listTasks(ctx.params.id!) })),
     route('POST', '/v1/jobs/:id/tasks', (ctx) => ({ status: 201, body: repo.createTask(ctx.params.id!, ctx.body as unknown as T.CreateTaskInput) })),
-    route('PATCH', '/v1/tasks/:id', (ctx) => ({ status: 200, body: repo.updateTask(ctx.params.id!, ctx.body as T.UpdateTaskInput) })),
+    route('PATCH', '/v1/tasks/:id', (ctx) => {
+      if (ctx.body && 'status' in ctx.body) {
+        throw new ConflictError(
+          `A task's status cannot be set with PATCH. Use POST /v1/tasks/${ctx.params.id}/transition with {"to", "actorId", "reason"}.`
+        );
+      }
+      return { status: 200, body: repo.updateTask(ctx.params.id!, ctx.body as T.UpdateTaskInput) };
+    }),
+    route('POST', '/v1/tasks/:id/transition', (ctx) => {
+      const input = ctx.body as unknown as T.TransitionTaskInput;
+      return {
+        status: 200,
+        body: repo.transitionTask(ctx.params.id!, input.to, {
+          actorId: input.actorId,
+          actorKind: input.actorKind ?? 'agent',
+          reason: input.reason ?? null,
+          assigneeId: input.assigneeId,
+        }),
+      };
+    }),
+    route('GET', '/v1/tasks/ready', (ctx) => ({ status: 200, body: repo.readyTasks(ctx.query.get('jobId') ?? undefined) })),
     route('GET', '/v1/jobs/:id/evidence', (ctx) => ({ status: 200, body: repo.listEvidence({ jobId: ctx.params.id, limit: 1000 }) })),
     route('POST', '/v1/jobs/:id/evidence', (ctx) => ({
       status: 201,

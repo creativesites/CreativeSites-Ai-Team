@@ -2,6 +2,7 @@ import type * as T from './api/types.ts';
 import { ADAPTER_PRESETS, findExecutable } from './adapters.ts';
 import type { SessionManager } from './acp/session-manager.ts';
 import type { Checker } from './checks.ts';
+import { sweepTasks } from './lifecycle/sweeper.ts';
 import { InputError, NotFoundError, type Repo } from './store/repo.ts';
 
 /**
@@ -316,6 +317,11 @@ export class Orchestrator {
    */
   async tick(asOfIso = new Date().toISOString()): Promise<{ firedSchedules: string[]; triggered: string[]; clearedRateLimits: string[] }> {
     const clearedRateLimits = this.repo.sweepExpiredRateLimits();
+    try {
+      sweepTasks(this.repo, () => asOfIso);
+    } catch (e) {
+      console.error('[orchestrator] task sweep failed:', e);
+    }
     const due = this.repo.listDueSchedules(asOfIso);
     const firedSchedules: string[] = [];
 
@@ -775,7 +781,7 @@ export class Orchestrator {
     if (info.jobId && info.checkPassed) {
       try {
         const job = this.repo.getJob(info.jobId);
-        if (job.stage === 'build' && job.tasks.length > 0 && job.tasks.every((t) => t.status === 'done')) {
+        if (job.stage === 'build' && job.tasks.length > 0 && job.tasks.every((t) => t.status === 'done' || t.status === 'verified' || t.status === 'needs_review')) {
           const identities = this.repo.listIdentities().filter((i) => !i.isOwner && i.id !== info.agentId);
           const verifier =
             identities.find((i) => i.id === 'kael' && !job.tasks.some((t) => t.assigneeId === 'kael')) ??

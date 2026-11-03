@@ -263,7 +263,43 @@ export class Checker {
         workspaces.removeWorktree(worktree!.repoPath, cleanPath);
       }
     }
+    this.applyVerificationToTasks(job.id, actorId, results);
     return { ok: results.every((r) => r.ok), base, results };
+  }
+
+  /**
+   * Task lifecycle after verification (K3). A passing re-run moves a task waiting in
+   * needs_review to verified. A check that ran and failed returns the task to its
+   * assignee as `assigned`, with the failing criterion in the reason, and a job in the
+   * verify stage goes back to build. Results that never ran a check (the verifier is
+   * the assignee, no command, no worktree) change nothing.
+   */
+  private applyVerificationToTasks(jobId: string, actorId: string, results: VerificationOutcome[]): void {
+    const failures: { taskId: string; reason: string }[] = [];
+    for (const r of results) {
+      let task: T.Task;
+      try {
+        task = this.repo.getTask(r.taskId);
+      } catch {
+        continue; // a non-code job result is keyed by the job id
+      }
+      if (r.ok) {
+        if (task.status === 'needs_review') {
+          try {
+            this.repo.transitionTask(task.id, 'verified', { actorId, actorKind: 'agent', reason: 'independent check passed' });
+          } catch (e) {
+            if (!(e instanceof ConflictError)) throw e;
+          }
+        }
+        continue;
+      }
+      const ran = (r.exitCode !== null && r.exitCode !== 0) || /timed out/i.test(r.error ?? '');
+      if (!ran) continue;
+      const criteria = this.repo.taskCriterionTexts(task.id);
+      const failing = criteria.length ? `criterion "${criteria.join('"; "')}"` : `task "${task.title}"`;
+      failures.push({ taskId: task.id, reason: `Verification failed on ${failing}: ${r.error ?? `check exited ${r.exitCode}`}` });
+    }
+    if (failures.length) this.repo.returnFailedVerification(jobId, failures, actorId);
   }
 
   /**

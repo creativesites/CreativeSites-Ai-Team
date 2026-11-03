@@ -431,6 +431,9 @@ export class SessionManager {
     const room = input.roomId ? this.repo.getRoom(input.roomId) : job ? this.repo.getRoom(job.roomId) : null;
     const task = input.taskId ? this.repo.getTask(input.taskId) : null;
     if (task && job && task.jobId !== job.id) throw new InputError('task belongs to a different job');
+    if (task && task.status === 'pending' && !this.repo.dependenciesMet(task.id)) {
+      throw new ConflictError('This task depends on work that is not done yet');
+    }
     if (job) this.repo.assertBudget(job.id, 0);
 
     const adapter = this.resolveAdapter(input.adapterId ?? agent.adapterId ?? agent.runtime);
@@ -466,9 +469,7 @@ export class SessionManager {
       batonCapsule: input.batonCapsule ?? null,
     });
 
-    if (task && task.status === 'pending') {
-      this.repo.updateTask(task.id, { status: 'running' });
-    }
+    if (task) this.startTask(task, agent.id);
 
     if (input.batonCapsule) {
       const capsuleTokens = Math.ceil(input.batonCapsule.length / 3.8);
@@ -862,9 +863,9 @@ export class SessionManager {
           if (task.checkCommand) {
             const check = await this.checker.runTaskCheck(live.jobId, task.id);
             checkPassed = check.result.exitCode === 0;
-            this.repo.updateTask(task.id, { status: checkPassed ? 'done' : 'failed' });
+            this.finishTask(task, checkPassed, checkPassed ? null : `check exited ${check.result.exitCode}`);
           } else {
-            this.repo.updateTask(task.id, { status: 'done' });
+            this.finishTask(task, true, null);
             checkPassed = true;
           }
         }
@@ -910,11 +911,7 @@ export class SessionManager {
       });
       this.repo.updateSession(live.sessionId, { state: 'failed', error: message });
       if (live.taskId) {
-        try {
-          this.repo.updateTask(live.taskId, { status: rl ? 'blocked' : 'failed' });
-        } catch {
-          /* task may have been removed */
-        }
+        this.moveTask(live.taskId, rl ? 'blocked' : 'failed', rl ? `rate limited: ${rl.reason}` : message);
       }
     } finally {
       live.closed = true;
@@ -1018,6 +1015,54 @@ export class SessionManager {
       role: 'system',
       payload: update,
     });
+  }
+
+  /** Routes a runtime-driven task move through the K3 transition function; illegal or stale moves are skipped. */
+  private moveTask(taskId: string, to: T.TaskStatus, reason: string | null, actorId = 'runtime:session', actorKind: T.ActorKind = 'system'): boolean {
+    try {
+      this.repo.transitionTask(taskId, to, { actorId, actorKind, reason });
+      return true;
+    } catch (e) {
+      if (e instanceof ConflictError || (e as Error).constructor.name === 'NotFoundError') return false;
+      throw e;
+    }
+  }
+
+  /** Session start: pending->assigned->acknowledged->running (or the later part of that path). */
+  private startTask(task: T.Task, agentId: string): void {
+    let status = task.status;
+    if (status === 'pending') {
+      try {
+        this.repo.transitionTask(task.id, 'assigned', {
+          actorId: 'runtime:session',
+          actorKind: 'system',
+          assigneeId: task.assigneeId ?? agentId,
+          reason: 'session started',
+        });
+      } catch (e) {
+        if (!(e instanceof ConflictError)) throw e;
+        return;
+      }
+      status = 'assigned';
+    }
+    if (status === 'assigned') {
+      if (!this.moveTask(task.id, 'acknowledged', 'session started', agentId, 'agent')) return;
+      status = 'acknowledged';
+    }
+    if (status === 'acknowledged' || status === 'blocked') this.moveTask(task.id, 'running', 'session started', agentId, 'agent');
+  }
+
+  /**
+   * A finished turn: a passing check completes the task, or sends it to review when it
+   * requires verification; a failing check fails it. The runtime, not the assignee, makes the move.
+   */
+  private finishTask(task: T.Task, passed: boolean, failure: string | null): void {
+    if (!passed) {
+      this.moveTask(task.id, 'failed', failure);
+      return;
+    }
+    const to: T.TaskStatus = task.verificationRequired ? 'needs_review' : 'done';
+    this.moveTask(task.id, to, 'check passed');
   }
 
   private async handlePermission(

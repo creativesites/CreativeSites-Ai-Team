@@ -17,6 +17,7 @@ import { EmptyState, EvidenceTag, jobLabel, SectionTitle, StageBar, Tag } from '
 import { AgentTerminal } from '@/components/terminal';
 import { buttonVariants } from '@/components/ui/button';
 import { href } from '@/lib/route';
+import type { RuntimeClient } from '@/lib/runtime';
 import { useRuntime, useRuntimeData } from '@/lib/runtime-context';
 import { cn } from '@/lib/utils';
 
@@ -357,7 +358,7 @@ export function JobScreen({
           </section>
 
           <section aria-label="Tasks" className="bg-card flex flex-col gap-3 rounded-xl px-5 py-4.5">
-            <SectionTitle aside={`${job.tasks.filter((t) => t.status === 'done').length}/${job.tasks.length} done`}>Tasks</SectionTitle>
+            <SectionTitle aside={`${job.tasks.filter((t) => t.status === 'done' || t.status === 'verified').length}/${job.tasks.length} done`}>Tasks</SectionTitle>
             {job.tasks.length === 0 ? (
               <EmptyState title="No tasks yet">Break the plan into tasks with a check command and gate.</EmptyState>
             ) : (
@@ -372,8 +373,8 @@ export function JobScreen({
                       const outcome = await client!.runCheck(job.id, task.id);
                       setNotice(`Check ${outcome.result.exitCode === 0 ? 'passed' : `failed (exit ${outcome.result.exitCode})`}. ${outcome.evidence.summary}`);
                     })}
-                    onDone={() => act(`done:${task.id}`, () => client!.updateTask(task.id, { status: 'done' }))}
-                    onStart={() => act(`run:${task.id}`, () => client!.updateTask(task.id, { status: 'running' }))}
+                    onDone={() => act(`done:${task.id}`, () => advanceTask(client!, task, 'done', ownerId))}
+                    onStart={() => act(`run:${task.id}`, () => advanceTask(client!, task, 'running', ownerId))}
                   />
                 ))}
               </div>
@@ -600,6 +601,29 @@ export function JobScreen({
   );
 }
 
+/**
+ * Walks a task along the K3 path (pending -> assigned -> acknowledged -> running -> done, or
+ * needs_review when the task requires verification), one transition per step.
+ */
+async function advanceTask(client: RuntimeClient, task: Task, target: 'running' | 'done', actorId: string): Promise<void> {
+  const step = (to: Task['status'], assigneeId?: string | null) =>
+    client.transitionTask(task.id, { to, actorId, actorKind: 'human', reason: 'Moved from the Job screen', ...(assigneeId ? { assigneeId } : {}) });
+  let status = task.status;
+  if (status === 'pending') {
+    await step('assigned', task.assigneeId);
+    status = 'assigned';
+  }
+  if (status === 'assigned') {
+    await step('acknowledged');
+    status = 'acknowledged';
+  }
+  if (status === 'acknowledged' || status === 'blocked') {
+    await step('running');
+    status = 'running';
+  }
+  if (target === 'done' && status === 'running') await step(task.verificationRequired ? 'needs_review' : 'done');
+}
+
 function TaskRow({ task, assignee, busy, onRunCheck, onDone, onStart }: { task: Task; assignee?: Identity; busy: string | null; onRunCheck: () => void; onDone: () => void; onStart: () => void }) {
   return (
     <div className="glass-panel flex flex-wrap items-center gap-2 rounded-lg px-3 py-2">
@@ -608,8 +632,8 @@ function TaskRow({ task, assignee, busy, onRunCheck, onDone, onStart }: { task: 
         <span className="truncate">{task.title}</span>
       </span>
       {task.checkCommand && <code className="basis-56 truncate font-mono text-xs text-muted-foreground">{task.checkCommand}</code>}
-      <Tag tone={task.status === 'done' ? 'verified' : task.status === 'failed' ? 'risk' : task.status === 'running' ? 'observed' : 'quiet'}>{task.status}</Tag>
-      {task.status !== 'done' && (
+      <Tag tone={task.status === 'done' || task.status === 'verified' ? 'verified' : task.status === 'failed' ? 'risk' : task.status === 'running' ? 'observed' : 'quiet'}>{task.status}</Tag>
+      {task.status !== 'done' && task.status !== 'verified' && (
         <>
           <button type="button" onClick={onRunCheck} disabled={busy !== null || !task.checkCommand} className={buttonVariants({ variant: 'glass', size: 'sm' })}>
             <RefreshCw /> Check

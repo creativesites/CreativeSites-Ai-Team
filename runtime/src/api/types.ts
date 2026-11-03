@@ -7,7 +7,19 @@ export type JobKind = 'code' | 'research' | 'ops' | 'design' | 'decision';
 export type ShipStatus = 'none' | 'ready' | 'shipped' | 'merged' | 'pr_opened' | 'cherry_picked' | 'branch_pushed';
 export type SessionState = 'starting' | 'running' | 'idle' | 'stopped' | 'failed';
 export type IdentityStatusState = 'idle' | 'working' | 'rate_limited' | 'waiting_reset' | 'offline';
-export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'blocked';
+export type TaskStatus =
+  | 'pending'
+  | 'assigned'
+  | 'acknowledged'
+  | 'running'
+  | 'needs_review'
+  | 'verified'
+  | 'done'
+  | 'blocked'
+  | 'failed'
+  | 'retrying'
+  | 'reassignment_required'
+  | 'needs_human';
 export type ApprovalStatus = 'pending' | 'approved' | 'declined' | 'expired' | 'escalated';
 export type Risk = 'low' | 'medium' | 'high' | 'critical';
 export type ActorKind = 'human' | 'agent' | 'system';
@@ -257,6 +269,19 @@ export interface Task {
   endedAt?: string | null;
   updatedAt?: string | null;
   evidenceRequired?: boolean;
+  dependsOn?: string[];
+  priority?: number;
+  attempt?: number;
+  maxAttempts?: number;
+  acknowledgedAt?: string | null;
+  ackDeadlineAt?: string | null;
+  nextRetryAt?: string | null;
+  parentTaskId?: string | null;
+  requiredSkills?: string[];
+  budgetTokens?: number | null;
+  verificationRequired?: boolean;
+  legacyProjectTaskId?: string | null;
+  lastEventAt?: string | null;
 }
 
 export interface Evidence {
@@ -796,6 +821,10 @@ export interface RuntimeEvent {
   actorId?: string | null;
   actorKind?: ActorKind | null;
   subjectType?: string | null;
+  jobId?: string | null;
+  taskId?: string | null;
+  sessionId?: string | null;
+  idempotencyKey?: string | null;
   hash?: string | null;
   prevHash?: string | null;
 }
@@ -959,17 +988,39 @@ export interface CreateTaskInput {
   mode?: Task['mode'];
   evidenceRequired?: boolean;
   criterionIds?: string[];
+  dependsOn?: string[];
+  priority?: number;
+  maxAttempts?: number;
+  parentTaskId?: string | null;
+  requiredSkills?: string[];
+  budgetTokens?: number | null;
+  verificationRequired?: boolean;
 }
 
+/** Status is deliberately absent: it changes only through TransitionTaskInput (K3). */
 export interface UpdateTaskInput {
   title?: string;
   assigneeId?: string | null;
   checkCommand?: string | null;
   gate?: string | null;
-  status?: TaskStatus;
   position?: number;
   mode?: Task['mode'];
   evidenceRequired?: boolean;
+  dependsOn?: string[];
+  priority?: number;
+  maxAttempts?: number;
+  requiredSkills?: string[];
+  budgetTokens?: number | null;
+  verificationRequired?: boolean;
+}
+
+export interface TransitionTaskInput {
+  to: TaskStatus;
+  actorId: string;
+  actorKind?: ActorKind;
+  reason?: string | null;
+  /** New assignee when moving to assigned. */
+  assigneeId?: string | null;
 }
 
 export interface CreateEvidenceInput {
