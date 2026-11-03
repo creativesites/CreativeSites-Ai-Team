@@ -35,6 +35,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { useRuntime, useRuntimeData, type Loadable } from '@/lib/runtime-context';
 import type { ConnectionState } from '@/lib/runtime';
 import { cn } from '@/lib/utils';
+import { AiUsageSection } from '@/screens/ai-usage';
 
 export interface SettingsScreenProps {
   settings?: Settings;
@@ -210,6 +211,9 @@ export function SettingsScreen(props: SettingsScreenProps) {
         onUpdateSettings={handleUpdateSettings}
         revision={revision}
       />
+
+      {/* 4b. AI Usage (subscription plans) */}
+      <AiUsageSection isOffline={isOffline} />
 
       {/* 5. Team Bridge */}
       <TeamBridgeSection

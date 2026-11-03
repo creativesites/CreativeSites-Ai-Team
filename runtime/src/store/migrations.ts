@@ -969,6 +969,78 @@ export const MIGRATIONS: Migration[] = [
     sql: AGENT_TOOLS_SQL,
   },
   {
+    version: 13,
+    name: 'subscription AI usage tracking: ai_accounts, limit snapshots, task_usage, usage_alerts (K6/K9)',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ai_accounts (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL CHECK (provider IN ('anthropic','google')),
+        plan TEXT NOT NULL,
+        label TEXT NOT NULL,
+        owner_scope TEXT NOT NULL DEFAULT 'personal'
+          CHECK (owner_scope = 'personal' OR owner_scope LIKE 'client:%'),
+        limit_model TEXT NOT NULL
+          CHECK (limit_model IN ('claude_5h_weekly_pct','gemini_app_5h_weekly_pct','gemini_cli_requests_per_day')),
+        daily_request_quota INTEGER,
+        adapter_account_id TEXT,
+        created_at TEXT NOT NULL,
+        archived_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS account_limit_snapshots (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES ai_accounts(id) ON DELETE CASCADE,
+        captured_at TEXT NOT NULL,
+        session_pct REAL CHECK (session_pct IS NULL OR (session_pct >= 0 AND session_pct <= 100)),
+        session_resets_at TEXT,
+        weekly_pct REAL CHECK (weekly_pct IS NULL OR (weekly_pct >= 0 AND weekly_pct <= 100)),
+        weekly_resets_at TEXT,
+        requests_today INTEGER CHECK (requests_today IS NULL OR requests_today >= 0),
+        source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','cli_capture','runtime_count')),
+        measurement TEXT NOT NULL DEFAULT 'actual' CHECK (measurement IN ('actual','estimated')),
+        note TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_limit_snapshots_account ON account_limit_snapshots(account_id, captured_at);
+
+      CREATE TABLE IF NOT EXISTS task_usage (
+        id TEXT PRIMARY KEY,
+        task_id TEXT,
+        job_id TEXT,
+        session_id TEXT,
+        account_id TEXT NOT NULL REFERENCES ai_accounts(id) ON DELETE CASCADE,
+        agent_id TEXT,
+        model_id TEXT,
+        task_type TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        session_pct_before REAL,
+        session_pct_after REAL,
+        weekly_pct_before REAL,
+        weekly_pct_after REAL,
+        requests INTEGER,
+        concurrent_tasks_on_account INTEGER NOT NULL DEFAULT 1,
+        attributed_weekly_pct REAL,
+        measurement TEXT NOT NULL DEFAULT 'estimated' CHECK (measurement = 'estimated')
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_usage_account ON task_usage(account_id, started_at);
+      CREATE INDEX IF NOT EXISTS idx_task_usage_task ON task_usage(task_id);
+
+      CREATE TABLE IF NOT EXISTS usage_alerts (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES ai_accounts(id) ON DELETE CASCADE,
+        window_resets_at TEXT NOT NULL,
+        weekly_pct REAL NOT NULL,
+        elapsed_fraction REAL NOT NULL,
+        created_at TEXT NOT NULL,
+        acknowledged_at TEXT,
+        UNIQUE (account_id, window_resets_at)
+      );
+
+      ALTER TABLE projects ADD COLUMN ai_account_id TEXT;
+      ALTER TABLE projects ADD COLUMN confidential INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
     version: 16,
     name: 'workforce time ledger: activity intervals and engagements (K6, WP9)',
     sql: LEDGER_SQL,

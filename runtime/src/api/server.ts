@@ -21,6 +21,10 @@ import {
   type Repo,
 } from '../store/repo.ts';
 import * as workspaces from '../workspaces.ts';
+import * as usageAccounts from '../usage/accounts.ts';
+import * as usageAlerts from '../usage/alerts.ts';
+import { computeEstimates } from '../usage/estimates.ts';
+import { weeklyReport } from '../usage/report.ts';
 import type { Checker } from '../checks.ts';
 import { formatSessionTerminalOutput, type SessionManager } from '../acp/session-manager.ts';
 import { compileBatonCapsule, shouldRotateSession } from '../acp/baton.ts';
@@ -256,6 +260,11 @@ export function createServer(opts: ServerOptions): RuntimeServer {
   };
 
   // ------------------------------------------------------------------ handlers
+
+  const usageDb = (): DatabaseSync => {
+    if (!opts.db) throw new HttpError(503, 'usage tracking needs the runtime store');
+    return opts.db;
+  };
 
   const routes: Route[] = [
     route('GET', '/health', () => ({ status: 200, body: opts.health() }), true),
@@ -1266,6 +1275,40 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('GET', '/v1/okrs/reality-audit', () => ({
       status: 200,
       body: repo.getRealityHealthScore(),
+    })),
+
+    // Subscription AI usage (K6/K9). Percentages are read from /usage by a person: 'actual'.
+    // Attributions to tasks and per-task-type medians are always 'estimated'.
+    route('GET', '/v1/ai-accounts', (ctx) => {
+      const db = usageDb();
+      const accounts = usageAccounts.listAccounts(db, { includeArchived: ctx.query.get('includeArchived') === '1' });
+      return {
+        status: 200,
+        body: accounts.map((account) => ({ ...account, latestSnapshot: usageAccounts.latestSnapshot(db, account.id) })),
+      };
+    }),
+    route('POST', '/v1/ai-accounts', (ctx) => ({
+      status: 201,
+      body: usageAccounts.createAccount(usageDb(), ctx.body as unknown as usageAccounts.CreateAccountInput),
+    })),
+    route('POST', '/v1/ai-accounts/:id/snapshots', (ctx) => {
+      const db = usageDb();
+      const snapshot = usageAccounts.addSnapshot(db, ctx.params.id!, ctx.body as usageAccounts.SnapshotInput);
+      const alert = usageAlerts.evaluateAlerts(db, ctx.params.id!);
+      return { status: 201, body: { snapshot, alert } };
+    }),
+    route('GET', '/v1/ai-accounts/:id/snapshots', (ctx) => {
+      const limit = Number(ctx.query.get('limit') ?? 100);
+      return { status: 200, body: usageAccounts.listSnapshots(usageDb(), ctx.params.id!, Number.isFinite(limit) ? limit : 100) };
+    }),
+    route('GET', '/v1/usage/weekly', () => ({ status: 200, body: weeklyReport(usageDb()) })),
+    route('GET', '/v1/usage/estimates', (ctx) => ({
+      status: 200,
+      body: computeEstimates(usageDb(), { accountId: ctx.query.get('accountId') ?? undefined }),
+    })),
+    route('POST', '/v1/usage/alerts/:id/ack', (ctx) => ({
+      status: 200,
+      body: usageAlerts.ackAlert(usageDb(), ctx.params.id!),
     })),
   ];
 
