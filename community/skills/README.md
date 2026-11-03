@@ -18,6 +18,7 @@
 | `okr-evidence` | Verified work may change a project objective or key result. | Proven task-to-KR relationship and evidence-backed progress proposal. |
 | `daily-standup` | A reporting period closes or the scheduled check-in runs. | Verified outcomes, next actions, blockers, dependencies, KR movement and missing updates. |
 | `failure-recovery` | Dispatch, implementation, verification or scheduling fails. | Failure evidence, safe retry/rollback, owner, next action and escalation condition. |
+| [`hierarchical-model-orchestration`](hierarchical-model-orchestration/SKILL.md) | Substantial multi-step work where a lead model plans and delegates bounded tasks to cheaper models. | Classified strategy, task graph with model tier per task, tracked task states, evidence-based final report with workforce and cost (actual/estimated/unavailable). |
 
 ## Skill document contract
 
