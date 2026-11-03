@@ -1,3 +1,4 @@
+import { createIntake } from './intake/intake.ts';
 import type * as T from './api/types.ts';
 import { ADAPTER_PRESETS, findExecutable } from './adapters.ts';
 import type { SessionManager } from './acp/session-manager.ts';
@@ -511,6 +512,27 @@ export class Orchestrator {
       roomId: room.id,
       jobId: message.jobId ?? null,
     });
+
+    // WP2: in an intake-enabled room, a human message with no @mention and no directive becomes an intake.
+    if (
+      message.authorKind === 'human' &&
+      room.intakeEnabled &&
+      !message.jobId &&
+      !/@[a-z0-9_-]+/i.test(message.body) &&
+      !/^\s*\[(WAKE|SPAWN|SCHEDULE):/im.test(message.body)
+    ) {
+      try {
+        createIntake(this.repo, {
+          text: message.body,
+          source: 'room',
+          sourceRef: message.id,
+          roomId: room.id,
+          requestedBy: message.authorId,
+        });
+      } catch (e) {
+        console.error('[intake] room message intake failed:', e);
+      }
+    }
 
     // If a human mentions @<agentId> or @team-lead in a room message, wake the mentioned agent(s)
     if (message.authorKind === 'human') {
