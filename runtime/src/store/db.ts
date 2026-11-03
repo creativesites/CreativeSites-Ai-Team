@@ -33,9 +33,27 @@ function backupBeforeUpgrade(db: DatabaseSync, dbPath: string, from: number, to:
     const target = `${dbPath}.bak-v${from}-${stamp}`;
     fs.copyFileSync(dbPath, target);
     privateFile(target);
+    prunePreMigrationBackups(dbPath, 10);
   } catch (e) {
     console.warn(`[runtime] Could not back up the store before migration: ${(e as Error).message}`);
   }
+}
+
+/** Keeps only the newest `keep` pre-migration copies (`<db>.bak-v*`), oldest removed first. */
+export function prunePreMigrationBackups(dbPath: string, keep: number): string[] {
+  const dir = path.dirname(dbPath);
+  const prefix = `${path.basename(dbPath)}.bak-v`;
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.startsWith(prefix))
+    .map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
+    .sort((a, b) => b.t - a.t || (a.f < b.f ? 1 : -1));
+  const removed: string[] = [];
+  for (const { f } of files.slice(keep)) {
+    fs.rmSync(path.join(dir, f), { force: true });
+    removed.push(f);
+  }
+  return removed;
 }
 
 /** Opens (creating if needed) the v2 store and brings its schema up to date. */
