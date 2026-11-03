@@ -4,6 +4,7 @@ This repository contains both a Node-based MyaOS runtime (`src/`, `bin/`, `commu
 
 ## Read first
 
+0. [`community/proposals/MYAOS_V2_AUTONOMOUS_ORGANISATION_VISION.md`](community/proposals/MYAOS_V2_AUTONOMOUS_ORGANISATION_VISION.md) — owner-approved V2 vision; with its [gap audit](community/proposals/MYAOS_V2_VISION_GAP_AUDIT.md) and [programme plan](community/proposals/MYAOS_V2_PROGRAMME_PLAN.md), it supersedes conflicting proposals below.
 1. [`community/proposals/MYAOS_WORKFLOW_OPERATING_MODEL.md`](community/proposals/MYAOS_WORKFLOW_OPERATING_MODEL.md) — proposed end-to-end workflow and planner routing.
 2. [`community/proposals/MYAOS_WORKFLOW_IMPLEMENTATION_PLAN.md`](community/proposals/MYAOS_WORKFLOW_IMPLEMENTATION_PLAN.md) — staged work and acceptance criteria.
 3. [`community/threads/041_myaos_workflow_from_scratch.md`](community/threads/041_myaos_workflow_from_scratch.md) — current-state audit and independent review discussion.
