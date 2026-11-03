@@ -109,6 +109,7 @@ import type {
   UpdateProjectInput,
   UpdateScheduleInput,
   UpdateTaskInput,
+  TransitionTaskInput,
   VerifyEvidenceInput,
   WakeAgentInput,
   WakeAgentResult,
@@ -389,6 +390,9 @@ export class RuntimeClient {
     this.request<Task>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/tasks`, input);
   updateTask = (taskId: string, input: UpdateTaskInput) =>
     this.request<Task>('PATCH', `/v1/tasks/${encodeURIComponent(taskId)}`, input);
+  /** Status changes go through the K3 state machine (PATCH no longer accepts `status`). */
+  transitionTask = (taskId: string, input: TransitionTaskInput) =>
+    this.request<Task>('POST', `/v1/tasks/${encodeURIComponent(taskId)}/transition`, input);
   evidence = (jobId: string) => this.request<Evidence[]>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/evidence`);
   runCheck = (jobId: string, taskId: string) =>
     this.request<{ result: { exitCode: number | null; stdout: string; stderr: string }; evidence: Evidence }>(

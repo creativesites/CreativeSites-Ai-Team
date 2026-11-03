@@ -6,13 +6,19 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type * as T from '../api/types.ts';
 import { loadConfig } from '../config.ts';
 import { computeCouncil } from '../council.ts';
+import {
+  assertAcyclic,
+  planTransition,
+  resolveLifecycleSettings,
+  selectReady,
+  type LifecycleSettings,
+  type TransitionOptions,
+} from '../lifecycle/tasks.ts';
 
 type Row = Record<string, unknown>;
 
-export class InputError extends Error {}
-export class NotFoundError extends Error {}
-export class ConflictError extends Error {}
-export class ForbiddenError extends Error {}
+import { ConflictError, ForbiddenError, InputError, NotFoundError } from '../errors.ts';
+export { ConflictError, ForbiddenError, InputError, NotFoundError };
 
 const now = () => new Date().toISOString();
 const newId = (prefix: string) => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
@@ -33,6 +39,21 @@ function parseJson<T>(v: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function integer(value: unknown, field: string, fallback = 0): number {
+  if (value === undefined || value === null) return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n)) throw new InputError(`${field} must be an integer`);
+  return n;
+}
+
+function stringList(value: unknown, field: string): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.some((v) => typeof v !== 'string' || !v.trim())) {
+    throw new InputError(`${field} must be an array of non-empty strings`);
+  }
+  return value.map((v) => (v as string).trim());
 }
 
 function required(value: unknown, field: string): string {
@@ -87,7 +108,6 @@ const STAGE_TRANSITIONS: Record<T.JobStage, T.JobStage[]> = {
 };
 const RISKS: T.Risk[] = ['low', 'medium', 'high', 'critical'];
 const RISK_RANK: Record<T.Risk, number> = { low: 0, medium: 1, high: 2, critical: 3 };
-const TASK_STATUSES: T.TaskStatus[] = ['pending', 'running', 'done', 'failed', 'blocked'];
 const TASK_MODES: NonNullable<T.Task['mode']>[] = ['build', 'verify', 'review', 'ops', 'design'];
 const JOB_KINDS: T.JobKind[] = ['code', 'research', 'ops', 'design', 'decision'];
 const SHIP_STATUSES: T.ShipStatus[] = ['none', 'ready', 'merged', 'pr_opened', 'cherry_picked', 'branch_pushed'];
@@ -100,6 +120,11 @@ interface EventInput {
   actorId?: string | null;
   actorKind?: T.ActorKind | null;
   subjectType?: string | null;
+  jobId?: string | null;
+  taskId?: string | null;
+  sessionId?: string | null;
+  /** A second event with the same key is a no-op (K2). */
+  idempotencyKey?: string | null;
 }
 
 /** All reads and writes of the v2 store. Writes and their events share one transaction. */
@@ -148,6 +173,10 @@ export class Repo {
   }
 
   private recordEvent(events: T.RuntimeEvent[], input: EventInput): T.RuntimeEvent {
+    if (input.idempotencyKey) {
+      const existing = this.one('SELECT * FROM events WHERE idempotency_key = ?', input.idempotencyKey);
+      if (existing) return toEvent(existing);
+    }
     const createdAt = now();
     const prev = this.one('SELECT hash FROM events ORDER BY seq DESC LIMIT 1');
     const prevHash = prev ? str(prev.hash) : null;
@@ -160,10 +189,14 @@ export class Repo {
     );
     const res = this.db
       .prepare(
-        `INSERT INTO events (type, subject_id, payload, created_at, actor_id, actor_kind, subject_type, hash, prev_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO events (type, subject_id, payload, created_at, actor_id, actor_kind, subject_type, hash, prev_hash,
+           idempotency_key, job_id, task_id, session_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(input.type, input.subjectId, jsonText(payload), createdAt, actorId, actorKind, subjectType, hash, prevHash);
+      .run(
+        input.type, input.subjectId, jsonText(payload), createdAt, actorId, actorKind, subjectType, hash, prevHash,
+        input.idempotencyKey ?? null, input.jobId ?? null, input.taskId ?? null, input.sessionId ?? null
+      );
     const event: T.RuntimeEvent = {
       seq: Number(res.lastInsertRowid),
       type: input.type,
@@ -173,6 +206,10 @@ export class Repo {
       actorId,
       actorKind,
       subjectType,
+      jobId: input.jobId ?? null,
+      taskId: input.taskId ?? null,
+      sessionId: input.sessionId ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
       hash,
       prevHash,
     };
@@ -1378,7 +1415,7 @@ export class Repo {
       if (job.tasks.length === 0) gates.push('the plan has at least one task');
     }
     if (to === 'verify') {
-      const unfinished = job.tasks.filter((t) => t.status !== 'done');
+      const unfinished = job.tasks.filter((t) => t.status !== 'done' && t.status !== 'verified');
       if (unfinished.length) gates.push(`${unfinished.length} task(s) are not done`);
       for (const task of job.tasks) {
         if (task.evidenceRequired === false) continue;
@@ -1452,17 +1489,24 @@ export class Repo {
     const title = required(input.title, 'title');
     const position = input.position == null ? Number(this.scalar('SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE job_id = ?', jobId) ?? 0) : positiveInt(input.position, 'position');
     const id = newId('task');
+    const dependsOn = this.checkedDependsOn(id, input.dependsOn);
     this.write((events) => {
       this.db
         .prepare(
           `INSERT INTO tasks (id, job_id, title, assignee_id, check_command, gate, status, created_at,
-             position, plan_task_id, mode, evidence_required, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`
+             position, plan_task_id, mode, evidence_required, updated_at, depends_on, priority, max_attempts,
+             parent_task_id, required_skills, budget_tokens, verification_required, last_event_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id, jobId, title, optionalString(input.assigneeId, 'assigneeId'), optionalString(input.checkCommand, 'checkCommand'),
           optionalString(input.gate, 'gate'), now(), position, optionalString(input.planTaskId, 'planTaskId'),
-          oneOf(input.mode, TASK_MODES, 'mode', 'build'), input.evidenceRequired === false ? 0 : 1, now()
+          oneOf(input.mode, TASK_MODES, 'mode', 'build'), input.evidenceRequired === false ? 0 : 1, now(),
+          jsonText(dependsOn), integer(input.priority, 'priority', 0),
+          input.maxAttempts == null ? this.lifecycleSettings().maxAttempts : positiveInt(input.maxAttempts, 'maxAttempts'),
+          optionalString(input.parentTaskId, 'parentTaskId'), jsonText(stringList(input.requiredSkills, 'requiredSkills')),
+          input.budgetTokens == null ? null : positiveInt(input.budgetTokens, 'budgetTokens'),
+          input.verificationRequired ? 1 : 0, now()
         );
       for (const criterionId of input.criterionIds ?? []) {
         if (!this.one('SELECT id FROM criteria WHERE id = ? AND job_id = ?', criterionId, jobId)) {
@@ -1489,17 +1533,172 @@ export class Repo {
       if (input.position !== undefined) fields.push(['position', positiveInt(input.position, 'position')]);
       if (input.mode !== undefined) fields.push(['mode', oneOf(input.mode, TASK_MODES, 'mode')]);
       if (input.evidenceRequired !== undefined) fields.push(['evidence_required', input.evidenceRequired ? 1 : 0]);
-      if (input.status !== undefined) {
-        const status = oneOf(input.status, TASK_STATUSES, 'status');
-        fields.push(['status', status]);
-        if (status === 'running' && !row.started_at) fields.push(['started_at', now()]);
-        if (status === 'done' || status === 'failed') fields.push(['ended_at', now()]);
-      }
+      if (input.dependsOn !== undefined) fields.push(['depends_on', jsonText(this.checkedDependsOn(taskId, input.dependsOn))]);
+      if (input.priority !== undefined) fields.push(['priority', integer(input.priority, 'priority', 0)]);
+      if (input.maxAttempts !== undefined) fields.push(['max_attempts', positiveInt(input.maxAttempts, 'maxAttempts')]);
+      if (input.requiredSkills !== undefined) fields.push(['required_skills', jsonText(stringList(input.requiredSkills, 'requiredSkills'))]);
+      if (input.budgetTokens !== undefined) fields.push(['budget_tokens', input.budgetTokens == null ? null : positiveInt(input.budgetTokens, 'budgetTokens')]);
+      if (input.verificationRequired !== undefined) fields.push(['verification_required', input.verificationRequired ? 1 : 0]);
       this.db.prepare(`UPDATE tasks SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), taskId);
       this.refreshJobUpdated(jobId);
-      this.recordEvent(events, { type: 'task.updated', subjectId: jobId, payload: { taskId, status: input.status }, subjectType: 'job' });
+      this.recordEvent(events, {
+        type: 'task.updated',
+        subjectId: jobId,
+        payload: { taskId, fields: fields.map(([c]) => c).filter((c) => c !== 'updated_at') },
+        subjectType: 'job',
+        jobId,
+        taskId,
+      });
     });
     return this.listTasks(jobId).find((t) => t.id === taskId)!;
+  }
+
+  // ------------------------------------------------- task lifecycle (K3, WP1)
+
+  /** Lifecycle knobs (ackTimeoutSec, maxAttempts, backoffSec, staleSweepSec) from settings, else K3 defaults. */
+  lifecycleSettings(): LifecycleSettings {
+    return resolveLifecycleSettings((key) => this.getSetting(key));
+  }
+
+  /**
+   * The only way a task's status changes. Validates against the K3 table, applies the
+   * change and emits exactly one event in the same transaction. A repeated
+   * idempotencyKey returns the task unchanged.
+   */
+  transitionTask(taskId: string, to: T.TaskStatus, opts: TransitionOptions): T.Task {
+    const row = this.one('SELECT * FROM tasks WHERE id = ?', taskId);
+    if (!row) throw new NotFoundError(`task ${taskId} not found`);
+    if (opts.idempotencyKey && this.one('SELECT seq FROM events WHERE idempotency_key = ?', opts.idempotencyKey)) {
+      return toTask(row);
+    }
+    const task = toTask(row);
+    const plan = planTransition(
+      {
+        id: task.id,
+        jobId: task.jobId,
+        status: task.status,
+        assigneeId: task.assigneeId,
+        attempt: task.attempt ?? 0,
+        maxAttempts: task.maxAttempts ?? 3,
+        verificationRequired: Boolean(task.verificationRequired),
+        startedAt: task.startedAt ?? null,
+      },
+      to,
+      opts,
+      this.lifecycleSettings()
+    );
+    const actorKind = opts.actorKind ?? 'agent';
+    this.write((events) => {
+      this.db
+        .prepare(`UPDATE tasks SET ${plan.columns.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
+        .run(...plan.columns.map(([, v]) => v), taskId);
+      this.refreshJobUpdated(task.jobId);
+      this.recordEvent(events, {
+        type: plan.eventType,
+        subjectId: taskId,
+        subjectType: 'task',
+        payload: plan.payload,
+        actorId: opts.actorId.trim(),
+        actorKind,
+        jobId: task.jobId,
+        taskId,
+        idempotencyKey: opts.idempotencyKey ?? null,
+      });
+    });
+    return this.getTask(taskId);
+  }
+
+  /** Records liveness for the stale sweep: any session activity on a task counts as an event. */
+  touchTask(taskId: string, at = now()): void {
+    this.db.prepare('UPDATE tasks SET last_event_at = ? WHERE id = ?').run(at, taskId);
+  }
+
+  /** Pending tasks whose dependencies are all done or verified: priority high first, then position. */
+  readyTasks(jobId?: string): T.Task[] {
+    const pending = (jobId
+      ? this.all("SELECT * FROM tasks WHERE status = 'pending' AND job_id = ?", jobId)
+      : this.all("SELECT * FROM tasks WHERE status = 'pending'")
+    ).map(toTask);
+    const wanted = new Set(pending.flatMap((t) => t.dependsOn ?? []));
+    const statusById = new Map<string, T.TaskStatus>();
+    for (const id of wanted) {
+      const r = this.one('SELECT status FROM tasks WHERE id = ?', id);
+      if (r) statusById.set(id, r.status as T.TaskStatus);
+    }
+    return selectReady(
+      pending.map((t) => ({ ...t, dependsOn: t.dependsOn ?? [], priority: t.priority ?? 0, position: t.position ?? 0 })),
+      (id) => statusById.get(id)
+    );
+  }
+
+  /** True when every dependency of the task is done or verified. */
+  dependenciesMet(taskId: string): boolean {
+    const task = this.getTask(taskId);
+    return (task.dependsOn ?? []).every((id) => {
+      const r = this.one('SELECT status FROM tasks WHERE id = ?', id);
+      return r ? r.status === 'done' || r.status === 'verified' : false;
+    });
+  }
+
+  /** Dependencies must exist and the resulting graph must stay acyclic. */
+  private checkedDependsOn(taskId: string, input: unknown): string[] {
+    const deps = [...new Set(stringList(input, 'dependsOn'))];
+    for (const dep of deps) {
+      if (dep === taskId) throw new ConflictError('A task cannot depend on itself');
+      if (!this.one('SELECT id FROM tasks WHERE id = ?', dep)) throw new NotFoundError(`dependency ${dep} not found`);
+    }
+    if (deps.length) {
+      const graph: Record<string, string[]> = {};
+      for (const r of this.all("SELECT id, depends_on FROM tasks WHERE depends_on != '[]'")) {
+        graph[String(r.id)] = parseJson<string[]>(r.depends_on, []);
+      }
+      graph[taskId] = deps;
+      assertAcyclic(graph);
+    }
+    return deps;
+  }
+
+  /** Tasks selected by a SQL condition; used by the lifecycle sweeper. */
+  listTasksWhere(where: string, ...params: SQLInputValue[]): T.Task[] {
+    return this.all(`SELECT * FROM tasks WHERE ${where}`, ...params).map(toTask);
+  }
+
+  /**
+   * A failed verification sends the work back (WP1 1.6): each failing task returns to its
+   * assignee as `assigned` with the failing criterion in the reason, and a job in the
+   * verify stage goes back to build.
+   */
+  returnFailedVerification(
+    jobId: string,
+    failures: { taskId: string; reason: string }[],
+    actorId: string
+  ): { returned: string[]; jobMovedToBuild: boolean } {
+    const returned: string[] = [];
+    for (const f of failures) {
+      const task = this.getTask(f.taskId);
+      if (!task.assigneeId || !['needs_review', 'verified', 'done'].includes(task.status)) continue;
+      this.transitionTask(task.id, 'assigned', { actorId, actorKind: 'agent', reason: f.reason });
+      returned.push(task.id);
+    }
+    let jobMovedToBuild = false;
+    if (this.getJob(jobId).stage === 'verify') {
+      this.transitionJob(jobId, {
+        to: 'build',
+        actorId,
+        actorKind: 'agent',
+        note: `Verification failed: ${failures.map((f) => f.reason).join('; ').slice(0, 500)}`,
+      });
+      jobMovedToBuild = true;
+    }
+    return { returned, jobMovedToBuild };
+  }
+
+  /** Text of the criteria a task is meant to satisfy. */
+  taskCriterionTexts(taskId: string): string[] {
+    return this.all(
+      'SELECT c.text FROM task_criteria tc JOIN criteria c ON c.id = tc.criterion_id WHERE tc.task_id = ? ORDER BY c.position',
+      taskId
+    ).map((r) => String(r.text));
   }
 
   // ---------------------------------------------------------------- evidence
@@ -2082,6 +2281,9 @@ export class Repo {
       this.db
         .prepare('UPDATE sessions SET last_event_at = ?, turn_count = COALESCE(turn_count, 0) + 1, context_tokens = COALESCE(context_tokens, 0) + ? WHERE id = ?')
         .run(now(), estimatedDelta, sessionId);
+      this.db
+        .prepare('UPDATE tasks SET last_event_at = ? WHERE id = (SELECT task_id FROM sessions WHERE id = ?)')
+        .run(now(), sessionId);
       this.recordEvent(events, {
         type: 'session.transcript',
         subjectId: sessionId,
@@ -4532,6 +4734,19 @@ const toTask = (r: Row): T.Task => ({
   endedAt: str(r.ended_at),
   updatedAt: str(r.updated_at),
   evidenceRequired: bool(r.evidence_required),
+  dependsOn: parseJson<string[]>(r.depends_on, []),
+  priority: num(r.priority),
+  attempt: num(r.attempt),
+  maxAttempts: r.max_attempts == null ? 3 : num(r.max_attempts),
+  acknowledgedAt: str(r.acknowledged_at),
+  ackDeadlineAt: str(r.ack_deadline_at),
+  nextRetryAt: str(r.next_retry_at),
+  parentTaskId: str(r.parent_task_id),
+  requiredSkills: parseJson<string[]>(r.required_skills, []),
+  budgetTokens: r.budget_tokens == null ? null : num(r.budget_tokens),
+  verificationRequired: bool(r.verification_required),
+  legacyProjectTaskId: str(r.legacy_project_task_id),
+  lastEventAt: str(r.last_event_at),
 });
 
 const toEvidence = (r: Row): T.Evidence => ({
@@ -4732,6 +4947,10 @@ const toEvent = (r: Row): T.RuntimeEvent => ({
   actorId: str(r.actor_id),
   actorKind: str(r.actor_kind) as T.ActorKind | null,
   subjectType: str(r.subject_type),
+  jobId: str(r.job_id),
+  taskId: str(r.task_id),
+  sessionId: str(r.session_id),
+  idempotencyKey: str(r.idempotency_key),
   hash: str(r.hash),
   prevHash: str(r.prev_hash),
 });

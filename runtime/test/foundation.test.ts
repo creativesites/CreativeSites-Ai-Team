@@ -173,8 +173,9 @@ test('the job lifecycle moves only through gates, with an audit trail', async ()
   const built = await ok('POST', `/v1/jobs/${job.id}/stage`, { to: 'build', actorId: 'winston' });
   assert.equal(built.stage, 'build');
 
-  await ok('PATCH', `/v1/tasks/${task.id}`, { status: 'running' });
-  await ok('PATCH', `/v1/tasks/${task.id}`, { status: 'done' });
+  for (const to of ['assigned', 'acknowledged', 'running', 'done']) {
+    await ok('POST', `/v1/tasks/${task.id}/transition`, { to, actorId: to === 'done' ? 'winston' : 'atlas', actorKind: to === 'done' ? 'human' : 'agent' });
+  }
 
   // No evidence yet: verify is gated.
   const noEvidence = await call('POST', `/v1/jobs/${job.id}/stage`, { to: 'verify', actorId: 'winston' });
