@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { Ledger, LedgerError } from '../ledger/ledger.ts';
 import { jobTimeline } from '../ledger/timeline.ts';
 import type { DatabaseSync } from 'node:sqlite';
+import { skillServiceFor } from '../skills/service.ts';
 import { handleMcp } from '../agent-tools/mcp-server.ts';
 import { submitPlan } from '../planning/plan.ts';
 import { resolveAgentToken } from '../agent-tools/tokens.ts';
@@ -267,6 +268,11 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     return opts.db;
   };
 
+  const skillsOf = () => {
+    const svc = skillServiceFor(repo);
+    if (!svc) throw new HttpError(503, 'skills are not enabled');
+    return svc;
+  };
   const routes: Route[] = [
     route('GET', '/health', () => ({ status: 200, body: opts.health() }), true),
 
@@ -353,6 +359,23 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       },
       true
     ),
+
+    // Runtime-loaded skills (WP8).
+    route('GET', '/v1/skills', () => {
+      const svc = skillsOf();
+      return { status: 200, body: { root: svc.root(), skills: svc.list() } };
+    }),
+    route('POST', '/v1/skills/reload', () => ({ status: 200, body: skillsOf().sync() })),
+    route('GET', '/v1/skills/:id', (ctx) => {
+      const skill = skillsOf().get(ctx.params.id!);
+      if (!skill) throw new HttpError(404, `no skill ${ctx.params.id}`);
+      return { status: 200, body: skill };
+    }),
+    route('GET', '/v1/tasks/:id/skills', (ctx) => {
+      repo.getTask(ctx.params.id!);
+      const svc = skillsOf();
+      return { status: 200, body: { taskId: ctx.params.id, skills: svc.taskSkills(ctx.params.id!), packet: svc.skillPacket(ctx.params.id!) } };
+    }),
 
     route('GET', '/v1/search', (ctx) => ({
       status: 200,

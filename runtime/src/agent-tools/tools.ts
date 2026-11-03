@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { Repo } from '../store/repo.ts';
 import { submitPlan } from '../planning/plan.ts';
 import type { AgentPrincipal } from './tokens.ts';
+import { skillServiceFor } from '../skills/service.ts';
 import { validate, type JsonSchema } from './validate.ts';
 
 /**
@@ -306,6 +307,35 @@ export const TOOLS: ToolDef[] = [
       ctx.repo.updateSession(ctx.principal.sessionId, { contextTokens: Number(args.usedTokens) });
       const pct = typeof args.windowTokens === 'number' ? Math.round((Number(args.usedTokens) / Number(args.windowTokens)) * 100) : null;
       return { recorded: true, utilisationPct: pct };
+    },
+  },
+  {
+    name: 'skill_list',
+    description: 'List the skills selected for your task (pinned versions) and the id and description of every available skill. Read any of them with skill_read.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handler: (ctx) => {
+      const svc = skillServiceFor(ctx.repo);
+      if (!svc) throw new ToolRejected('Skills are not enabled in this runtime');
+      const taskId = ctx.principal.taskId;
+      return {
+        selected: taskId ? svc.taskSkills(taskId).map((x) => ({ id: x.skillId, version: x.version, contentHash: x.contentHash, reason: x.reason })) : [],
+        available: svc.list().map((x) => ({ id: x.id, version: x.version, description: x.description })),
+      };
+    },
+  },
+  {
+    name: 'skill_read',
+    description: 'Read the instructions of a skill by id. If the skill is pinned to your task you get the pinned version; otherwise the current one.',
+    inputSchema: { type: 'object', required: ['id'], properties: { id: s('Skill id', { minLength: 1, maxLength: 120 }) }, additionalProperties: false },
+    handler: (ctx, args) => {
+      const svc = skillServiceFor(ctx.repo);
+      if (!svc) throw new ToolRejected('Skills are not enabled in this runtime');
+      const id = String(args.id);
+      const taskId = ctx.principal.taskId;
+      const pinned = taskId ? svc.taskSkills(taskId).find((x) => x.skillId === id) : undefined;
+      const skill = svc.get(id, pinned?.contentHash);
+      if (!skill) throw new ToolRejected(`No skill ${id}. Call skill_list to see what exists.`);
+      return { id: skill.id, version: skill.version, contentHash: skill.contentHash, pinned: Boolean(pinned), description: skill.description, instructions: skill.body };
     },
   },
 ];

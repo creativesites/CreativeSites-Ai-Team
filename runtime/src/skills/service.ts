@@ -1,0 +1,228 @@
+import type { DatabaseSync } from 'node:sqlite';
+import type { Repo } from '../store/repo.ts';
+import { discoverSkills, resolveSkillsRoot, type LoadedSkill, type SkillWorkflow } from './loader.ts';
+
+/**
+ * Skill registry, selection and injection (programme plan WP8).
+ * The `skills` table keeps every (id, content hash) ever loaded, so a task keeps the exact text
+ * it was given even after the file is edited. `task_skills` pins that choice per task.
+ */
+
+export const MAX_SKILLS_PER_TASK = 4;
+const PER_SKILL_CHARS = 6000;
+const PACKET_CHARS = 16000;
+
+export interface SkillTaskInput {
+  id: string;
+  title: string;
+  description?: string | null;
+  requiredSkills?: string[] | null;
+}
+
+export interface SkillJobInput {
+  workflow?: SkillWorkflow | string | null;
+}
+
+export interface SkillSummary {
+  id: string;
+  name: string;
+  version: string;
+  contentHash: string;
+  path: string;
+  description: string;
+  triggers: string[];
+  workflows: string[];
+  roles: string[];
+  loadedAt: string;
+}
+
+export interface SelectedSkill {
+  taskId: string;
+  skillId: string;
+  version: string | null;
+  contentHash: string;
+  selectedAt: string;
+  reason: string;
+}
+
+export interface SyncResult {
+  root: string | null;
+  found: number;
+  added: number;
+  unchanged: number;
+  skipped: { path: string; reason: string }[];
+}
+
+type Row = Record<string, unknown>;
+const parseArr = (v: unknown): string[] => {
+  try {
+    const x = JSON.parse(String(v ?? '[]'));
+    return Array.isArray(x) ? x.map(String) : [];
+  } catch {
+    return [];
+  }
+};
+
+const toSummary = (r: Row): SkillSummary => ({
+  id: String(r.id),
+  name: String(r.name),
+  version: String(r.version),
+  contentHash: String(r.content_hash),
+  path: String(r.path),
+  description: String(r.description ?? ''),
+  triggers: parseArr(r.triggers),
+  workflows: parseArr(r.workflows),
+  roles: parseArr(r.roles),
+  loadedAt: String(r.loaded_at),
+});
+
+function mentions(text: string, trigger: string): boolean {
+  const t = trigger.trim().toLowerCase();
+  if (!t) return false;
+  const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9])${escaped}($|[^a-z0-9])`).test(text);
+}
+
+export class SkillService {
+  private readonly db: DatabaseSync;
+  private readonly getSetting: () => unknown;
+  private readonly explicitRoot: string | null;
+  private readonly now: () => Date;
+  /** What the last sync found on disk: the skills a new selection may choose from. */
+  private current = new Map<string, LoadedSkill>();
+  private synced = false;
+
+  constructor(db: DatabaseSync, opts: { skillsRoot?: string | null; getSetting?: () => unknown; now?: () => Date } = {}) {
+    this.db = db;
+    this.explicitRoot = opts.skillsRoot ?? null;
+    this.getSetting = opts.getSetting ?? (() => undefined);
+    this.now = opts.now ?? (() => new Date());
+  }
+
+  root(): string | null {
+    return resolveSkillsRoot({ explicit: this.explicitRoot, setting: this.getSetting() });
+  }
+
+  /** Reads the skills root and records any file content not seen before. Unchanged files are no-ops. */
+  sync(): SyncResult {
+    const found = discoverSkills(this.root());
+    const insert = this.db.prepare(
+      `INSERT OR IGNORE INTO skills (id, name, version, content_hash, path, description, triggers, workflows, roles, body, loaded_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    let added = 0;
+    const at = this.now().toISOString();
+    const next = new Map<string, LoadedSkill>();
+    for (const s of found.skills) {
+      next.set(s.id, s);
+      const r = insert.run(s.id, s.name, s.version, s.contentHash, s.path, s.description, JSON.stringify(s.triggers), JSON.stringify(s.workflows), JSON.stringify(s.roles), s.body, at);
+      if (Number(r.changes) > 0) added++;
+    }
+    this.current = next;
+    this.synced = true;
+    return { root: found.root, found: found.skills.length, added, unchanged: found.skills.length - added, skipped: found.skipped };
+  }
+
+  private ensureSynced() {
+    if (!this.synced) this.sync();
+  }
+
+  /** The current version of every skill (as last read from disk). */
+  list(): SkillSummary[] {
+    this.ensureSynced();
+    return [...this.current.values()].map((s) => {
+      const row = this.db.prepare('SELECT * FROM skills WHERE id = ? AND content_hash = ?').get(s.id, s.contentHash) as Row | undefined;
+      return row ? toSummary(row) : { id: s.id, name: s.name, version: s.version, contentHash: s.contentHash, path: s.path, description: s.description, triggers: s.triggers, workflows: s.workflows, roles: s.roles, loadedAt: '' };
+    });
+  }
+
+  /** One skill with its instructions: the pinned hash when given, otherwise the current version. */
+  get(id: string, contentHash?: string): (SkillSummary & { body: string }) | null {
+    this.ensureSynced();
+    const hash = contentHash ?? this.current.get(id)?.contentHash;
+    const row = hash
+      ? (this.db.prepare('SELECT * FROM skills WHERE id = ? AND content_hash = ?').get(id, hash) as Row | undefined)
+      : (this.db.prepare('SELECT * FROM skills WHERE id = ? ORDER BY loaded_at DESC, rowid DESC LIMIT 1').get(id) as Row | undefined);
+    return row ? { ...toSummary(row), body: String(row.body ?? '') } : null;
+  }
+
+  taskSkills(taskId: string): SelectedSkill[] {
+    const rows = this.db.prepare('SELECT * FROM task_skills WHERE task_id = ? ORDER BY selected_at, rowid').all(taskId) as Row[];
+    return rows.map((r) => {
+      const v = this.db.prepare('SELECT version FROM skills WHERE id = ? AND content_hash = ?').get(String(r.skill_id), String(r.content_hash)) as { version: string } | undefined;
+      return { taskId, skillId: String(r.skill_id), version: v?.version ?? null, contentHash: String(r.content_hash), selectedAt: String(r.selected_at), reason: String(r.reason) };
+    });
+  }
+
+  /** Forgets a task's pinned skills so the next selection starts again (a task reset). */
+  resetTask(taskId: string): void {
+    this.db.prepare('DELETE FROM task_skills WHERE task_id = ?').run(taskId);
+  }
+
+  /**
+   * Deterministic choice, at most four. Order: a required skill, then a trigger word in the task
+   * text, then the job workflow; ties by skill id. Pinned: once a task has skills, selecting
+   * again returns them unchanged, whatever has since been edited on disk.
+   */
+  selectSkills(task: SkillTaskInput, job: SkillJobInput | null = null): SelectedSkill[] {
+    const existing = this.taskSkills(task.id);
+    if (existing.length) return existing;
+    this.sync();
+    const required = new Set((task.requiredSkills ?? []).map((s) => s.trim().toLowerCase()));
+    const text = [task.title, task.description ?? '', ...(task.requiredSkills ?? [])].join('\n').toLowerCase();
+    const workflow = job?.workflow ?? null;
+
+    const picks: { skill: LoadedSkill; rank: number; reason: string }[] = [];
+    for (const skill of this.current.values()) {
+      if (required.has(skill.id.toLowerCase())) {
+        picks.push({ skill, rank: 0, reason: 'required skill' });
+        continue;
+      }
+      const hit = skill.triggers.find((t) => mentions(text, t));
+      if (hit) {
+        picks.push({ skill, rank: 1, reason: `trigger "${hit}"` });
+        continue;
+      }
+      if (workflow && (skill.workflows as string[]).includes(workflow)) picks.push({ skill, rank: 2, reason: `workflow ${workflow}` });
+    }
+    picks.sort((a, b) => a.rank - b.rank || (a.skill.id < b.skill.id ? -1 : 1));
+
+    const at = this.now().toISOString();
+    const ins = this.db.prepare('INSERT OR IGNORE INTO task_skills (task_id, skill_id, content_hash, selected_at, reason) VALUES (?, ?, ?, ?, ?)');
+    for (const p of picks.slice(0, MAX_SKILLS_PER_TASK)) ins.run(task.id, p.skill.id, p.skill.contentHash, at, p.reason);
+    return this.taskSkills(task.id);
+  }
+
+  /** The instructions of the task's pinned skills, each headed `id@version`, size-capped. Empty when none. */
+  skillPacket(taskId: string): string {
+    const parts: string[] = [];
+    let total = 0;
+    for (const sel of this.taskSkills(taskId)) {
+      const skill = this.get(sel.skillId, sel.contentHash);
+      if (!skill) continue;
+      let body = skill.body.trim();
+      if (body.length > PER_SKILL_CHARS) body = `${body.slice(0, PER_SKILL_CHARS)}\n[truncated: call skill_read {"id":"${skill.id}"} for the rest]`;
+      const block = `### ${skill.id}@${skill.version} (${skill.contentHash})\n${body}`;
+      if (total + block.length > PACKET_CHARS) {
+        parts.push(`### ${skill.id}@${skill.version}\n[omitted for size: call skill_read {"id":"${skill.id}"}]`);
+        continue;
+      }
+      total += block.length;
+      parts.push(block);
+    }
+    return parts.join('\n\n');
+  }
+}
+
+const registry = new WeakMap<Repo, SkillService>();
+
+/** Creates the skill service for a repo (settings come from the repo) and registers it. */
+export function attachSkillService(repo: Repo, db: DatabaseSync, opts: { skillsRoot?: string | null } = {}): SkillService {
+  const svc = new SkillService(db, { skillsRoot: opts.skillsRoot, getSetting: () => repo.getSetting('skillsRoot') });
+  registry.set(repo, svc);
+  return svc;
+}
+
+export function skillServiceFor(repo: Repo): SkillService | null {
+  return registry.get(repo) ?? null;
+}
