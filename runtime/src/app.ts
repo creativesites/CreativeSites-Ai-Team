@@ -109,6 +109,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
 
   const api = createServer({
     repo,
+    db: db,
     token,
     health,
     allowedOrigins: opts.allowedOrigins,

@@ -1,5 +1,7 @@
 // Ordered schema migrations. Never edit one that has shipped; add the next version.
 
+import { AGENT_TOOLS_SQL } from '../agent-tools/schema.ts';
+
 export interface Migration {
   version: number;
   name: string;
@@ -838,5 +840,10 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE projects ADD COLUMN repo TEXT;
       ALTER TABLE projects ADD COLUMN updated_at TEXT;
     `,
+  },
+  {
+    version: 12,
+    name: 'agent action interface: session tokens, tool-call audit, blockers (K4)',
+    sql: AGENT_TOOLS_SQL,
   },
 ];

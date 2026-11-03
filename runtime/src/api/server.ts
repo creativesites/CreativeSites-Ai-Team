@@ -1,4 +1,8 @@
 import crypto from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
+import { handleMcp } from '../agent-tools/mcp-server.ts';
+import { resolveAgentToken } from '../agent-tools/tokens.ts';
+import { fingerprint, isReserved, OWNER_KEY_HEADER, OWNER_KEY_SETTING, ownerKeyMatches } from '../agent-tools/owner-key.ts';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -39,6 +43,8 @@ import {
 
 export interface ServerOptions {
   repo: Repo;
+  /** The store handle, for tables owned by the agent action interface (session tokens, tool calls). */
+  db?: DatabaseSync;
   token: string;
   health: () => Health;
   /** Extra browser origins allowed to call the API (the desktop's dev server). */
@@ -252,7 +258,37 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('GET', '/v1/summary', () => ({ status: 200, body: repo.summary() })),
 
     route('GET', '/v1/settings', () => ({ status: 200, body: repo.getSettings() })),
-    route('POST', '/v1/settings', (ctx) => ({ status: 200, body: repo.updateSettings(ctx.body as T.Settings) })),
+    route('POST', '/v1/settings', (ctx) => {
+      const patch = { ...(ctx.body as T.Settings) } as Record<string, unknown>;
+      delete patch[OWNER_KEY_SETTING]; // the owner key has its own enrolment route
+      return { status: 200, body: repo.updateSettings(patch as T.Settings) };
+    }),
+    // Owner key (security review S1): GET reports enrolment; POST enrols once.
+    route('GET', '/v1/owner-key', () => {
+      const h = repo.getSetting(OWNER_KEY_SETTING);
+      return { status: 200, body: { enrolled: typeof h === 'string' && h.length > 0, fingerprint: typeof h === 'string' && h ? fingerprint(h) : null } };
+    }),
+    route('POST', '/v1/owner-key', (ctx) => {
+      const existing = repo.getSetting(OWNER_KEY_SETTING);
+      if (typeof existing === 'string' && existing) throw new HttpError(409, 'An owner key is already enrolled. Reset it with the runtime stopped: node runtime/scripts/owner-key.ts reset');
+      const keyHash = asString(ctx.body.keyHash, 'keyHash');
+      if (!/^[0-9a-f]{64}$/.test(keyHash)) throw new HttpError(400, 'keyHash must be a hex SHA-256');
+      repo.updateSettings({ [OWNER_KEY_SETTING]: keyHash } as T.Settings);
+      return { status: 201, body: { enrolled: true, fingerprint: fingerprint(keyHash) } };
+    }),
+    // Agent action interface (programme plan K4). Authenticated by a session-scoped agent token, not the owner token.
+    route(
+      'POST',
+      '/mcp',
+      (ctx) => {
+        if (!opts.db) throw new HttpError(503, 'agent tools are not enabled');
+        const principal = resolveAgentToken(opts.db, ctx.req.headers.authorization);
+        if (!principal) throw new HttpError(401, 'missing, expired or revoked agent token');
+        const out = handleMcp(ctx.body, { principal, repo, db: opts.db });
+        return out === null ? { status: 202 } : { status: 200, body: out };
+      },
+      true
+    ),
 
     route('GET', '/v1/search', (ctx) => ({
       status: 200,
@@ -1309,7 +1345,7 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     if (origin && originAllowed) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Last-Event-ID, Idempotency-Key');
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Last-Event-ID, Idempotency-Key, X-MyaOS-Owner-Key');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Max-Age', '600');
     }
@@ -1338,6 +1374,12 @@ export function createServer(opts: ServerOptions): RuntimeServer {
 
       const needsBody = !['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(req.method ?? '');
       const body = needsBody ? await readJson(req) : {};
+      if (!r.open && isReserved(req.method ?? '', url.pathname, body)) {
+        const enrolled = repo.getSetting(OWNER_KEY_SETTING);
+        if (typeof enrolled === 'string' && enrolled && !ownerKeyMatches(req.headers[OWNER_KEY_HEADER], enrolled)) {
+          throw new HttpError(403, 'This action is reserved for the owner: the owner key is missing or wrong');
+        }
+      }
       const idempotencyKey = req.headers['idempotency-key'];
       if (typeof idempotencyKey === 'string' && idempotencyKey.length > 0) {
         if (idempotencyKey.length > 200) throw new HttpError(400, 'Idempotency-Key is too long');

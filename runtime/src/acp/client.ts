@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { agentEnv } from '../agent-tools/env.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -62,6 +63,8 @@ export interface AcpClientOptions {
   worktree: string;
   handlers: AcpClientHandlers;
   env?: NodeJS.ProcessEnv;
+  /** MCP servers offered to the agent (the runtime's agent action interface, K4). */
+  mcpServers?: unknown[];
 }
 
 interface TerminalState {
@@ -130,7 +133,7 @@ export class AcpClient {
   spawnProcess(): void {
     this.child = spawn(this.opts.command, this.opts.args, {
       cwd: this.opts.cwd,
-      env: { ...process.env, ...(this.opts.env ?? {}) },
+      env: agentEnv(process.env, (this.opts.env ?? {}) as Record<string, string>),
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: true,
     });
@@ -162,7 +165,7 @@ export class AcpClient {
   }
 
   async newSession(timeoutMs = 60_000): Promise<string> {
-    const result = (await this.request('session/new', { cwd: this.opts.worktree, mcpServers: [] }, timeoutMs)) as { sessionId?: string };
+    const result = (await this.request('session/new', { cwd: this.opts.worktree, mcpServers: this.opts.mcpServers ?? [] }, timeoutMs)) as { sessionId?: string };
     if (!result?.sessionId) throw new AcpError(-32002, 'session/new returned no sessionId');
     this.sessionId = result.sessionId;
     return result.sessionId;
@@ -183,7 +186,7 @@ export class AcpClient {
     if (!this.canLoadSession) throw new AcpError(-32601, 'adapter does not advertise session/load');
     const result = (await this.request(
       'session/load',
-      { sessionId: acpSessionId, cwd: this.opts.worktree, mcpServers: [] },
+      { sessionId: acpSessionId, cwd: this.opts.worktree, mcpServers: this.opts.mcpServers ?? [] },
       timeoutMs
     )) as { sessionId?: string } | undefined;
     const resolvedId = result?.sessionId || acpSessionId;
@@ -418,7 +421,7 @@ export class AcpClient {
     const command = String(params.command ?? '');
     const args = Array.isArray(params.args) ? params.args.map(String) : [];
     const envAdditions = Array.isArray(params.env) ? (params.env as { name?: string; value?: string }[]) : [];
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    const env: NodeJS.ProcessEnv = agentEnv(process.env, (this.opts.env ?? {}) as Record<string, string>);
     for (const entry of envAdditions) if (entry?.name) env[entry.name] = String(entry.value ?? '');
     const limit = Number(params.outputByteLimit) > 0 ? Number(params.outputByteLimit) : MAX_OUTPUT;
     const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });

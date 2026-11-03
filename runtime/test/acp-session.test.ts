@@ -208,6 +208,7 @@ test('multi-turn follow-up prompt, worktree files endpoint and live usage teleme
 
 test('multi-turn session resumes existing acpSessionId via session/load when supported by adapter', async () => {
   process.env.FAKE_LOAD_SESSION = '1';
+  process.env.MYAOS_AGENT_ENV_PASS = 'FAKE_LOAD_SESSION'; // agents get an allowlisted env (security review S3)
   try {
     const started = await call('POST', `/v1/jobs/${jobId}/sessions`, {
       agentId: 'kael',
@@ -246,5 +247,6 @@ test('multi-turn session resumes existing acpSessionId via session/load when sup
     assert.ok(resumedEntry, 'transcript contains session/load confirmation');
   } finally {
     delete process.env.FAKE_LOAD_SESSION;
+    delete process.env.MYAOS_AGENT_ENV_PASS;
   }
 });

@@ -1754,7 +1754,7 @@ export class Repo {
           `UPDATE identities
              SET active_session_id = ?,
                  acp_session_id = COALESCE(?, acp_session_id),
-                 status_state = 'working',
+                 status_state = CASE WHEN status_state IN ('rate_limited','waiting_reset') THEN status_state ELSE 'working' END,
                  last_woken_at = ?
            WHERE id = ?`
         )
@@ -1800,15 +1800,13 @@ export class Repo {
       // Keep the agent's identity record in sync with its session state & captured acpSessionId
       const idFields: [string, SQLInputValue][] = [['active_session_id', id]];
       if (input.acpSessionId) idFields.push(['acp_session_id', input.acpSessionId]);
-      if (input.state === 'starting' || input.state === 'running') {
-        idFields.push(['status_state', 'working']);
-      } else if (input.state === 'idle' || input.state === 'stopped') {
-        idFields.push(['status_state', 'idle']);
-      } else if (input.state === 'failed') {
-        const curId = this.one('SELECT status_state FROM identities WHERE id = ?', session.agentId);
-        if (curId && str(curId.status_state) !== 'rate_limited' && str(curId.status_state) !== 'waiting_reset') {
-          idFields.push(['status_state', 'idle']);
-        }
+      // A rate limit is cleared only explicitly (clearRateLimit) or when it resets, never by another
+      // session of the same agent changing state; otherwise a limited agent could be woken early.
+      const curId = this.one('SELECT status_state FROM identities WHERE id = ?', session.agentId);
+      const limited = curId && ['rate_limited', 'waiting_reset'].includes(String(str(curId.status_state)));
+      if (!limited) {
+        if (input.state === 'starting' || input.state === 'running') idFields.push(['status_state', 'working']);
+        else if (input.state === 'idle' || input.state === 'stopped' || input.state === 'failed') idFields.push(['status_state', 'idle']);
       }
       this.db
         .prepare(`UPDATE identities SET ${idFields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
