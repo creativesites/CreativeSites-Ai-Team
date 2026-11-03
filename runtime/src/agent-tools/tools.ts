@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Repo } from '../store/repo.ts';
+import { submitPlan } from '../planning/plan.ts';
 import type { AgentPrincipal } from './tokens.ts';
 import { validate, type JsonSchema } from './validate.ts';
 
@@ -190,6 +191,84 @@ export const TOOLS: ToolDef[] = [
         recordedByKind: 'agent',
       });
       return { blockerId: id };
+    },
+  },
+  {
+    name: 'plan_submit',
+    description:
+      'Submit the structured plan for your job: summary, risk (low|medium|high), acceptance criteria and a task graph (keys, dependsOn keys, assignees). The runtime creates the tasks; low-risk plans may be accepted automatically, otherwise the owner is asked. Resubmitting while the job is still in plan replaces tasks that have not started.',
+    roles: ['planner', 'lead'],
+    inputSchema: {
+      type: 'object',
+      required: ['summary', 'risk', 'tasks'],
+      properties: {
+        jobId: s('Defaults to your session job'),
+        summary: s('The plan in a few sentences', { minLength: 3, maxLength: 4000 }),
+        requirements: { type: 'array', items: s('Requirement', { maxLength: 1000 }), maxItems: 100 },
+        architecture: s('Approach and structure', { maxLength: 8000 }),
+        risks: {
+          type: 'array',
+          maxItems: 50,
+          items: { type: 'object', required: ['text'], properties: { text: s('Risk', { maxLength: 1000 }), severity: s('Severity', { maxLength: 20 }) }, additionalProperties: false },
+        },
+        risk: s('Overall risk', { enum: ['low', 'medium', 'high'] }),
+        humanDecisions: { type: 'array', items: s('A decision only the owner can make', { maxLength: 1000 }), maxItems: 50 },
+        estimates: { type: 'object', properties: { agentHours: { type: 'number', minimum: 0 }, notes: s('Notes', { maxLength: 2000 }) }, additionalProperties: false },
+        criteria: { type: 'array', items: s('Acceptance criterion', { maxLength: 1000 }), maxItems: 100 },
+        tasks: {
+          type: 'array',
+          maxItems: 50,
+          items: {
+            type: 'object',
+            required: ['key', 'title'],
+            properties: {
+              key: s('Unique key within this plan', { maxLength: 100 }),
+              title: s('Task title', { maxLength: 500 }),
+              assigneeId: s('Identity id'),
+              dependsOn: { type: 'array', items: s('Task key'), maxItems: 50 },
+              checkCommand: s('Command that checks the task', { maxLength: 2000 }),
+              verificationRequired: { type: 'boolean' },
+              requiredSkills: { type: 'array', items: s('Skill'), maxItems: 50 },
+              priority: { type: 'integer' },
+              criteriaRefs: { type: 'array', items: { type: 'integer', minimum: 0 }, maxItems: 100 },
+            },
+            additionalProperties: false,
+          },
+        },
+        idempotencyKey: IDEM,
+      },
+      additionalProperties: false,
+    },
+    handler: (ctx, args) => {
+      const jobId = jobOf(ctx, args);
+      const { jobId: _j, idempotencyKey: _i, ...packet } = args;
+      return submitPlan(ctx.repo, jobId, packet, { id: ctx.principal.identityId, kind: 'agent' });
+    },
+  },
+  {
+    name: 'task_claim',
+    description:
+      'Acknowledge that you accept your assigned task (assigned -> acknowledged). If the task is still pending, assigned to you and its dependencies are done, it is assigned and acknowledged in one step. Repeating the call is harmless.',
+    inputSchema: { type: 'object', properties: { taskId: s('Defaults to your session task'), jobId: s('Defaults to your session job'), idempotencyKey: IDEM }, additionalProperties: false },
+    handler: (ctx, args) => {
+      const jobId = jobOf(ctx, args);
+      const taskId = taskOf(ctx, args, jobId);
+      if (!taskId) throw new ToolRejected('No task: give taskId, or use a session bound to a task');
+      const task = ctx.repo.getTask(taskId);
+      const me = ctx.principal.identityId;
+      if (task.assigneeId !== me) {
+        throw new ToolRejected(task.assigneeId ? `Task ${taskId} is assigned to ${task.assigneeId}, not to you` : `Task ${taskId} has no assignee, so you cannot claim it`);
+      }
+      const opts = { actorId: me, actorKind: 'agent' as const, reason: 'claimed by assignee' };
+      if (task.status === 'acknowledged' || task.status === 'running') return { taskId, status: task.status, alreadyClaimed: true };
+      if (task.status === 'pending') {
+        if (!ctx.repo.dependenciesMet(taskId)) throw new ToolRejected('This task is not ready: its dependencies are not done yet');
+        ctx.repo.transitionTask(taskId, 'assigned', { ...opts, assigneeId: me });
+      } else if (task.status !== 'assigned') {
+        throw new ToolRejected(`Task ${taskId} is ${task.status}; only an assigned (or ready pending) task can be claimed`);
+      }
+      const done = ctx.repo.transitionTask(taskId, 'acknowledged', opts);
+      return { taskId, status: done.status, alreadyClaimed: false };
     },
   },
   {

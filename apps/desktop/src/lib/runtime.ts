@@ -14,6 +14,8 @@ import type {
   AgentSchedule,
   AgentWake,
   Approval,
+  Blocker,
+  NeedsYouItem,
   ApprovalPolicy,
   ApproveDesignFrameInput,
   ApproveDesignFrameResult,
@@ -450,6 +452,10 @@ export class RuntimeClient {
   approval = (id: string) => this.request<Approval>('GET', `/v1/approvals/${encodeURIComponent(id)}`);
   decideApproval = (id: string, input: DecideApprovalInput) =>
     this.request<Approval>('POST', `/v1/approvals/${encodeURIComponent(id)}/decision`, input);
+  needsYou = () => this.request<NeedsYouItem[]>('GET', '/v1/needs-you');
+  blockers = (status?: 'open' | 'resolved') => this.request<Blocker[]>('GET', `/v1/blockers${status ? `?status=${status}` : ''}`);
+  resolveBlocker = (id: string, resolvedBy: string) =>
+    this.request<Blocker>('POST', `/v1/blockers/${encodeURIComponent(id)}/resolve`, { resolvedBy });
   policies = () => this.request<ApprovalPolicy[]>('GET', '/v1/policies');
   createPolicy = (input: CreatePolicyInput) => this.request<ApprovalPolicy>('POST', '/v1/policies', input);
   updatePolicy = (id: string, input: UpdatePolicyInput) =>

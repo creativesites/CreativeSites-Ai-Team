@@ -3,6 +3,7 @@ import { Ledger, LedgerError } from '../ledger/ledger.ts';
 import { jobTimeline } from '../ledger/timeline.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { handleMcp } from '../agent-tools/mcp-server.ts';
+import { submitPlan } from '../planning/plan.ts';
 import { resolveAgentToken } from '../agent-tools/tokens.ts';
 import { fingerprint, isReserved, OWNER_KEY_HEADER, OWNER_KEY_SETTING, ownerKeyMatches } from '../agent-tools/owner-key.ts';
 import fs from 'node:fs';
@@ -678,6 +679,21 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('POST', '/v1/jobs/:id/stage', (ctx) => ({ status: 200, body: repo.transitionJob(ctx.params.id!, ctx.body as unknown as T.TransitionJobInput) })),
     route('POST', '/v1/jobs/:id/plan', (ctx) => ({ status: 200, body: repo.setPlan(ctx.params.id!, ctx.body as unknown as T.SetPlanInput) })),
     route('POST', '/v1/jobs/:id/plan/accept', (ctx) => ({ status: 200, body: repo.acceptPlan(ctx.params.id!, asString(ctx.body.actorId, 'actorId')) })),
+    route('POST', '/v1/jobs/:id/plan/submit', (ctx) => {
+      const { actorId, ...packet } = ctx.body as Record<string, unknown>;
+      const actor = typeof actorId === 'string' && actorId.trim() ? actorId.trim() : repo.ownerId();
+      return { status: 200, body: submitPlan(repo, ctx.params.id!, packet, { id: actor, kind: 'human' }) };
+    }),
+    route('GET', '/v1/needs-you', () => ({ status: 200, body: repo.needsYou() })),
+    route('GET', '/v1/blockers', (ctx) => {
+      const status = ctx.query.get('status');
+      if (status && status !== 'open' && status !== 'resolved') throw new HttpError(400, 'status must be open or resolved');
+      return { status: 200, body: repo.listBlockers({ status: (status as 'open' | 'resolved' | null) ?? undefined, jobId: ctx.query.get('jobId') ?? undefined }) };
+    }),
+    route('POST', '/v1/blockers/:id/resolve', (ctx) => ({
+      status: 200,
+      body: repo.resolveBlocker(ctx.params.id!, typeof ctx.body.resolvedBy === 'string' && ctx.body.resolvedBy.trim() ? ctx.body.resolvedBy : repo.ownerId()),
+    })),
     route('GET', '/v1/jobs/:id/history', (ctx) => ({ status: 200, body: repo.listHistory(ctx.params.id!) })),
     route('POST', '/v1/jobs/:id/checks', async (ctx) => ({
       status: 201,
