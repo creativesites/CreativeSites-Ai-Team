@@ -1,11 +1,12 @@
 import os from 'node:os';
+import { decideSessionAccount, ISOLATION_PREFIX, startSessionUsage } from '../usage/session-hooks.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { issueAgentToken, revokeSessionTokens } from '../agent-tools/tokens.ts';
 import path from 'node:path';
 import type * as T from '../api/types.ts';
 import { ADAPTER_PRESETS, adapterBlockReason, adapterInfo, findExecutable } from '../adapters.ts';
 import type { Checker } from '../checks.ts';
-import { ConflictError, InputError, type Repo } from '../store/repo.ts';
+import { ConflictError, ForbiddenError, InputError, type Repo } from '../store/repo.ts';
 import { compileBatonCapsule, shouldRotateSession } from './baton.ts';
 import { AcpClient, AcpError, type PermissionOption, type PermissionOutcome, type PermissionRequest } from './client.ts';
 
@@ -461,6 +462,15 @@ export class SessionManager {
 
     const adapter = this.resolveAdapter(input.adapterId ?? agent.adapterId ?? agent.runtime);
 
+    // K9: client work runs only on that client's AI account, and that account runs only that client's work.
+    let usageAccountId: string | null = null;
+    if (this.agentTools) {
+      const projectId = job?.projectId ?? room?.projectId ?? null;
+      const decision = decideSessionAccount(this.agentTools.db, projectId, adapterInfo(adapter.id)?.auth.account?.id ?? null);
+      if (!decision.ok) throw new ForbiddenError(`${ISOLATION_PREFIX}${decision.reason} Nothing was started.`);
+      usageAccountId = decision.accountId;
+    }
+
     let worktreePath = input.worktree ?? room?.repoPath ?? process.cwd() ?? os.homedir();
     let baseSha: string | null = null;
     let baseBranch: string | null = null;
@@ -502,6 +512,16 @@ export class SessionManager {
     });
 
     if (task) this.startTask(task, agent.id);
+    if (this.agentTools && usageAccountId) {
+      startSessionUsage(this.agentTools.db, {
+        accountId: usageAccountId,
+        sessionId: session.id,
+        taskId: task?.id ?? null,
+        jobId: job?.id ?? null,
+        agentId: agent.id,
+        taskType: (job as { workflow?: string | null } | null)?.workflow ?? job?.kind ?? null,
+      });
+    }
 
     if (input.batonCapsule) {
       const capsuleTokens = Math.ceil(input.batonCapsule.length / 3.8);

@@ -14,6 +14,7 @@ import { readAdapterEnv } from './adapter-env.ts';
 import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
 import { Ledger } from './ledger/ledger.ts';
+import { stopSessionUsage } from './usage/session-hooks.ts';
 import { gitAvailable } from './workspaces.ts';
 import { syncCommunity } from './community-sync.ts';
 
@@ -67,6 +68,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
       if (e.type === 'session.transcript' && (e.payload as { kind?: string } | undefined)?.kind === 'turn_end' && e.subjectId) {
         try {
           ledger.recordTurn(e.subjectId, Number((e.payload as { seq?: number }).seq));
+          stopSessionUsage(db, e.subjectId);
         } catch (err) {
           console.warn('[runtime] ledger: could not record turn:', (err as Error).message);
         }

@@ -19,7 +19,7 @@ export const TASK_STATES: readonly T.TaskStatus[] = [
  */
 export const TASK_TRANSITIONS: Readonly<Record<T.TaskStatus, readonly T.TaskStatus[]>> = {
   pending: ['assigned', 'blocked', 'failed'],
-  assigned: ['acknowledged', 'blocked', 'failed'],
+  assigned: ['acknowledged', 'blocked', 'failed', 'needs_human'], // needs_human: a policy refusal at dispatch (K9)
   acknowledged: ['running', 'blocked', 'failed'],
   running: ['needs_review', 'done', 'blocked', 'failed'],
   needs_review: ['verified', 'assigned', 'blocked', 'failed', 'needs_human'],

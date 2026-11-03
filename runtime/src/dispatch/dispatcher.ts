@@ -3,6 +3,7 @@
 // picks an assignee, moves the task pending -> assigned through the K3 transition function
 // and starts a session for it. Concurrency is capped globally and per agent.
 import type * as T from '../api/types.ts';
+import { ISOLATION_PREFIX } from '../usage/session-hooks.ts';
 import type { SessionManager } from '../acp/session-manager.ts';
 import type { Checker } from '../checks.ts';
 import type { Repo } from '../store/repo.ts';
@@ -133,6 +134,14 @@ export class Dispatcher {
       });
       return session.id;
     } catch (e) {
+      // K9 refusals are not transient: retrying would only refuse again. Hand the task to the owner.
+      if ((e as Error).message?.startsWith(ISOLATION_PREFIX)) {
+        try {
+          this.repo.transitionTask(task.id, 'needs_human', { actorId: DISPATCHER_ACTOR, actorKind: 'system', reason: (e as Error).message });
+        } catch {
+          /* the table may not allow it from this state; the failure event below still records it */
+        }
+      }
       // The task stays assigned: the ack timeout (K3) fails it and the sweeper retries with backoff.
       try {
         this.repo.emitEvent({
