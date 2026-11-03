@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { Ledger, LedgerError } from '../ledger/ledger.ts';
+import { jobTimeline } from '../ledger/timeline.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { handleMcp } from '../agent-tools/mcp-server.ts';
 import { resolveAgentToken } from '../agent-tools/tokens.ts';
@@ -46,6 +48,8 @@ export interface ServerOptions {
   repo: Repo;
   /** The store handle, for tables owned by the agent action interface (session tokens, tool calls). */
   db?: DatabaseSync;
+  /** Workforce time ledger (WP9). */
+  ledger?: Ledger;
   token: string;
   health: () => Health;
   /** Extra browser origins allowed to call the API (the desktop's dev server). */
@@ -277,6 +281,55 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       repo.updateSettings({ [OWNER_KEY_SETTING]: keyHash } as T.Settings);
       return { status: 201, body: { enrolled: true, fingerprint: fingerprint(keyHash) } };
     }),
+    // Workforce time (WP9). Owner token only: agents never write human time.
+    ...(() => {
+      const L = () => {
+        if (!opts.ledger) throw new HttpError(503, 'time ledger is not enabled');
+        return opts.ledger;
+      };
+      const wrap = <R,>(fn: () => R): R => {
+        try {
+          return fn();
+        } catch (e) {
+          if (e instanceof LedgerError) throw new HttpError(400, e.message);
+          throw e;
+        }
+      };
+      const owner = () => repo.ownerId();
+      return [
+        route('GET', '/v1/time/intervals', (ctx) => ({
+          status: 200,
+          body: L().list({
+            from: ctx.query.get('from') ?? undefined,
+            to: ctx.query.get('to') ?? undefined,
+            identityId: ctx.query.get('identityId') ?? undefined,
+            jobId: ctx.query.get('jobId') ?? undefined,
+            actorKind: ctx.query.get('actorKind') ?? undefined,
+          }),
+        })),
+        route('POST', '/v1/time/timer/start', (ctx) => ({ status: 201, body: wrap(() => L().startTimer({ ...(ctx.body as Record<string, never>), identityId: owner() })) })),
+        route('POST', '/v1/time/timer/stop', () => ({ status: 200, body: wrap(() => L().stopTimer(owner())) })),
+        route('POST', '/v1/time/entries', (ctx) => ({
+          status: 201,
+          body: wrap(() => L().addManual({ ...(ctx.body as Record<string, never>), identityId: owner(), startedAt: asString(ctx.body.startedAt, 'startedAt'), endedAt: asString(ctx.body.endedAt, 'endedAt') })),
+        })),
+        route('POST', '/v1/time/intervals/:id/adjust', (ctx) => ({
+          status: 201,
+          body: wrap(() => L().adjust(ctx.params.id!, { deltaMs: Number(ctx.body.deltaMs), note: asString(ctx.body.note, 'note'), by: owner() })),
+        })),
+        route('POST', '/v1/time/intervals/:id/support', (ctx) => ({ status: 200, body: wrap(() => L().linkSupport(ctx.params.id!, asString(ctx.body.humanIntervalId, 'humanIntervalId'))) })),
+        route('GET', '/v1/time/summary', (ctx) => ({
+          status: 200,
+          body: L().summary(asString(ctx.query.get('from'), 'from'), asString(ctx.query.get('to'), 'to'), ctx.query.get('engagementId') ?? undefined),
+        })),
+        route('GET', '/v1/engagements', () => ({ status: 200, body: opts.db ? opts.db.prepare('SELECT * FROM engagements ORDER BY id').all() : [] })),
+        route('GET', '/v1/jobs/:id/timeline', (ctx) => {
+          if (!opts.db) throw new HttpError(503, 'timeline needs the store');
+          repo.getJob(ctx.params.id!);
+          return { status: 200, body: jobTimeline(opts.db, ctx.params.id!) };
+        }),
+      ];
+    })(),
     // Agent action interface (programme plan K4). Authenticated by a session-scoped agent token, not the owner token.
     route(
       'POST',

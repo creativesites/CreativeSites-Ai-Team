@@ -1,6 +1,7 @@
 // Ordered schema migrations. Never edit one that has shipped; add the next version.
 
 import { AGENT_TOOLS_SQL } from '../agent-tools/schema.ts';
+import { LEDGER_SQL } from '../ledger/schema.ts';
 
 export interface Migration {
   version: number;
@@ -966,5 +967,10 @@ export const MIGRATIONS: Migration[] = [
     version: 12,
     name: 'agent action interface: session tokens, tool-call audit, blockers (K4)',
     sql: AGENT_TOOLS_SQL,
+  },
+  {
+    version: 16,
+    name: 'workforce time ledger: activity intervals and engagements (K6, WP9)',
+    sql: LEDGER_SQL,
   },
 ];

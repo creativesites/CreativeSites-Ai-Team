@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createServer } from './api/server.ts';
 import type { Health, RuntimeEvent } from './api/types.ts';
 import { probeAdapters } from './adapters.ts';
-import { artifactsDir, cloneParentDir, expandHome, loadConfig, newProjectParentDir, workspaceRoots, worktreeRoot } from './config.ts';
+import { artifactsDir, cloneParentDir, expandHome, loadConfig, myaosHome, newProjectParentDir, workspaceRoots, worktreeRoot } from './config.ts';
 import { Checker } from './checks.ts';
 import { SessionManager } from './acp/session-manager.ts';
 import { Bridge } from './bridge.ts';
@@ -13,6 +13,7 @@ import { TerminalManager } from './terminal-manager.ts';
 import { readAdapterEnv } from './adapter-env.ts';
 import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
+import { Ledger } from './ledger/ledger.ts';
 import { gitAvailable } from './workspaces.ts';
 import { syncCommunity } from './community-sync.ts';
 
@@ -56,11 +57,20 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   // The server is created after the repo, so events go through this late-bound hook.
   let broadcast: (e: RuntimeEvent) => void = () => {};
   let bridge: Bridge | null = null;
+  // Workforce time ledger (WP9): one interval per agent turn, recorded when the turn ends.
+  const ledger = new Ledger(db);
   const repo = new Repo(
     db,
     (e) => {
       broadcast(e);
       bridge?.onEvent(e);
+      if (e.type === 'session.transcript' && (e.payload as { kind?: string } | undefined)?.kind === 'turn_end' && e.subjectId) {
+        try {
+          ledger.recordTurn(e.subjectId, Number((e.payload as { seq?: number }).seq));
+        } catch (err) {
+          console.warn('[runtime] ledger: could not record turn:', (err as Error).message);
+        }
+      }
     },
     legacyDbPath
   );
@@ -109,7 +119,8 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
 
   const api = createServer({
     repo,
-    db: db,
+    db,
+    ledger,
     token,
     health,
     allowedOrigins: opts.allowedOrigins,
@@ -126,10 +137,19 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
 
   // Anything the previous runtime claimed to be running is checked against real processes.
   repo.reconcileSessions();
+  // Turns cut off by a crash or restart are closed at the session's last event, never double-counted.
+  ledger.reconcileOpenTurns();
+  // Engagement terms come only from an untracked local file (programme plan K6/K9).
+  try {
+    ledger.loadEngagements(process.env.MYAOS_ENGAGEMENTS_FILE ?? path.join(myaosHome(), 'engagements.local.json'));
+  } catch (e) {
+    console.warn('[runtime] could not load engagements.local.json:', (e as Error).message);
+  }
   // Pending approvals that timed out at the team-lead level move to the owner.
   const sweep = setInterval(() => {
     try {
       repo.sweepApprovals();
+      ledger.reconcileOpenTurns();
     } catch (e) {
       console.error('[runtime] approval sweep failed:', e);
     }
