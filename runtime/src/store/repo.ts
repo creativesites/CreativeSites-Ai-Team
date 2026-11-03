@@ -2555,8 +2555,43 @@ export class Repo {
   }
 
   findWorktree(jobId: string): { path: string; branch: string | null; baseSha: string | null } | null {
-    const row = this.one('SELECT * FROM worktrees WHERE job_id = ? AND state = ? ORDER BY created_at DESC LIMIT 1', jobId, 'active');
+    const row = this.one('SELECT * FROM worktrees WHERE job_id = ? AND task_id IS NULL AND state = ? ORDER BY created_at DESC LIMIT 1', jobId, 'active');
     return row ? { path: String(row.path), branch: str(row.branch), baseSha: str(row.base_sha) } : null;
+  }
+
+  /** K8: the worktree recorded for a task, whatever its state ('active', or 'integrated' after the merge). */
+  findTaskWorktree(taskId: string): { id: string; path: string; branch: string | null; baseSha: string | null; state: string } | null {
+    const row = this.one("SELECT * FROM worktrees WHERE task_id = ? AND state != 'cleaned' ORDER BY created_at DESC LIMIT 1", taskId);
+    return row ? { id: String(row.id), path: String(row.path), branch: str(row.branch), baseSha: str(row.base_sha), state: String(row.state) } : null;
+  }
+
+  setWorktreeState(id: string, state: 'active' | 'integrated' | 'cleaned'): void {
+    this.db.prepare('UPDATE worktrees SET state = ?, cleaned_at = ? WHERE id = ?').run(state, state === 'cleaned' ? now() : null, id);
+  }
+
+  /** Active task worktrees of done or verified tasks: the integration backlog for the dispatcher's sweep. */
+  listUnintegratedTaskWorktrees(jobId: string): { taskId: string }[] {
+    return this.all(
+      `SELECT w.task_id FROM worktrees w JOIN tasks t ON t.id = w.task_id
+       WHERE w.job_id = ? AND w.state = 'active' AND t.status IN ('done', 'verified')`,
+      jobId
+    ).map((r) => ({ taskId: String(r.task_id) }));
+  }
+
+  /** Sessions that are starting or running, for dispatcher concurrency limits. */
+  liveSessionRows(): { sessionId: string; agentId: string; taskId: string | null }[] {
+    return this.all("SELECT id, agent_id, task_id FROM sessions WHERE state IN ('starting', 'running')").map((r) => ({
+      sessionId: String(r.id),
+      agentId: String(r.agent_id),
+      taskId: str(r.task_id),
+    }));
+  }
+
+  /** Appends an event that is not a row change (for example dispatch.started). */
+  emitEvent(input: { type: string; subjectId: string | null; subjectType?: string | null; payload?: Record<string, unknown>; actorId?: string | null; actorKind?: T.ActorKind | null; jobId?: string | null; taskId?: string | null; sessionId?: string | null }): void {
+    this.write((events) => {
+      this.recordEvent(events, input as EventInput);
+    });
   }
 
   setJobBaseSha(jobId: string, sha: string): void {

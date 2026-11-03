@@ -467,7 +467,16 @@ export class SessionManager {
 
     if (job) {
       try {
-        const worktree = await this.checker.worktreeForJob(job);
+        // K8: a task runs in its own worktree and branch; anything else shares the job worktree.
+        let worktree: { path: string; baseSha: string } | null = null;
+        if (task) {
+          try {
+            worktree = await this.checker.worktreeForTask(job, task);
+          } catch {
+            worktree = null; // fall back to the job worktree below
+          }
+        }
+        if (!worktree) worktree = await this.checker.worktreeForJob(job);
         worktreePath = worktree.path;
         baseSha = worktree.baseSha;
         baseBranch = `myaos/job-${job.number}`;
@@ -822,7 +831,7 @@ export class SessionManager {
     try {
       if (live.jobId) {
         try {
-          await this.checker.snapshot(live.jobId, `runtime:before`);
+          await this.checker.snapshot(live.jobId, `runtime:before`, live.taskId);
         } catch {
           /* non-git or clean worktree */
         }
@@ -872,8 +881,8 @@ export class SessionManager {
       let checkPassed = false;
       if (live.jobId && !live.closed) {
         try {
-          await this.checker.snapshot(live.jobId, `runtime:after`);
-          const commit = await this.checker.commitWorktree(live.jobId, `${live.agentId} session ${live.sessionId.slice(-6)}`);
+          await this.checker.snapshot(live.jobId, `runtime:after`, live.taskId);
+          const commit = await this.checker.commitWorktree(live.jobId, `${live.agentId} session ${live.sessionId.slice(-6)}`, live.taskId);
           if (commit.committed) {
             this.repo.appendTranscript(live.sessionId, {
               kind: 'commit',
@@ -1188,6 +1197,19 @@ export class SessionManager {
       await new Promise((r) => setTimeout(r, 200));
     }
     return { outcome: 'cancelled' };
+  }
+
+  /**
+   * Why work given to this agent could not start now (adapter missing, signed out, unsupported),
+   * or null when it can. Used by the dispatcher so it never assigns a task it cannot start.
+   */
+  adapterBlockedReason(agent: T.Identity): string | null {
+    try {
+      this.resolveAdapter(agent.adapterId ?? agent.runtime);
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
   }
 
   private resolveAdapter(requested?: string | null): { id: string; command: string; args: string[]; name: string; env?: Record<string, string> } {

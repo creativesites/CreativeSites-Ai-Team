@@ -3,6 +3,7 @@ import type * as T from './api/types.ts';
 import { ADAPTER_PRESETS, findExecutable } from './adapters.ts';
 import type { SessionManager } from './acp/session-manager.ts';
 import type { Checker } from './checks.ts';
+import { Dispatcher } from './dispatch/dispatcher.ts';
 import { sweepTasks } from './lifecycle/sweeper.ts';
 import { InputError, NotFoundError, type Repo } from './store/repo.ts';
 
@@ -76,12 +77,14 @@ export class Orchestrator {
   private readonly repo: Repo;
   private readonly sessions: SessionManager;
   private readonly checker: Checker;
+  private readonly dispatcher: Dispatcher;
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(opts: { repo: Repo; sessions: SessionManager; checker: Checker }) {
     this.repo = opts.repo;
     this.sessions = opts.sessions;
     this.checker = opts.checker;
+    this.dispatcher = new Dispatcher({ repo: opts.repo, sessions: opts.sessions, checker: opts.checker });
 
     this.sessions.setHooks({
       onTurnComplete: (info) => this.handleTurnComplete(info),
@@ -322,6 +325,12 @@ export class Orchestrator {
       sweepTasks(this.repo, () => asOfIso);
     } catch (e) {
       console.error('[orchestrator] task sweep failed:', e);
+    }
+    // WP4 4.4: behind the setting workflow.dispatcher (default off), start sessions for ready tasks.
+    try {
+      await this.dispatcher.dispatch();
+    } catch (e) {
+      console.error('[orchestrator] dispatch failed:', e);
     }
     const due = this.repo.listDueSchedules(asOfIso);
     const firedSchedules: string[] = [];
@@ -770,6 +779,9 @@ export class Orchestrator {
         this.repo.updateWake(w.id, { status: 'completed', completedAt: new Date().toISOString() });
       }
     }
+
+    // 1b. K8: a task that is done or verified is merged from its own branch into the job branch.
+    if (info.jobId && info.taskId) await this.checker.integrateTaskSafely(info.jobId, info.taskId);
 
     // 2. If woken in a room and produced assistant text, post the agent's reply into the room
     const targetRoomId = info.roomId ?? (info.jobId ? this.repo.getJob(info.jobId).roomId : null);
