@@ -19,18 +19,22 @@ Kept current by the lead session. If a new session takes over, read this first, 
 | S1-B (WP2 2.1–2.3, 2.7): intake, triage, dedupe, departments (migration v11) | merge `3168160` |
 | S1-D, part 1 (K4): MCP server, session tokens, owner key, env allowlist (migration v12) | `8e9962f` |
 | Bug: rate-limited status was overwritten by a sibling session | `8e9962f`; this was the root cause of the intermittent orchestrator test |
+| S1-A (WP1 1.2–1.7): K3 task state machine, ready queue, sweeper, migration v10 | merge `2c2f067` |
+| S1-D, part 2: per-session MCP token, tools offered to agents, prompt card; S3 env-leak fix | `d8f8e66`; end-to-end test: agent calls `task_report` over MCP |
+| WP9 9.1–9.5: time ledger (agent turns, human timers and entries, adjustments, engagements from a local file) and job timeline (migration v16) | `367b46d` |
+| WP10 10.2–10.2c: subscription usage tracking, 70% weekly-pace alert, K9 check (migration v13) | merge `1303cb4` |
 
-Runtime suite: **94/94**. `tsc` is clean in `runtime/` and `apps/desktop/`.
+Runtime suite: **132/132**. `tsc` is clean in `runtime/` and `apps/desktop/`.
 
 ## In progress
 
-- **S1-A (WP1 1.2–1.7):** task lifecycle and migration v10. A Sonnet worker is on it in a worktree.
+- **S1-C:** `plan_submit`, `task_claim`, low-risk auto-accept (flag), Needs-You API. Sonnet worker.
+- **S1-E part 1:** dispatcher (flag) and one worktree plus branch per task. Sonnet worker.
 
 ## Next, in order
 
-1. Merge S1-A. Then wire per-session agent tokens and `mcpServers` into `session-manager`; add `task_claim` (the acknowledgement) and `plan_submit`.
-2. S1-C: plan materialisation, low-risk auto-accept behind a flag, Needs-You aggregate API.
-3. S1-E: dispatcher (ready queue to assignee), worktree per task, VERIFIED gate, PR delivery record, activity intervals and task usage ledger, minimal job timeline. Then the S1 end-to-end test with the fake adapter.
+1. Merge S1-C and S1-E part 1.
+2. Lead: VERIFIED gate for `verification_required` criteria (C7); delivery record; wire `task_usage` and the K9 check into dispatch. Then the S1 end-to-end test with the fake adapter.
 4. After S1: WP6 stand-ups, scheduler and catch-up; WP9 time; WP10 subscription usage (K6); WP7 OKRs; WP8 skills; WP3 real council; WP11 desktop.
 
 ## Owner-only items
