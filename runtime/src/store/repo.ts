@@ -1616,7 +1616,12 @@ export class Repo {
     }
     if (to === 'approve') {
       for (const criterion of job.criteria) {
-        if (CLASS_RANK[criterion.evidenceClass] < CLASS_RANK.OBSERVED) {
+        // C7: a criterion covered by a task that requires verification needs VERIFIED evidence,
+        // which only an independent verifier can record. Others need at least OBSERVED.
+        const needsVerified = job.tasks.some((t) => t.verificationRequired && (criterion.taskIds ?? []).includes(t.id));
+        if (needsVerified && CLASS_RANK[criterion.evidenceClass] < CLASS_RANK.VERIFIED) {
+          gates.push(`criterion "${criterion.text}" needs independent verification`);
+        } else if (CLASS_RANK[criterion.evidenceClass] < CLASS_RANK.OBSERVED) {
           gates.push(`criterion "${criterion.text}" is not observed yet`);
         }
       }
