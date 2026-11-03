@@ -374,6 +374,42 @@ export interface JobPlan {
   approvedAt?: string | null;
   approvedBy?: string | null;
   councilId?: string | null;
+  // Structured plan packet (S1-C). All optional so older plans still parse.
+  requirements?: string[];
+  architecture?: string;
+  risks?: { text: string; severity: string }[];
+  risk?: 'low' | 'medium' | 'high';
+  humanDecisions?: string[];
+  estimates?: { agentHours?: number; notes?: string };
+  submittedBy?: string;
+  submittedAt?: string;
+  /** Plan task key -> real task id, for the tasks this plan created. */
+  taskKeys?: Record<string, string>;
+}
+
+export interface PlanTaskInput {
+  key: string;
+  title: string;
+  assigneeId?: string | null;
+  dependsOn?: string[];
+  checkCommand?: string | null;
+  verificationRequired?: boolean;
+  requiredSkills?: string[];
+  priority?: number;
+  /** Indexes into the packet's `criteria`. */
+  criteriaRefs?: number[];
+}
+
+export interface PlanPacket {
+  summary: string;
+  requirements?: string[];
+  architecture?: string;
+  risks?: { text: string; severity: string }[];
+  risk: 'low' | 'medium' | 'high';
+  humanDecisions?: string[];
+  estimates?: { agentHours?: number; notes?: string };
+  criteria?: string[];
+  tasks: PlanTaskInput[];
 }
 
 export interface JobStageHistory {
@@ -1828,4 +1864,30 @@ export interface DepartmentMappingResult {
   unchanged: string[];
   missing: string[];
   leads: { department: string; lead: string }[];
+}
+
+export interface Blocker {
+  id: string;
+  jobId: string | null;
+  taskId: string | null;
+  raisedBy: string;
+  summary: string;
+  needs: string | null;
+  severity: 'low' | 'normal' | 'high';
+  status: 'open' | 'resolved';
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+export type NeedsYouKind = 'approval' | 'blocker' | 'task_needs_human' | 'task_reassignment_required' | 'budget_exception' | 'delivery_approval';
+
+export interface NeedsYouItem {
+  kind: NeedsYouKind;
+  id: string;
+  jobId: string | null;
+  title: string;
+  detail: string;
+  createdAt: string;
+  severity: 'low' | 'normal' | 'high';
 }

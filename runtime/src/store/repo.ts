@@ -1408,6 +1408,197 @@ export class Repo {
     return this.getJob(jobId);
   }
 
+  /**
+   * Materialises a validated plan packet in ONE transaction (S1-C): stores the packet as
+   * the job plan, replaces tasks left over from a previous submission (only if untouched),
+   * adds new criteria, creates tasks with real ids mapped from keys, links criteria and
+   * records plan.submitted. Validation lives in planning/plan.ts.
+   */
+  materialisePlan(jobId: string, packet: T.PlanPacket, actor: { id: string; kind: T.ActorKind }): { taskKeys: Record<string, string>; replaced: string[] } {
+    const job = this.getJob(jobId);
+    if (job.stage !== 'plan') throw new ConflictError(`A plan can be submitted only while the job is in the plan stage (it is in ${job.stage})`);
+    const previous = Object.values(job.plan?.taskKeys ?? {});
+    const replace: string[] = [];
+    for (const id of previous) {
+      const t = job.tasks.find((x) => x.id === id);
+      if (!t) continue;
+      const touched = this.one('SELECT 1 AS x FROM sessions WHERE task_id = ? LIMIT 1', id);
+      if (t.status !== 'pending' || touched) {
+        throw new ConflictError(`Task "${t.title}" from the previous plan has already started (${t.status}); the plan can no longer be replaced`);
+      }
+      replace.push(id);
+    }
+    const taskKeys: Record<string, string> = {};
+    for (const t of packet.tasks) taskKeys[t.key] = newId('task');
+    const at = now();
+    this.write((events) => {
+      for (const id of replace) {
+        this.db.prepare('DELETE FROM task_criteria WHERE task_id = ?').run(id);
+        this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+      }
+      // A pending plan approval from the earlier submission is now stale.
+      this.db
+        .prepare(
+          `UPDATE approvals SET status = 'declined', decided_by = 'runtime', decided_by_kind = 'system', decided_at = ?, note = 'superseded by a resubmitted plan'
+           WHERE job_id = ? AND action_type = 'plan.accept' AND status = 'pending'`
+        )
+        .run(at, jobId);
+      const criterionIds: string[] = [];
+      const existing = new Map(job.criteria.map((c) => [c.text.trim().toLowerCase(), c.id]));
+      let pos = Number(this.scalar('SELECT COALESCE(MAX(position), -1) + 1 FROM criteria WHERE job_id = ?', jobId) ?? 0);
+      for (const text of packet.criteria ?? []) {
+        let cid = existing.get(text.trim().toLowerCase());
+        if (!cid) {
+          cid = newId('crit');
+          this.db.prepare('INSERT INTO criteria (id, job_id, text, position) VALUES (?, ?, ?, ?)').run(cid, jobId, text.trim(), pos++);
+          existing.set(text.trim().toLowerCase(), cid);
+        }
+        criterionIds.push(cid);
+      }
+      let tpos = Number(this.scalar('SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE job_id = ?', jobId) ?? 0);
+      const maxAttempts = this.lifecycleSettings().maxAttempts;
+      for (const t of packet.tasks) {
+        const id = taskKeys[t.key]!;
+        this.db
+          .prepare(
+            `INSERT INTO tasks (id, job_id, title, assignee_id, check_command, status, created_at, position, plan_task_id, mode,
+               evidence_required, updated_at, depends_on, priority, max_attempts, required_skills, verification_required, last_event_at)
+             VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, 'build', 1, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            id, jobId, t.title.trim(), t.assigneeId ?? null, t.checkCommand ?? null, at, tpos++, t.key, at,
+            jsonText((t.dependsOn ?? []).map((k) => taskKeys[k]!)), integer(t.priority, 'priority', 0),
+            maxAttempts, jsonText(t.requiredSkills ?? []), t.verificationRequired ? 1 : 0, at
+          );
+        for (const ref of t.criteriaRefs ?? []) {
+          this.db.prepare('INSERT OR IGNORE INTO task_criteria (task_id, criterion_id) VALUES (?, ?)').run(id, criterionIds[ref]!);
+        }
+      }
+      const { criteria: _c, tasks: _t, ...rest } = packet;
+      const plan: T.JobPlan = { ...rest, taskKeys, submittedBy: actor.id, submittedAt: at, approvedAt: null, approvedBy: null };
+      this.db.prepare('UPDATE jobs SET plan = ?, updated_at = ? WHERE id = ?').run(jsonText(plan), at, jobId);
+      this.recordEvent(events, {
+        type: 'plan.submitted',
+        subjectId: jobId,
+        subjectType: 'job',
+        jobId,
+        actorId: actor.id,
+        actorKind: actor.kind,
+        payload: { summary: packet.summary, risk: packet.risk, tasks: packet.tasks.length, replaced: replace.length, humanDecisions: packet.humanDecisions?.length ?? 0 },
+      });
+    });
+    return { taskKeys, replaced: replace };
+  }
+
+  /** Records a plan lifecycle event (plan.auto_accepted and similar) with the given actor. */
+  recordPlanEvent(jobId: string, type: string, payload: Record<string, unknown>, actor: { id: string; kind: T.ActorKind }): void {
+    this.getJob(jobId);
+    this.write((events) => {
+      this.recordEvent(events, { type, subjectId: jobId, subjectType: 'job', jobId, actorId: actor.id, actorKind: actor.kind, payload });
+    });
+  }
+
+  /** Accepts the plan and moves the job plan -> build. Used by auto-accept and by approving a plan.accept approval. */
+  acceptPlanAndBuild(jobId: string, actor: { id: string; kind: T.ActorKind }, note: string): T.JobDetail {
+    const job = this.getJob(jobId);
+    if (job.stage !== 'plan') throw new ConflictError(`The job is in ${job.stage}, not plan`);
+    this.acceptPlan(jobId, actor.id);
+    return this.transitionJob(jobId, { to: 'build', actorId: actor.id, actorKind: actor.kind, note });
+  }
+
+  // ---------------------------------------------------------------- blockers / needs-you
+
+  listBlockers(filter: { status?: 'open' | 'resolved'; jobId?: string } = {}): T.Blocker[] {
+    const where: string[] = [];
+    const params: SQLInputValue[] = [];
+    if (filter.status) {
+      where.push('status = ?');
+      params.push(oneOf(filter.status, ['open', 'resolved'] as const, 'status'));
+    }
+    if (filter.jobId) {
+      where.push('job_id = ?');
+      params.push(filter.jobId);
+    }
+    return this.all(`SELECT * FROM blockers ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC`, ...params).map((r) => ({
+      id: String(r.id),
+      jobId: str(r.job_id),
+      taskId: str(r.task_id),
+      raisedBy: String(r.raised_by),
+      summary: String(r.summary),
+      needs: str(r.needs),
+      severity: String(r.severity) as T.Blocker['severity'],
+      status: String(r.status) as T.Blocker['status'],
+      resolvedBy: str(r.resolved_by),
+      resolvedAt: str(r.resolved_at),
+      createdAt: String(r.created_at),
+    }));
+  }
+
+  resolveBlocker(blockerId: string, resolvedByInput: string): T.Blocker {
+    const resolvedBy = required(resolvedByInput, 'resolvedBy');
+    const row = this.one('SELECT * FROM blockers WHERE id = ?', blockerId);
+    if (!row) throw new NotFoundError(`blocker ${blockerId} not found`);
+    if (row.status === 'resolved') throw new ConflictError('This blocker is already resolved');
+    this.write((events) => {
+      this.db.prepare("UPDATE blockers SET status = 'resolved', resolved_by = ?, resolved_at = ? WHERE id = ?").run(resolvedBy, now(), blockerId);
+      this.recordEvent(events, {
+        type: 'blocker.resolved',
+        subjectId: str(row.job_id),
+        subjectType: 'job',
+        jobId: str(row.job_id),
+        taskId: str(row.task_id),
+        actorId: resolvedBy,
+        actorKind: 'human',
+        payload: { blockerId },
+      });
+    });
+    return this.listBlockers().find((b) => b.id === blockerId)!;
+  }
+
+  /** The one list of everything that waits for the owner (S1-C). Each source appears exactly once. */
+  needsYou(): T.NeedsYouItem[] {
+    const items: T.NeedsYouItem[] = [];
+    const riskSeverity = (r?: string): T.NeedsYouItem['severity'] => (r === 'critical' || r === 'high' ? 'high' : r === 'medium' ? 'normal' : 'low');
+    for (const a of this.listApprovals({ status: 'pending', limit: 1000 })) {
+      items.push({ kind: 'approval', id: a.id, jobId: a.jobId, title: a.title, detail: a.consequence, createdAt: a.createdAt, severity: riskSeverity(a.risk) });
+    }
+    for (const b of this.listBlockers({ status: 'open' })) {
+      items.push({
+        kind: 'blocker', id: b.id, jobId: b.jobId, title: b.summary, detail: b.needs ?? b.summary, createdAt: b.createdAt,
+        severity: b.severity === 'high' ? 'high' : b.severity === 'low' ? 'low' : 'normal',
+      });
+    }
+    for (const r of this.all("SELECT * FROM tasks WHERE status IN ('needs_human', 'reassignment_required') ORDER BY updated_at DESC")) {
+      const human = r.status === 'needs_human';
+      items.push({
+        kind: human ? 'task_needs_human' : 'task_reassignment_required',
+        id: String(r.id),
+        jobId: String(r.job_id),
+        title: String(r.title),
+        detail: human ? 'This task needs a human decision or action.' : 'This task failed and needs a new assignee.',
+        createdAt: String(r.updated_at ?? r.created_at),
+        severity: human ? 'high' : 'normal',
+      });
+    }
+    for (const j of this.all("SELECT id, title, updated_at, created_at FROM jobs WHERE stage NOT IN ('done', 'cancelled')")) {
+      const jobId = String(j.id);
+      const b = this.budget(jobId);
+      if (b.configured && b.limitCents != null && b.spentCents >= b.limitCents) {
+        items.push({
+          kind: 'budget_exception', id: jobId, jobId, title: `Budget exceeded: ${String(j.title)}`,
+          detail: `${b.spentCents}c spent of ${b.limitCents}c (${b.source}).`, createdAt: String(j.updated_at ?? j.created_at), severity: 'high',
+        });
+      }
+    }
+    for (const j of this.all("SELECT id, title, updated_at, created_at FROM jobs WHERE stage = 'approve'")) {
+      items.push({
+        kind: 'delivery_approval', id: String(j.id), jobId: String(j.id), title: `Approve delivery: ${String(j.title)}`,
+        detail: 'Verification is complete; the job waits for your delivery approval.', createdAt: String(j.updated_at ?? j.created_at), severity: 'normal',
+      });
+    }
+    return items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  }
+
   private gates(job: T.JobDetail, to: T.JobStage): string[] {
     const gates: string[] = [];
     if (to === 'build') {
@@ -2009,6 +2200,12 @@ export class Repo {
         subjectType: 'job',
       });
     });
+    if (decision === 'approve' && approval.actionType === 'plan.accept') {
+      // Approving a plan acceptance moves the job into build (S1-C). Skipped if the job has moved on.
+      if (this.getJob(approval.jobId).stage === 'plan') {
+        this.acceptPlanAndBuild(approval.jobId, { id: decidedBy, kind: decidedByKind }, 'plan approved');
+      }
+    }
     return this.getApproval(approvalId);
   }
 
