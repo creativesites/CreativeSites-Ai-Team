@@ -16,3 +16,6 @@ desktop/src-tauri/target/
 
 # Local worktrees
 .claude/worktrees/
+
+# Knowledge & Intelligence layer (KI) local state
+data/ki/
