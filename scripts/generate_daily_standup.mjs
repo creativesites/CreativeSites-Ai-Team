@@ -34,6 +34,28 @@ const day = String(now.getDate()).padStart(2, '0');
 const dateStr = `${year}-${month}-${day}`;
 const targetStandupPath = path.join(rootDir, 'community', 'daily_standups', `${dateStr}_standup.md`);
 
+// V2 guard (WP6 6.4): the V2 runtime now produces stand-ups. If its store already has one for today
+// (Lusaka or local date), stop so the two producers never both write the same day. Read-only check.
+try {
+  const { DatabaseSync } = await import('node:sqlite');
+  const v2Path = process.env.MYAOS_RUNTIME_DB || path.join(os.homedir(), '.myaos', 'runtime.db');
+  if (fs.existsSync(v2Path)) {
+    const lusaka = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lusaka' }).format(now);
+    const v2 = new DatabaseSync(v2Path, { readOnly: true });
+    try {
+      const hit = v2.prepare("SELECT id FROM standups WHERE team_id = 'default' AND standup_date IN (?, ?) LIMIT 1").get(dateStr, lusaka);
+      if (hit) {
+        console.log(`[STANDUP DAEMON] The V2 runtime already has a stand-up for ${dateStr}; not writing a second one.`);
+        process.exit(0);
+      }
+    } finally {
+      v2.close();
+    }
+  }
+} catch (e) {
+  console.warn(`[STANDUP DAEMON] V2 store check skipped: ${e.message}`);
+}
+
 console.log(`[STANDUP DAEMON] Aggregating standup for ${dateStr}...`);
 
 // 1. Gather git activity from last 24h

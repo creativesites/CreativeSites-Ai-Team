@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Repo } from '../store/repo.ts';
 import { submitPlan } from '../planning/plan.ts';
+import { submitReply } from '../standup/replies.ts';
 import type { AgentPrincipal } from './tokens.ts';
 import { validate, type JsonSchema } from './validate.ts';
 
@@ -243,6 +244,24 @@ export const TOOLS: ToolDef[] = [
       const jobId = jobOf(ctx, args);
       const { jobId: _j, idempotencyKey: _i, ...packet } = args;
       return submitPlan(ctx.repo, jobId, packet, { id: ctx.principal.identityId, kind: 'agent' });
+    },
+  },
+  {
+    name: 'standup_submit',
+    description:
+      'Answer the daily stand-up the runtime asked you about: what you finished, what you will do next, and anything blocking you. Only works while a stand-up is collecting replies. Report only what you actually did; the runtime checks it against its records and shows your text labelled as agent-reported. Each blocker you list becomes an open blocker.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        done: s('What you finished since the last stand-up', { maxLength: 4000 }),
+        next: s('What you will do next', { maxLength: 4000 }),
+        blockers: { type: 'array', description: 'Anything blocking you; empty or omitted if none', items: { type: 'string', maxLength: 500 }, maxItems: 10 },
+      },
+      additionalProperties: false,
+    },
+    handler: (ctx, args) => {
+      const out = submitReply(ctx.repo, ctx.principal.identityId, args, ctx.now().toISOString(), 'tool');
+      return { recorded: true, runId: out.runId };
     },
   },
   {

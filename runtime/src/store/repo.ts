@@ -113,7 +113,7 @@ const JOB_KINDS: T.JobKind[] = ['code', 'research', 'ops', 'design', 'decision']
 const SHIP_STATUSES: T.ShipStatus[] = ['none', 'ready', 'merged', 'pr_opened', 'cherry_picked', 'branch_pushed'];
 const IDENTITY_STATUS_STATES: T.IdentityStatusState[] = ['idle', 'working', 'rate_limited', 'waiting_reset', 'offline'];
 
-interface EventInput {
+export interface EventInput {
   type: string;
   subjectId: string | null;
   payload?: unknown;
@@ -152,6 +152,18 @@ export class Repo {
   private scalar(sql: string, ...params: SQLInputValue[]): unknown {
     const row = this.one(sql, ...params);
     return row ? Object.values(row)[0] : null;
+  }
+
+  /**
+   * For modules that keep their own tables (scheduler, stand-ups): runs `fn` and the events it emits in one
+   * transaction, then broadcasts. `fn` writes through the raw handle it is given.
+   */
+  transact<R>(fn: (emit: (input: EventInput) => void, db: DatabaseSync) => R): R {
+    return this.write((events) =>
+      fn((input) => {
+        this.recordEvent(events, input);
+      }, this.db)
+    );
   }
 
   /**
@@ -3364,6 +3376,7 @@ export class Repo {
     prompt: string;
     reason?: string | null;
     maxRuns?: number | null;
+    timezone?: string;
   }): T.AgentSchedule {
     const agentId = required(input.agentId, 'agentId').toLowerCase();
     if (!this.one('SELECT id FROM identities WHERE id = ?', agentId)) throw new NotFoundError(`identity ${agentId} not found`);
@@ -3378,8 +3391,8 @@ export class Repo {
         .prepare(
           `INSERT INTO agent_schedules
             (id, agent_id, created_by, created_by_kind, job_id, room_id, task_id, kind, cron_expr,
-             interval_seconds, next_run_at, prompt, reason, enabled, max_runs, run_count, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?)`
+             interval_seconds, next_run_at, prompt, reason, enabled, max_runs, run_count, created_at, timezone)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?, ?)`
         )
         .run(
           id,
@@ -3396,7 +3409,8 @@ export class Repo {
           prompt,
           input.reason ?? null,
           input.maxRuns ?? (kind === 'timer' ? 1 : null),
-          now()
+          now(),
+          input.timezone ?? 'UTC'
         );
       this.recordEvent(events, {
         type: 'schedule.created',
@@ -3442,7 +3456,7 @@ export class Repo {
 
   listDueSchedules(asOfIso = now()): T.AgentSchedule[] {
     return this.all(
-      'SELECT * FROM agent_schedules WHERE enabled = 1 AND next_run_at <= ? ORDER BY next_run_at ASC',
+      'SELECT * FROM agent_schedules WHERE enabled = 1 AND name IS NULL AND next_run_at <= ? ORDER BY next_run_at ASC',
       asOfIso
     ).map(toAgentSchedule);
   }
@@ -3878,8 +3892,8 @@ export class Repo {
           }
 
           const insertStd = this.db.prepare(
-            `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts, original_file_path)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts, original_file_path, team_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
           );
           for (const st of legacyStandups) {
             insertStd.run(
@@ -3890,7 +3904,8 @@ export class Repo {
               String(st.content ?? ''),
               str(st.parsed_updates) ?? '{}',
               String(st.ts || now()),
-              str(st.original_file_path)
+              str(st.original_file_path),
+              `legacy-import-${String(st.id ?? newId('std'))}`
             );
           }
         });
@@ -4135,10 +4150,10 @@ export class Repo {
     this.write((events) => {
       const res = this.db
         .prepare(
-          `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts, team_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(standupDate, facilitator, present, absent, content, parsedUpdates, t);
+        .run(standupDate, facilitator, present, absent, content, parsedUpdates, t, newId('manual'));
       id = Number(res.lastInsertRowid);
 
       this.recordEvent(events, {
@@ -5197,6 +5212,8 @@ const toAgentSchedule = (r: Row): T.AgentSchedule => ({
   maxRuns: r.max_runs == null ? null : num(r.max_runs),
   runCount: num(r.run_count),
   createdAt: String(r.created_at),
+  timezone: str(r.timezone) ?? 'UTC',
+  name: str(r.name),
 });
 
 const toDesignFrameVersion = (r: Row): T.DesignFrameVersion => ({

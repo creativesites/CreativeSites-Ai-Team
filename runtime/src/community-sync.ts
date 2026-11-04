@@ -384,10 +384,10 @@ export function syncCommunity(repo: Repo, explicitRoot?: string): CommunitySyncS
             (repo as any).write(() => {
               (repo as any).db
                 .prepare(
-                  `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts, original_file_path)
-                   VALUES (?, 'orchestrator', '[]', '[]', ?, '{}', ?, ?)`
+                  `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts, original_file_path, team_id)
+                   VALUES (?, 'orchestrator', '[]', '[]', ?, '{}', ?, ?, ?)`
                 )
-                .run(standupDate, text, fileStat.mtime.toISOString(), filePath);
+                .run(standupDate, text, fileStat.mtime.toISOString(), filePath, `community-${standupDate}`);
             });
           }
         } catch {

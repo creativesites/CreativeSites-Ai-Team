@@ -1290,9 +1290,14 @@ export interface AgentSchedule {
   maxRuns: number | null;
   runCount: number;
   createdAt: string;
+  /** IANA zone the cron fields are evaluated in. */
+  timezone: string;
+  /** Set for runtime-seeded recurring routines; unique. */
+  name: string | null;
 }
 
 export interface CreateScheduleInput {
+  timezone?: string;
   agentId?: string;
   targetAgentId?: string;
   createdBy: string;

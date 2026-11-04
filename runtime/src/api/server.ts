@@ -43,6 +43,8 @@ import type { TerminalManager } from '../terminal-manager.ts';
 import { getRosterPayload } from '../council-roster.ts';
 import { findFolderSession, listFolderSessions } from '../council-watch.ts';
 import { resolveCommunityDir, syncCommunity } from '../community-sync.ts';
+import type { Scheduler } from '../scheduler/scheduler.ts';
+import type { StandupService } from '../standup/pipeline.ts';
 import {
   buildSessionPayloadFromCouncil,
   startLiveCouncil,
@@ -66,6 +68,9 @@ export interface ServerOptions {
   sessions: SessionManager;
   bridge: Bridge;
   orchestrator: Orchestrator;
+  /** Named recurring schedules and their run ledger (WP6). */
+  scheduler: Scheduler;
+  standups: StandupService;
   terminals: TerminalManager;
 }
 
@@ -483,6 +488,16 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         directive: asOptionalString(ctx.body.directive) ?? asString(ctx.body.goal, 'directive'),
       }),
     })),
+    route('GET', '/v1/schedules/runs', (ctx) => ({
+      status: 200,
+      body: opts.scheduler.listRuns(ctx.query.get('scheduleId') ?? undefined, Number(ctx.query.get('limit') ?? 100)),
+    })),
+    route('POST', '/v1/standups/run-now', async (ctx) => {
+      if (!opts.standups.enabled()) throw new HttpError(409, 'Stand-ups are off: set workflow.standups to true first');
+      const { run, existing } = await opts.standups.runNow();
+      return { status: existing ? 200 : 202, body: { existing, run } };
+    }),
+    route('GET', '/v1/standups/latest', () => ({ status: 200, body: opts.standups.latest() })),
     route('GET', '/v1/schedules', (ctx) => ({
       status: 200,
       body: repo.listSchedules({

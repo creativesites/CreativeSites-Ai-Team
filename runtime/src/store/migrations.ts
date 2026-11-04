@@ -2,6 +2,7 @@
 
 import { AGENT_TOOLS_SQL } from '../agent-tools/schema.ts';
 import { LEDGER_SQL } from '../ledger/schema.ts';
+import { SCHEDULER_SQL } from '../scheduler/schema.ts';
 
 export interface Migration {
   version: number;
@@ -1044,5 +1045,10 @@ export const MIGRATIONS: Migration[] = [
     version: 16,
     name: 'workforce time ledger: activity intervals and engagements (K6, WP9)',
     sql: LEDGER_SQL,
+  },
+  {
+    version: 17,
+    name: 'recurring operations: named timezone schedules, schedule_runs, stand-up pipeline (WP6)',
+    sql: SCHEDULER_SQL,
   },
 ];
