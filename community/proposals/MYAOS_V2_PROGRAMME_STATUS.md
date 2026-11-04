@@ -6,43 +6,38 @@ Kept current by the lead session. If a new session takes over, read this first, 
 **Branch / PR:** `ccr-9ef3b891-fjv3er` → PR #3 (draft) into `main`.
 **CI:** `.github/workflows/v2-ci.yml` exists but cannot run: the GitHub account is billing-locked. The owner has ruled this is not a blocker, so every step records its local evidence instead.
 
-## Done (verified locally)
+## Done (verified locally; runtime suite **203/203**, `tsc` clean in `runtime/` and `apps/desktop/`)
 
-| Item | Evidence |
-|---|---|
-| WP0-T1: V2 merged into the main line | merge `7833d5c`; 34 identities, none lost |
-| WP0-T2/T3: typecheck and hermetic tests | `6ce6074`; fabricated OKR seed removed |
-| WP0-T4/T5: CI and v1 legacy markers | `cbc7df2` |
-| WP0-T6: adapter readiness gate and account capture | `e8403df` |
-| WP0-T7/T8: backup, restore, migration dry-run, policy | `4b7f9d3` |
-| WP0-T9: security review | `MYAOS_V2_SECURITY_REVIEW_WP0.md` |
-| S1-B (WP2 2.1–2.3, 2.7): intake, triage, dedupe, departments (migration v11) | merge `3168160` |
-| S1-D, part 1 (K4): MCP server, session tokens, owner key, env allowlist (migration v12) | `8e9962f` |
-| Bug: rate-limited status was overwritten by a sibling session | `8e9962f`; this was the root cause of the intermittent orchestrator test |
-| S1-A (WP1 1.2–1.7): K3 task state machine, ready queue, sweeper, migration v10 | merge `2c2f067` |
-| S1-D, part 2: per-session MCP token, tools offered to agents, prompt card; S3 env-leak fix | `d8f8e66`; end-to-end test: agent calls `task_report` over MCP |
-| WP9 9.1–9.5: time ledger (agent turns, human timers and entries, adjustments, engagements from a local file) and job timeline (migration v16) | `367b46d` |
-| WP10 10.2–10.2c: subscription usage tracking, 70% weekly-pace alert, K9 check (migration v13) | merge `1303cb4` |
-
-Runtime suite: **132/132**. `tsc` is clean in `runtime/` and `apps/desktop/`.
+| Package | What exists | Evidence |
+|---|---|---|
+| WP0 | V2 merged into the main line; typecheck and hermetic tests fixed; CI file (cannot run: GitHub billing lock); v1 marked legacy; adapter readiness gate and signed-in account capture; backup/restore/dry-run; security review | `7833d5c` … `4b7f9d3` |
+| WP1 | K3 task state machine, dependencies, ready queue, ack/retry/stale sweeper, event idempotency (migration v10) | merge `2c2f067` |
+| WP2 | Unified intake, rule triage, dedupe, six departments (v11) | merge `3168160` |
+| WP4 | MCP agent action interface with session tokens, owner key, env allowlist (v12); dispatcher (flag, default off); one worktree per task | `8e9962f`, `d8f8e66`, `fe90ada` |
+| WP5 | VERIFIED gate for verification-required criteria; delivery as a draft PR | `8e3e2b9`, `0de86b0` |
+| WP6 | Timezone cron, schedule_runs, catch-up, stand-up pipeline, routines (v17) | merge `f249a75` |
+| WP7 | Evidence-derived KR progress (UNKNOWN when unlinked), health split, archive/delete (v19) | merge `4509d91` |
+| WP8 | Runtime-loaded versioned skills, 16-skill catalog (v18) | merge `c9ebbb6` |
+| WP9 | Time ledger, engagements from a local file, timesheets with reconciliation hash, job timeline (v16, v22) | `367b46d`, `9ecbf6c` |
+| WP10 | Subscription usage tracking, 70% weekly-pace alert, K9 isolation enforced at session start (v13); model-aware renewal, budgets, usage mapper (v21); no prices, no shipped context windows | merge `1303cb4`, WP10 merge, `e9b1ea9` |
+| S1 | End-to-end slice test (intake → shipped, verified, accounted, on the timeline) | `9d1d819` |
+| Security | Owner key in the macOS Keychain (Rust command compiled standalone; Tauri build and real Keychain not verified here) | `dd0249e` |
 
 ## In progress
 
-- **S1-C:** `plan_submit`, `task_claim`, low-risk auto-accept (flag), Needs-You API. Sonnet worker.
-- **S1-E part 1:** dispatcher (flag) and one worktree plus branch per task. Sonnet worker.
+- **WP3:** agent-driven Planning Council (Opus worker, migration v20).
+- **WP11:** desktop navigation and screens: Time, AI Resources, Skills, Stand-ups, QA, Runtime & Health, job timeline, Executive Home cards (Sonnet worker).
 
-## Next, in order
+## Not done
 
-1. Merge S1-C and S1-E part 1.
-2. Lead: VERIFIED gate for `verification_required` criteria (C7); delivery record; wire `task_usage` and the K9 check into dispatch. Then the S1 end-to-end test with the fake adapter.
-4. After S1: WP6 stand-ups, scheduler and catch-up; WP9 time; WP10 subscription usage (K6); WP7 OKRs; WP8 skills; WP3 real council; WP11 desktop.
+- **Packaged app launch, Keychain backend, real adapters (Claude/Codex/Gemini MCP and usage fidelity):** need the owner's Mac; WP0-T10 truth pass.
+- **CI:** blocked by the GitHub account billing lock, so every merge records local evidence instead.
+- **Flags:** all new automation is off by default (`workflow.dispatcher`, `autoAcceptLowRisk`, `standups`, routines); enable one at a time with sign-off.
+- **LaunchAgent (6.6), release checklist, §18 acceptance runs on macOS.**
 
 ## Owner-only items
 
-- **WP0-T10:** run `node runtime/scripts/truth-pass.ts` on the Mac.
-- **Owner-key enrolment from the desktop**, with the key stored in the Keychain. Needs a macOS build.
-- **Store the engagement terms** in `~/.myaos/engagements.local.json` (never in the repo).
-
-## Decisions
-
-The owner's decisions are recorded in plan §12 and §13: K1 (V2 is canonical), the billing model, subscription usage tracking (K6), account isolation (K9), six departments, and a client-specific repository later.
+- Run `node runtime/scripts/truth-pass.ts` on the Mac and share the output (WP0-T10).
+- Save `~/.myaos/engagements.local.json` (template: `runtime/engagements.local.example.json`).
+- Create the three AI accounts (`node runtime/scripts/seed-ai-accounts.ts`) and enter `/usage` snapshots.
+- Approve the §13 department mapping run (`runtime/scripts/apply-departments.ts`).
