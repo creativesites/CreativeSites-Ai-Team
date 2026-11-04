@@ -9,7 +9,7 @@
 
 set -e
 
-DB_PATH="${DB_PATH:-$(cd "$(dirname "$0")/.." && pwd)/data/myaos.db}"
+DB_PATH="${DB_PATH:-${MYAOS_DB_PATH:-$(cd "$(dirname "$0")/.." && pwd)/data/myaos.db}}"
 
 if [ ! -f "$DB_PATH" ]; then
   echo "Error: Database not found at $DB_PATH" >&2

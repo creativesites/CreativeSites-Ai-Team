@@ -616,35 +616,6 @@ impl DbBridge {
             )",
             [],
         );
-        // Seed default user if empty
-        let user_count: i64 = conn.query_row("SELECT COUNT(*) FROM app_users", [], |r| r.get(0)).unwrap_or(0);
-        if user_count == 0 {
-            let _ = conn.execute(
-                "INSERT INTO app_users (id, name, email, role, avatar, is_active) VALUES
-                ('user_winston', 'Winston Zulu', 'winston@creativesites.com', 'admin', 'WZ', 1)",
-                [],
-            );
-        }
-        // Seed sample integrations if empty
-        let int_count: i64 = conn.query_row("SELECT COUNT(*) FROM integration_configs", [], |r| r.get(0)).unwrap_or(0);
-        if int_count == 0 {
-            let _ = conn.execute(
-                "INSERT INTO integration_configs (id, service, config_json, is_enabled, require_approval) VALUES
-                ('int_slack', 'slack', '{\"channel\":\"#myaos-alerts\",\"webhook_url\":\"\",\"bot_token\":\"\"}', 1, 1),
-                ('int_gmail', 'gmail', '{\"email\":\"winston@creativesites.com\",\"check_interval_mins\":15,\"read_enabled\":1}', 1, 1)",
-                [],
-            );
-        }
-        // Seed initial pending approvals if empty
-        let appr_count: i64 = conn.query_row("SELECT COUNT(*) FROM pending_approvals", [], |r| r.get(0)).unwrap_or(0);
-        if appr_count == 0 {
-            let _ = conn.execute(
-                "INSERT INTO pending_approvals (id, item_type, status, title, recipient, content, metadata, created_by) VALUES
-                ('appr_slack_1', 'slack_message', 'pending', 'Build Release Notice #v1.4.0', '#engineering-releases', '🚀 *MyaDesktop Release v1.4.0 Ready for Deployment*\\n• All regression test suites passed (100% verified by Kael)\\n• Zero-drop audio streaming & PTY substrate active.\\nShall we proceed with pushing to production?', '{\"channel\":\"#engineering-releases\",\"priority\":\"high\"}', 'atlas'),
-                ('appr_gmail_1', 'email', 'pending', 'Weekly Client Deliverable Progress Report', 'exec-partners@myavana.com', 'Hi team,\\n\\nPlease find the summary of our weekly autonomous development milestones:\\n1. Telemetry substrate integrated into SQLite.\\n2. AI Employee Org Chart and live PTY terminal workspaces deployed.\\n3. Independent Verifier gate enforced with 0-drop regression proof.\\n\\nBest regards,\\nWinston Zulu & CreativeSites AI Team', '{\"subject\":\"Weekly Client Deliverable Progress Report\",\"reply_to\":\"winston@creativesites.com\"}', 'sage')",
-                [],
-            );
-        }
 
         // --- AUTOPILOT & BATCH PROCESSING TABLES ---
         let _ = conn.execute(
@@ -688,30 +659,6 @@ impl DbBridge {
             [],
         );
 
-        // Seed initial autopilot queue tasks if empty
-        let ap_count: i64 = conn.query_row("SELECT COUNT(*) FROM autopilot_queue", [], |r| r.get(0)).unwrap_or(0);
-        if ap_count == 0 {
-            let _ = conn.execute(
-                "INSERT INTO autopilot_queue (id, batch_id, title, prompt, target_workspace, assigned_agent, runtime_type, priority, status, retry_count, max_retries, output_log, tokens_used, cost_usd, rate_limit_reset_at, started_at, completed_at, created_at) VALUES
-                ('ap_task_1', 'batch_nightly_1', 'Refactor Auth Middleware with Zero-Copy Headers', 'Refactor authorization token verification in backend router to zero-copy bytes validation and run unit tests.', '/Users/winstonzulu/Documents/GitHub/DeployFleet', 'atlas', 'claude_code', 'high', 'completed', 0, 3, 'Auth middleware successfully refactored. 12/12 unit tests passing without regression.', 14200, 0.042, NULL, datetime('now', '-2 hours'), datetime('now', '-1 hours'), datetime('now', '-3 hours')),
-                ('ap_task_2', 'batch_nightly_1', 'Add Audio Waveform Stream Reconnect on WebSocket Drop', 'Implement exponential backoff reconnect on mobile chatbot audio stream listener.', '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team', 'astra', 'claude_code', 'critical', 'running', 0, 3, 'Streaming test session connected. Synthesizing audio buffer handlers...', 8400, 0.025, NULL, datetime('now', '-15 minutes'), NULL, datetime('now', '-2 hours')),
-                ('ap_task_3', 'batch_nightly_1', 'Async DB Handler Migration (Batch of 24 Endpoints)', 'Migrate legacy synchronous SQLite handlers to non-blocking rusqlite async threadpool.', '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team', 'nexus', 'claude_code', 'critical', 'rate_limited', 1, 3, 'Hit Anthropic 5-hour rate limit reset window. Auto-resume timer set.', 18900, 0.056, datetime('now', '+12 minutes'), datetime('now', '-45 minutes'), NULL, datetime('now', '-2 hours')),
-                ('ap_task_4', 'batch_nightly_1', 'Comprehensive JSDoc & Strict TypeScript Typing Sweep', 'Scan all 18 views and components for any types, replace with strict domain interfaces.', '/Users/winstonzulu/Documents/GitHub/DeployFleet-Team', 'sage', 'claude_code', 'medium', 'queued', 0, 3, NULL, 0, 0.0, NULL, NULL, NULL, datetime('now', '-1 hours')),
-                ('ap_task_5', 'batch_nightly_1', 'Lead Verifier Independent Regression Proof Verification', 'Run cargo test and npm run build across all repos and log evidence to SQLite substrate.', '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team', 'kael', 'claude_code', 'high', 'queued', 0, 3, NULL, 0, 0.0, NULL, NULL, NULL, datetime('now', '-1 hours'))",
-                [],
-            );
-        }
-
-        // Seed initial autopilot history if empty
-        let hist_count: i64 = conn.query_row("SELECT COUNT(*) FROM autopilot_runs_history", [], |r| r.get(0)).unwrap_or(0);
-        if hist_count == 0 {
-            let _ = conn.execute(
-                "INSERT INTO autopilot_runs_history (id, batch_name, total_tasks, completed_tasks, failed_tasks, total_cost_usd, total_tokens, duration_seconds, started_at, finished_at, status) VALUES
-                ('hist_run_1', 'Overnight Autonomous Regression & Typings Sweep', 24, 24, 0, 0.684, 184200, 6120, datetime('now', '-2 days'), datetime('now', '-2 days', '+2 hours'), 'completed'),
-                ('hist_run_2', 'Weekend DeployFleet Fleet Engine Refactoring Sprint', 18, 17, 1, 0.512, 142000, 4800, datetime('now', '-5 days'), datetime('now', '-5 days', '+1 hours'), 'completed')",
-                [],
-            );
-        }
 
         // --- PER-PROJECT DESIGN STUDIO SUBSTRATE TABLES ---
         let _ = conn.execute(
@@ -782,55 +729,29 @@ impl DbBridge {
         let _ = conn.execute("ALTER TABLE tasks ADD COLUMN okr_kr_id TEXT", []);
         let _ = conn.execute("ALTER TABLE tasks ADD COLUMN branch TEXT", []);
 
-        // Seed initial project & OKRs if empty
-        let proj_count: i64 = conn.query_row("SELECT COUNT(*) FROM projects", [], |r| r.get(0)).unwrap_or(0);
-        if proj_count == 0 {
-            let _ = conn.execute(
-                "INSERT INTO projects (id, name, description, status, repo, target_date, created_at, updated_at) VALUES
-                ('PROJ_CHATBOT', 'Myavana Chatbot SDK & Telemetry', 'Autonomous conversational assistant and customer 360 dashboard', 'active', '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot', '2026-10-01', datetime('now'), datetime('now')),
-                ('PROJ_DEPLOYFLEET', 'DeployFleet Continuous Cloud Orchestration', 'Multi-tenant fleet management and continuous deployment engine', 'active', '/Users/winstonzulu/Documents/GitHub/DeployFleet', '2026-11-15', datetime('now'), datetime('now'))",
-                [],
-            );
-            let _ = conn.execute(
-                "INSERT INTO okr_objectives (id, title, description, owner_id, quarter, progress_percent, status, created_at, updated_at) VALUES
-                ('OBJ_1', 'Elevate Myavana Chatbot to Executive-Grade 0-Drop Quality', 'Flawless UI widget streaming, native audio chimes, and verified regression pipelines', 'astra', 'Q3-2026', 72, 'on_track', datetime('now'), datetime('now')),
-                ('OBJ_2', 'Complete Autonomous Substrate Verification & Reality Sync', 'Enforce un-mocked verification across all agent turns with 100% truthfulness in SQLite', 'kael', 'Q3-2026', 85, 'on_track', datetime('now'), datetime('now'))",
-                [],
-            );
-            let _ = conn.execute(
-                "INSERT INTO okr_key_results (id, objective_id, title, metric_type, current_value, target_value, unit, progress_percent, telemetry_query, created_at, updated_at) VALUES
-                ('KR_1_1', 'OBJ_1', 'Widget streaming latency below 200ms', 'numeric', 180.0, 200.0, 'ms', 85, 'SELECT AVG(latency) FROM turns', datetime('now'), datetime('now')),
-                ('KR_1_2', 'OBJ_1', 'Zero un-handled exceptions in Chatbot PTY turns', 'percentage', 96.0, 100.0, '%', 96, 'SELECT (1 - errors/total)*100', datetime('now'), datetime('now')),
-                ('KR_2_1', 'OBJ_2', '100% of implementing agent turns audited by Lead Verifier Kael', 'percentage', 88.0, 100.0, '%', 88, 'SELECT COUNT(*) FROM evidence WHERE passed = 1', datetime('now'), datetime('now')),
-                ('KR_2_2', 'OBJ_2', 'Automated Reality Engine reconciliation run every hour', 'binary', 1.0, 1.0, 'status', 100, NULL, datetime('now'), datetime('now'))",
-                [],
-            );
-        }
 
-        // Seed initial telemetry into token_ledger if empty
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM token_ledger", [], |r| r.get(0)).unwrap_or(0);
-        if count == 0 {
-            let _ = conn.execute(
-                "INSERT INTO token_ledger (identity_id, model, input_tokens, output_tokens, cost_usd, ts) VALUES
-                ('astra', 'gemini-3.8-flash', 14200, 3850, 0.00444, datetime('now', '-2 hours')),
-                ('iris', 'gemini-3.8-flash', 18600, 4200, 0.00531, datetime('now', '-1 hours')),
-                ('kael', 'claude-3-7-sonnet', 32000, 7100, 0.2025, datetime('now', '-30 minutes')),
-                ('atlas', 'claude-sonnet-4-6', 24500, 5400, 0.1545, datetime('now', '-10 minutes'))",
-                [],
-            );
-        }
-
-        // Seed core architectural memory bookmarks if empty
-        let bm_count: i64 = conn.query_row("SELECT COUNT(*) FROM agent_memory_bookmarks", [], |r| r.get(0)).unwrap_or(0);
-        if bm_count == 0 {
-            let _ = conn.execute(
-                "INSERT INTO agent_memory_bookmarks (id, category, title, content, agent_id, workspace, tags, created_at, updated_at) VALUES
-                ('bm_outcome_led', 'architectural_rule', 'Outcome-Led Problem Solving Directive', 'Always start with the outcome, not the limitation. Separate the PRODUCT problem from the TECHNICAL problem. The product experience must define the technical solution, never the other way around.', 'atlas', '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team', '[\"directive\",\"architecture\",\"foundational\"]', datetime('now'), datetime('now')),
-                ('bm_verifier_rule', 'architectural_rule', 'Independent Verifier Mandate', 'The implementing agent is strictly forbidden from self-verifying their own work. Independent verification (Kael) must author un-mocked regression tests and write results to the evidence substrate.', 'kael', '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team', '[\"qa\",\"substrate\",\"verification\"]', datetime('now'), datetime('now')),
-                ('bm_gemini_38', 'executive_brief', 'Flagship Model Standard: gemini-3.8-flash', 'Gemini 3.8 Flash is our designated autonomous orchestrator. All handoff synthesis, git risk evaluation, and routing logic runs through gemini-3.8-flash for speed and deep reasoning.', 'orchestrator', '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team', '[\"model\",\"gemini\",\"orchestration\"]', datetime('now'), datetime('now'))",
-                [],
-            );
-        }
+        // Earlier builds seeded sample rows that the UI showed as real work.
+        // New databases get no seeds; this removes the known sample rows from old ones.
+        let _ = conn.execute(
+            "DELETE FROM autopilot_queue WHERE id IN ('ap_task_1','ap_task_2','ap_task_3','ap_task_4','ap_task_5')",
+            [],
+        );
+        let _ = conn.execute(
+            "DELETE FROM autopilot_runs_history WHERE id IN ('hist_run_1','hist_run_2')",
+            [],
+        );
+        let _ = conn.execute(
+            "DELETE FROM pending_approvals WHERE id IN ('appr_slack_1','appr_gmail_1') AND status = 'pending'",
+            [],
+        );
+        let _ = conn.execute(
+            "DELETE FROM token_ledger WHERE (identity_id, model, input_tokens, output_tokens) IN (
+                VALUES ('astra', 'gemini-3.8-flash', 14200, 3850),
+                       ('iris', 'gemini-3.8-flash', 18600, 4200),
+                       ('kael', 'claude-3-7-sonnet', 32000, 7100),
+                       ('atlas', 'claude-sonnet-4-6', 24500, 5400))",
+            [],
+        );
 
         Ok(conn)
     }
@@ -1077,61 +998,16 @@ impl DbBridge {
         })
     }
 
-    pub fn wake_all_agents(&self) -> Result<(), String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        let now = chrono::Utc::now().to_rfc3339();
-
-        conn.execute(
-            "UPDATE identities SET observed_liveness = 'LIVE' WHERE is_active = 1",
-            [],
-        )
-        .map_err(|e| format!("Failed to wake identities: {}", e))?;
-
-        let _ = conn.execute(
-            "UPDATE agents SET status = 'AVAILABLE', last_seen = ?1",
-            rusqlite::params![now],
-        );
-
-        let _ = conn.execute(
-            "INSERT INTO events (external_id, ts, type, sender, payload) VALUES (?1, ?2, 'agents.wake_all', 'executive', '{\"action\":\"wake_all\",\"reason\":\"Morning executive wake command\"}')",
-            rusqlite::params![format!("evt_{}", uuid::Uuid::new_v4()), now],
-        );
-
-        Ok(())
-    }
-
-    pub fn sleep_all_agents(&self) -> Result<(), String> {
-        let conn = self.connect().map_err(|e| e.to_string())?;
-        let now = chrono::Utc::now().to_rfc3339();
-
-        conn.execute(
-            "UPDATE identities SET observed_liveness = 'SLEEPING' WHERE is_active = 1",
-            [],
-        )
-        .map_err(|e| format!("Failed to sleep identities: {}", e))?;
-
-        let _ = conn.execute(
-            "UPDATE agents SET status = 'SLEEPING', last_seen = ?1",
-            rusqlite::params![now],
-        );
-
-        let _ = conn.execute(
-            "INSERT INTO events (external_id, ts, type, sender, payload) VALUES (?1, ?2, 'agents.sleep_all', 'executive', '{\"action\":\"sleep_all\",\"reason\":\"Executive sleep command\"}')",
-            rusqlite::params![format!("evt_{}", uuid::Uuid::new_v4()), now],
-        );
-
-        Ok(())
-    }
-
     pub fn get_workspaces_status(&self) -> Result<Vec<WorkspaceInfo>, String> {
         let conn = self.connect().map_err(|e| e.to_string())?;
 
-        let mut workspaces: Vec<(String, String, String)> = vec![
-            ("DeployFleet".to_string(), "DeployFleet Core".to_string(), "/Users/winstonzulu/Documents/GitHub/DeployFleet".to_string()),
-            ("CreativeSites-Ai-Team".to_string(), "CreativeSites AI Team".to_string(), "/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team".to_string()),
-            ("DeployFleet-website".to_string(), "DeployFleet Website".to_string(), "/Users/winstonzulu/Documents/GitHub/DeployFleet-website".to_string()),
-            ("DeployFleet-Team".to_string(), "DeployFleet Team".to_string(), "/Users/winstonzulu/Documents/GitHub/DeployFleet-Team".to_string()),
-        ];
+        // Configured workspaces first (~/.myaos/config.json), then ones registered in the app.
+        let mut workspaces: Vec<(String, String, String)> = crate::system::config::config()
+            .resolved()
+            .workspaces
+            .into_iter()
+            .map(|w| (w.id, w.name, w.path))
+            .collect();
 
         // Load custom registered workspaces from database
         if let Ok(mut stmt) = conn.prepare("SELECT id, name, path FROM registered_workspaces ORDER BY created_at ASC") {

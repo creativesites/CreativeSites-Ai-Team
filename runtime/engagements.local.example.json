@@ -1,0 +1,21 @@
+{
+  "_comment": "Template only. Copy to ~/.myaos/engagements.local.json and fill in. Never commit the filled file: it holds client contract terms (programme plan K6/K9).",
+  "engagements": [
+    {
+      "id": "client-a",
+      "client": "<client name>",
+      "role": "<position>",
+      "hourly_rate_minor": null,
+      "currency": "USD",
+      "min_weekly_hours": null,
+      "max_weekly_hours": null,
+      "start_date": "YYYY-MM-DD",
+      "external_time_system": "<e.g. Gusto>",
+      "external_task_system": "<e.g. Jira>",
+      "pay_schedule": "unknown",
+      "allow_agent_billing": false,
+      "ai_account_id": "<account id from ai_accounts>",
+      "confidential": true
+    }
+  ]
+}

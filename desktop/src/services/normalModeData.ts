@@ -1,4 +1,5 @@
-import { Coworker, ConnectedTool, Job, Routine, ActivityItem, Approval, Skill } from '../types/normalMode';
+import { Coworker, ConnectedTool, Skill } from '../types/normalMode';
+import { agentWorkspace } from './appConfig';
 
 export const DEFAULT_COWORKERS: Coworker[] = [
   {
@@ -9,9 +10,11 @@ export const DEFAULT_COWORKERS: Coworker[] = [
     avatar: '/app-icon.png',
     monogram: 'MU',
     color: 'bg-fuchsia-600',
-    status: 'available',
+    status: 'unknown',
     capabilities: ['UI/UX Prototyping', 'Interactive Canvas', 'Brand Systems', 'Accessibility Audits'],
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team',
+    get defaultWorkspace() {
+      return agentWorkspace('muse');
+    },
   },
   {
     id: 'astra',
@@ -21,9 +24,11 @@ export const DEFAULT_COWORKERS: Coworker[] = [
     avatar: '/app-icon.png',
     monogram: 'AS',
     color: 'bg-violet-500',
-    status: 'available',
+    status: 'unknown',
     capabilities: ['UI & Web Design', 'AI Stream Protocols', 'Gemini & Claude Models', 'Feature Specs'],
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot',
+    get defaultWorkspace() {
+      return agentWorkspace('astra');
+    },
   },
   {
     id: 'iris',
@@ -33,10 +38,11 @@ export const DEFAULT_COWORKERS: Coworker[] = [
     avatar: '/app-icon.png',
     monogram: 'IR',
     color: 'bg-blue-500',
-    status: 'working',
-    currentJobTitle: 'Monitoring Myavana analytics & customer 360',
+    status: 'unknown',
     capabilities: ['Telemetry & Analytics', 'Customer 360', 'System Audits', 'Data Synthesis'],
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard',
+    get defaultWorkspace() {
+      return agentWorkspace('iris');
+    },
   },
   {
     id: 'vela',
@@ -46,9 +52,11 @@ export const DEFAULT_COWORKERS: Coworker[] = [
     avatar: '/app-icon.png',
     monogram: 'VE',
     color: 'bg-emerald-500',
-    status: 'available',
+    status: 'unknown',
     capabilities: ['WordPress & Next.js', 'Content Publishing', 'Site Inspections', 'SEO & Copy'],
-    defaultWorkspace: '/Users/winstonzulu/Documents/GitHub/Myavana-Hair-Journey',
+    get defaultWorkspace() {
+      return agentWorkspace('vela');
+    },
   },
   {
     id: 'kael',
@@ -58,9 +66,11 @@ export const DEFAULT_COWORKERS: Coworker[] = [
     avatar: '/app-icon.png',
     monogram: 'KL',
     color: 'bg-rose-500',
-    status: 'available',
+    status: 'unknown',
     capabilities: ['Automated QA', 'Evidence Audits', 'Git Diff Checks', 'Regression Testing'],
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team',
+    get defaultWorkspace() {
+      return agentWorkspace('kael');
+    },
   },
   {
     id: 'atlas',
@@ -70,9 +80,11 @@ export const DEFAULT_COWORKERS: Coworker[] = [
     avatar: '/app-icon.png',
     monogram: 'AT',
     color: 'bg-slate-700',
-    status: 'available',
+    status: 'unknown',
     capabilities: ['Job Coordination', 'Cross-Repo Dispatch', 'Release Readiness', 'Security Gates'],
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team',
+    get defaultWorkspace() {
+      return agentWorkspace('atlas');
+    },
   },
 ];
 
@@ -81,7 +93,7 @@ export const DEFAULT_CONNECTED_TOOLS: ConnectedTool[] = [
     id: 'google_workspace',
     name: 'Google Workspace',
     category: 'Workspace',
-    status: 'connected',
+    status: 'unchecked',
     iconName: 'Mail',
     description: 'Gmail, Drive documents, and Calendar schedules.',
     usedByCoworkers: ['Iris', 'Atlas'],
@@ -91,7 +103,7 @@ export const DEFAULT_CONNECTED_TOOLS: ConnectedTool[] = [
     id: 'web_search',
     name: 'Web & Live Browser',
     category: 'Browser',
-    status: 'connected',
+    status: 'unchecked',
     iconName: 'Globe',
     description: 'Real-time search, website scraping, and Playwright browser QA.',
     usedByCoworkers: ['Vela', 'Kael', 'Astra', 'Muse'],
@@ -101,7 +113,7 @@ export const DEFAULT_CONNECTED_TOOLS: ConnectedTool[] = [
     id: 'local_files',
     name: 'Local Repos & Workspace',
     category: 'Code',
-    status: 'connected',
+    status: 'unchecked',
     iconName: 'Folder',
     description: 'Desktop files, git repositories, and project assets.',
     usedByCoworkers: ['Astra', 'Vela', 'Iris', 'Kael', 'Atlas', 'Muse'],
@@ -111,7 +123,7 @@ export const DEFAULT_CONNECTED_TOOLS: ConnectedTool[] = [
     id: 'wordpress',
     name: 'WordPress CMS',
     category: 'CMS',
-    status: 'connected',
+    status: 'unchecked',
     iconName: 'Layout',
     description: 'Myavana Hair Journey WordPress platform REST APIs.',
     usedByCoworkers: ['Vela'],
@@ -121,7 +133,7 @@ export const DEFAULT_CONNECTED_TOOLS: ConnectedTool[] = [
     id: 'slack',
     name: 'Slack Team Hub',
     category: 'Communication',
-    status: 'connected',
+    status: 'unchecked',
     iconName: 'MessageSquare',
     description: 'Team alerts and automated channel updates.',
     usedByCoworkers: ['Iris', 'Atlas'],
@@ -131,133 +143,11 @@ export const DEFAULT_CONNECTED_TOOLS: ConnectedTool[] = [
     id: 'sqlite_substrate',
     name: 'SQLite Substrate DB',
     category: 'Database',
-    status: 'connected',
+    status: 'unchecked',
     iconName: 'Database',
     description: 'Local WAL-mode SQLite state engine at data/myaos.db.',
     usedByCoworkers: ['Atlas', 'Kael', 'Iris'],
     permissions: { read: true, write: true, execute: true, delete: false },
-  },
-];
-
-export const DEFAULT_JOBS: Job[] = [
-  {
-    id: 'job_web_audit_101',
-    title: 'Audit Myavana Hair Journey Website & Verify Order Flow',
-    userPrompt: 'Check my website for anything broken and verify the order fulfillment flow.',
-    status: 'completed',
-    progressPercentage: 100,
-    assignedCoworkers: ['vela', 'kael'],
-    targetWorkspace: '/Users/winstonzulu/Documents/GitHub/Myavana-Hair-Journey',
-    connectedToolsUsed: ['web_search', 'wordpress', 'local_files'],
-    stages: [
-      { id: 's1', stepNumber: 1, label: 'Website Inspection', status: 'completed', timestamp: '10:00 AM' },
-      { id: 's2', stepNumber: 2, label: 'Order Flow Verification', status: 'completed', timestamp: '10:02 AM' },
-      { id: 's3', stepNumber: 3, label: 'Independent QA Check', status: 'completed', timestamp: '10:05 AM' },
-      { id: 's4', stepNumber: 4, label: 'Report Generation', status: 'completed', timestamp: '10:06 AM' },
-    ],
-    humanizedLog: [
-      'Started website inspection across desktop and mobile views.',
-      'Vela verified SSL certificate and main page navigation.',
-      'Kael executed automated headless order placement check.',
-      'All 4 main pages passed with 0 critical errors.',
-    ],
-    technicalLogs: [
-      'curl -I https://myavana.com',
-      'npx playwright test tests/e2e/order.spec.ts --headed=false',
-      'SQLite proof logged to data/myaos.db (exit_code=0)',
-    ],
-    artifacts: [
-      {
-        id: 'art_101',
-        jobId: 'job_web_audit_101',
-        type: 'health_audit',
-        title: 'Website Health & Order Audit',
-        subtitle: 'Score: 98/100 · 0 Critical Errors',
-        summary: 'Checked homepage, shop catalog, cart checkout, and mobile layout. All critical flows operational.',
-        content: `### Executive Summary\nThe website audit for Myavana Hair Journey completed cleanly.\n\n- **Homepage Load**: 1.1s (Passed)\n- **Mobile Menu**: Responsive (Passed)\n- **Checkout Flow**: Simulated transaction complete (Passed)\n\n### Recommendations\n1. Optimize image assets on the shop landing page to save ~340KB.`,
-        metrics: [
-          { label: 'Uptime', value: '99.98%', positive: true },
-          { label: 'Load Speed', value: '1.1s', positive: true },
-          { label: 'Errors Found', value: '0', positive: true },
-        ],
-        createdAt: new Date().toISOString(),
-      },
-    ],
-    evidencePassed: true,
-    verificationDetails: 'Verified by Kael [KL] with observed headless test execution',
-    createdAt: new Date(Date.now() - 3600000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
-    id: 'job_inbox_digest_102',
-    title: 'Daily Customer Inbox & Analytics Summary',
-    userPrompt: 'Summarize today\'s important emails and telemetry metrics.',
-    status: 'working',
-    progressPercentage: 75,
-    assignedCoworkers: ['iris'],
-    targetWorkspace: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard',
-    connectedToolsUsed: ['google_workspace', 'sqlite_substrate'],
-    stages: [
-      { id: 's1', stepNumber: 1, label: 'Fetching Telemetry', status: 'completed' },
-      { id: 's2', stepNumber: 2, label: 'Parsing Inbox Messages', status: 'completed' },
-      { id: 's3', stepNumber: 3, label: 'Synthesizing Digest', status: 'working' },
-      { id: 's4', stepNumber: 4, label: 'Executive Brief Card', status: 'pending' },
-    ],
-    humanizedLog: [
-      'Iris scanned 14 unread operational messages.',
-      'Grouped 3 high-priority follow-ups regarding product inquiries.',
-      'Synthesizing key numbers for executive dashboard.',
-    ],
-    technicalLogs: [
-      'SELECT COUNT(*) FROM customer_360_telemetry WHERE date = CURRENT_DATE;',
-      'Fetching Google Workspace message list via REST API...',
-    ],
-    artifacts: [],
-    createdAt: new Date(Date.now() - 1800000).toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-];
-
-export const DEFAULT_APPROVALS: Approval[] = [
-  {
-    id: 'appr_201',
-    jobId: 'job_deploy_update_909',
-    jobTitle: 'Publish Updated Chatbot UI Protocol Component',
-    coworkerId: 'astra',
-    coworkerName: 'Astra',
-    riskLevel: 'consequential',
-    actionSummary: 'Deploy modern UI widget package v3.2 to production host',
-    details: 'Astra completed building and verifying the streaming protocol update. Standard policy requires executive approval before publishing to live site.',
-    target: 'Myavana Chatbot Production Engine',
-    status: 'pending',
-    createdAt: new Date(Date.now() - 900000).toISOString(),
-  },
-];
-
-export const DEFAULT_ROUTINES: Routine[] = [
-  {
-    id: 'rout_301',
-    title: 'Morning Inbox & Project Digest',
-    skillId: 'sk_inbox_digest',
-    coworkerId: 'iris',
-    schedule: 'Every day at 9:00 AM',
-    enabled: true,
-    lastRunTime: 'Today at 9:00 AM',
-    lastRunStatus: 'success',
-    nextRunTime: 'Tomorrow at 9:00 AM',
-    prompt: 'Summarize today\'s important emails, pending tasks, and key telemetry metrics into a 3-bullet executive brief.',
-  },
-  {
-    id: 'rout_302',
-    title: 'Hourly Website Health & Uptime Monitor',
-    skillId: 'sk_web_health',
-    coworkerId: 'kael',
-    schedule: 'Every 1 hour',
-    enabled: true,
-    lastRunTime: '15m ago',
-    lastRunStatus: 'success',
-    nextRunTime: 'In 45 minutes',
-    prompt: 'Run automated ping and headless Playwright check on myavana.com. Notify immediately if response time exceeds 2.5s.',
   },
 ];
 
@@ -288,36 +178,5 @@ export const DEFAULT_SKILLS: Skill[] = [
     templatePrompt: 'Build a modern landing page concept with hero section and feature cards.',
     category: 'Design & Code',
     toolsRequired: ['Local Files'],
-  },
-];
-
-export const DEFAULT_ACTIVITIES: ActivityItem[] = [
-  {
-    id: 'act_401',
-    jobId: 'job_web_audit_101',
-    type: 'job_completed',
-    title: 'Website Health & Order Audit completed',
-    description: 'Vela and Kael verified order flow. 0 errors found.',
-    coworkerId: 'kael',
-    timestamp: '10:06 AM',
-    status: 'success',
-  },
-  {
-    id: 'act_402',
-    type: 'approval_needed',
-    title: 'Approval required for Chatbot UI release',
-    description: 'Astra requested permission to publish widget v3.2.',
-    coworkerId: 'astra',
-    timestamp: '10:15 AM',
-    status: 'warning',
-  },
-  {
-    id: 'act_403',
-    type: 'routine_ran',
-    title: 'Morning Inbox Digest executed',
-    description: 'Iris summarized 14 operational emails.',
-    coworkerId: 'iris',
-    timestamp: '9:00 AM',
-    status: 'info',
   },
 ];

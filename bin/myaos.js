@@ -27,6 +27,37 @@ function parseFlags(argv) {
   return flags;
 }
 
+/**
+ * The v2 runtime (runtime/), read through its local API: the same records the
+ * new desktop app shows. Says plainly when it is not running.
+ */
+async function printRuntimeV2() {
+  const os = require('os');
+  const file = process.env.MYAOS_RUNTIME_FILE || path.join(process.env.MYAOS_HOME || path.join(os.homedir(), '.myaos'), 'runtime.json');
+  console.log('\n🧭 RUNTIME v2 (runtime/, read through its API)');
+  console.log('------------------------------------------------------');
+  let info;
+  try {
+    info = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    console.log(`Not running (no ${file}). Start it with: npm start --prefix runtime`);
+    return;
+  }
+  try {
+    const get = async (route) => {
+      const res = await fetch(`${info.url}${route}`, { headers: { Authorization: `Bearer ${info.token}` }, signal: AbortSignal.timeout(2000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status} on ${route}`);
+      return res.json();
+    };
+    const health = await get('/health');
+    const s = await get('/v1/summary');
+    console.log(`Running at ${info.url} (pid ${health.pid}, v${health.version}, schema ${health.schemaVersion})`);
+    console.log(`Coworkers ${s.identities} · Rooms ${s.rooms} · Open jobs ${s.openJobs} · Waiting on you ${s.pendingApprovals} · Live sessions ${s.liveSessions}`);
+  } catch (e) {
+    console.log(`Not reachable at ${info.url}: ${e.message}. The info file may be left from a runtime that stopped.`);
+  }
+}
+
 async function main() {
   switch (command) {
     case 'status': {
@@ -86,6 +117,7 @@ async function main() {
       for (const e of recentEvents) {
         console.log(`[${e.timestamp.slice(11, 19)}] ${e.type.padEnd(20)} from @${e.sender}`);
       }
+      await printRuntimeV2();
       console.log('\n');
       break;
     }
@@ -131,7 +163,7 @@ async function main() {
         console.error('Usage: myaos wake <agent>');
         process.exit(1);
       }
-      const dbPath = path.resolve(baseDir, 'data/myaos.db');
+      const dbPath = require('../src/paths').dbPath(baseDir);
       const clean = agentName.toLowerCase().trim();
 
       // Durable, real observation first (writes to identities+runtimes in
@@ -209,28 +241,12 @@ async function main() {
       }
 
       if (taskId) {
-        console.log(`[MyaOS Worker] Claiming and executing task ${taskId}...`);
-        myaos.taskManager.startTask(taskId, agentName);
-
-        // Execute task workload: if automated execution payload exists, process it
-        const task = myaos.taskManager.getTask(taskId);
-        const artifactDir = path.resolve(baseDir, 'data/artifacts');
-        if (!fs.existsSync(artifactDir)) fs.mkdirSync(artifactDir, { recursive: true });
-        
-        const artifactPath = path.join(artifactDir, `${taskId.toLowerCase()}_proof.json`);
-        fs.writeFileSync(artifactPath, JSON.stringify({
-          task_id: taskId,
-          worker: agentName,
-          pid,
-          cwd: process.cwd(),
-          timestamp: new Date().toISOString(),
-          status: 'SUCCESS'
-        }, null, 2), 'utf8');
-
-        console.log(`[MyaOS Worker] Generated artifact at ${artifactPath}`);
-        myaos.taskManager.completeTask(taskId, agentName, [artifactPath]);
-        console.log(`[MyaOS Worker] Task ${taskId} completed by @${agentName}. Exiting worker.`);
-        process.exit(0);
+        // This worker has no agent behind it, so it cannot do a task's work.
+        // It used to write a SUCCESS proof file and complete the task anyway;
+        // it now refuses and leaves the task untouched.
+        console.error(`[MyaOS Worker] Refusing task ${taskId}: the process worker cannot execute task work. ` +
+          'Run the task in an agent session instead. The task was not claimed or completed.');
+        process.exit(2);
       } else {
         // Long-lived worker mode: wait for SIGTERM or SIGINT
         console.log(`[MyaOS Worker] Idle listening mode. Press Ctrl+C to exit.`);
@@ -280,7 +296,7 @@ async function main() {
       console.log('\n🧪 Running MyaOS Verification Test Suite & Recording Provenance...\n');
       const TestVerificationRecorder = require('../src/testRecorder');
       const recorder = new TestVerificationRecorder(baseDir);
-      const testCmd = args[0] || 'node --test tests/*.test.js';
+      const testCmd = args[0] || 'node --test tests/*.test.js tests/knowledge/*.test.js';
       const record = recorder.runAndRecord(testCmd);
       console.log(`Commit SHA:     ${record.commit_sha}`);
       console.log(`Working Tree:   ${record.git_working_tree_clean ? 'CLEAN' : `${record.git_uncommitted_changes_count} modified/untracked files`}`);
@@ -449,6 +465,24 @@ async function main() {
       break;
     }
 
+    case 'knowledge': {
+      // Knowledge & Intelligence layer: myaos knowledge <health|worker|rebuild-index|weekly-review|search> [...]
+      const { createKnowledgeSystem } = require('../src/knowledge');
+      const { hostPrincipal } = require('../src/knowledge/rpc');
+      const ki = createKnowledgeSystem({ baseDir });
+      const me = hostPrincipal();
+      try {
+        const sub = args[0];
+        if (sub === 'health') console.log(JSON.stringify(ki.health(me), null, 2));
+        else if (sub === 'worker') { const r = await ki.worker.drain(1000); console.log(`[KI] processed ${r.length} job(s); failed: ${r.filter((x) => !x.ok).length}`); }
+        else if (sub === 'rebuild-index') console.log(JSON.stringify(await ki.rebuildIndex()));
+        else if (sub === 'weekly-review') { const { Briefings } = require('../src/knowledge/work/briefings'); console.log(Briefings.toMarkdown(ki.briefings.weeklyReview(me, { persist: false }))); }
+        else if (sub === 'search') { const r = await ki.search.search(me, { query: args.slice(1).join(' ') }); console.log(JSON.stringify(r.results.map((x) => ({ kind: x.kind, title: x.title, score: x.score, excerpt: x.excerpt })), null, 2)); }
+        else console.log('Usage: myaos knowledge <health|worker|rebuild-index|weekly-review|search <query>>');
+      } finally { ki.close(); }
+      break;
+    }
+
     default: {
       printHeader();
       console.log('\nUsage: myaos <command> [options]');
@@ -457,12 +491,12 @@ async function main() {
       console.log('  observe                        Machine-observe runtime sockets, processes, and identity');
       console.log('  doctor                         Run system health diagnostics');
       console.log('  test [cmd]                     Run test suite and record machine verification proof');
-      console.log('  execute-chain                  Execute verifiable end-to-end autonomous agent chain');
       console.log('  proof-bundle <taskId>          Inspect and verify cryptographic proof bundle');
       console.log('  wake <agent>                   Request wake transition for an agent');
       console.log('  sleep <agent>                  Put an agent to sleep (SLEEPING state)');
-      console.log('  worker --agent <name> [--task] Run a real OS process worker');
+      console.log('  worker --agent <name> [--task] Register a process session (cannot execute tasks)');
       console.log('  verify <taskId>                Run independent verification on task artifacts');
+      console.log('  knowledge <sub>                Knowledge & Intelligence layer (health|worker|rebuild-index|weekly-review|search)');
       console.log('  orchestrator                   Run an autonomous coordination cycle\n');
     }
   }

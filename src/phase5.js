@@ -1,7 +1,7 @@
 const { execFileSync } = require('child_process');
 const path = require('path');
 
-const dbPath = path.resolve(__dirname, '../data/myaos.db');
+const dbPath = require('./paths').dbPath();
 
 function queryDb(sql) {
   try {

@@ -1,0 +1,14 @@
+{
+  "teamRepo": "~/WebstormProjects/CreativeSites-Ai-Team",
+  "dbPath": "~/WebstormProjects/CreativeSites-Ai-Team/data/myaos.db",
+  "runtimeDbPath": "~/.myaos/runtime.db",
+  "workspaceRoots": [
+    "~/WebstormProjects",
+    "~/Documents/GitHub"
+  ],
+  "cloneParentDir": "~/WebstormProjects",
+  "newProjectParentDir": "~/WebstormProjects",
+  "worktreeRoot": "~/.myaos/worktrees",
+  "artifactsDir": "~/.myaos/artifacts",
+  "ownerId": "winston"
+}

@@ -9,12 +9,18 @@
   "type": "commonjs",
   "scripts": {
     "test": "node bin/myaos.js test",
+    "test:knowledge": "node --test tests/knowledge/*.test.js",
+    "ki:weekly-review": "node scripts/ki-weekly-review.js",
     "doctor": "node bin/myaos.js doctor",
     "status": "node bin/myaos.js status",
     "orchestrator": "node bin/myaos.js orchestrator",
     "desktop:dev": "npm --prefix desktop run tauri -- dev",
     "desktop:build": "npm --prefix desktop run tauri -- build",
-    "desktop:dmg": "npm --prefix desktop run tauri -- build --bundles dmg"
+    "desktop:dmg": "npm --prefix desktop run tauri -- build --bundles dmg",
+    "runtime": "npm --prefix runtime start",
+    "runtime:test": "npm --prefix runtime test",
+    "desktop2:dev": "npm --prefix apps/desktop run tauri -- dev",
+    "desktop2:ui": "npm --prefix apps/desktop run dev"
   },
   "keywords": [
     "multi-agent",

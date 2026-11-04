@@ -3,6 +3,10 @@
 /**
  * MyaOS Daily Standup Aggregator & Generator
  *
+ * LEGACY (v1), kept running on purpose: it is currently the only producer of
+ * daily stand-ups. It is replaced by the V2 runtime stand-up pipeline in
+ * WP6 (programme plan 6.1-6.4) and retired then. Do not extend it.
+ *
  * Runs autonomously (via daily cron at 10:00 CAT / 08:00 UTC, or on first boot catch-up).
  * 1. Scans ~/.myaos/runtime.db (v2 canonical) and data/myaos.db (v1 fallback).
  * 2. Gathers verified completions, blockers, and queued work from the last 24 hours.
@@ -29,6 +33,28 @@ const month = String(now.getMonth() + 1).padStart(2, '0');
 const day = String(now.getDate()).padStart(2, '0');
 const dateStr = `${year}-${month}-${day}`;
 const targetStandupPath = path.join(rootDir, 'community', 'daily_standups', `${dateStr}_standup.md`);
+
+// V2 guard (WP6 6.4): the V2 runtime now produces stand-ups. If its store already has one for today
+// (Lusaka or local date), stop so the two producers never both write the same day. Read-only check.
+try {
+  const { DatabaseSync } = await import('node:sqlite');
+  const v2Path = process.env.MYAOS_RUNTIME_DB || path.join(os.homedir(), '.myaos', 'runtime.db');
+  if (fs.existsSync(v2Path)) {
+    const lusaka = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Lusaka' }).format(now);
+    const v2 = new DatabaseSync(v2Path, { readOnly: true });
+    try {
+      const hit = v2.prepare("SELECT id FROM standups WHERE team_id = 'default' AND standup_date IN (?, ?) LIMIT 1").get(dateStr, lusaka);
+      if (hit) {
+        console.log(`[STANDUP DAEMON] The V2 runtime already has a stand-up for ${dateStr}; not writing a second one.`);
+        process.exit(0);
+      }
+    } finally {
+      v2.close();
+    }
+  }
+} catch (e) {
+  console.warn(`[STANDUP DAEMON] V2 store check skipped: ${e.message}`);
+}
 
 console.log(`[STANDUP DAEMON] Aggregating standup for ${dateStr}...`);
 

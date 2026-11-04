@@ -8,7 +8,6 @@ import {
   Terminal as TerminalIcon,
   Cpu,
   Sun,
-  Moon,
   Coffee,
   PanelLeftClose,
   Plus,
@@ -26,6 +25,7 @@ import {
   CheckSquare,
   Sparkles,
   Code2,
+  BookOpenCheck,
 } from 'lucide-react';
 
 export type DevViewType =
@@ -35,6 +35,7 @@ export type DevViewType =
   | 'agent_workspace'
   | 'projects'
   | 'okrs'
+  | 'knowledge'
   | 'design'
   | 'workspace'
   | 'chat'
@@ -69,8 +70,6 @@ interface NavigationSidebarProps {
   pendingApprovalsCount?: number;
   sleepPrevented: boolean;
   onToggleSleepPrevention: () => void;
-  onWakeTeam: () => void;
-  onSleepTeam: () => void;
   currentWorkspace?: string;
   onStartNewMission?: () => void;
   onStartNewJob?: () => void;
@@ -90,9 +89,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   pendingApprovalsCount = 0,
   sleepPrevented,
   onToggleSleepPrevention,
-  onWakeTeam,
-  onSleepTeam,
-  currentWorkspace = '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team',
+  currentWorkspace = '',
   onStartNewMission,
   onStartNewJob,
 }) => {
@@ -126,6 +123,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
     },
     { id: 'projects', label: 'Project Management', icon: Kanban },
     { id: 'okrs', label: 'Strategic OKRs', icon: Target },
+    { id: 'knowledge', label: 'Knowledge & Intelligence', icon: BookOpenCheck },
     { id: 'design', label: 'Design Studio', icon: Palette },
     { id: 'team', label: 'Team & Org Chart', icon: Users },
     { id: 'workspace', label: 'Codebases & Repos', icon: FolderGit2 },
@@ -421,23 +419,6 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
             >
               <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 font-bold border-b border-zinc-100 pb-1">
                 Substrate & Daemon Controls
-              </div>
-
-              <div className="grid grid-cols-2 gap-1.5">
-                <button
-                  onClick={onWakeTeam}
-                  className="px-2.5 py-1.5 bg-zinc-50 hover:bg-emerald-50 text-zinc-700 hover:text-emerald-700 border border-zinc-200/70 rounded-xl text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-                >
-                  <Sun className="w-3 h-3 text-amber-500" />
-                  <span>Wake</span>
-                </button>
-                <button
-                  onClick={onSleepTeam}
-                  className="px-2.5 py-1.5 bg-zinc-50 hover:bg-zinc-100 text-zinc-600 hover:text-zinc-800 border border-zinc-200/70 rounded-xl text-[11px] font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-                >
-                  <Moon className="w-3 h-3 text-indigo-400" />
-                  <span>Sleep</span>
-                </button>
               </div>
 
               <div className="flex items-center justify-between pt-1 border-t border-zinc-100">

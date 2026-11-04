@@ -11,37 +11,38 @@ use system::SystemManager;
 fn main() {
     env_logger::init();
 
-    let exe_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cfg = system::config::config();
 
-    // Detect workspace root path
-    let workspace_root = if let Ok(env_root) = std::env::var("MYAOS_WORKSPACE_ROOT") {
-        env_root
-    } else {
-        let hardcoded_root = PathBuf::from("/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team");
-        if hardcoded_root.exists() {
-            hardcoded_root.to_string_lossy().to_string()
-        } else {
-            exe_dir.to_string_lossy().to_string()
-        }
-    };
+    // Team repo and database come from env, ~/.myaos/config.json, or the
+    // nearest folder holding community/agents.json. Never a hard-coded home.
+    let workspace_root = cfg
+        .resolve_team_repo()
+        .unwrap_or_else(|| cwd.clone())
+        .to_string_lossy()
+        .to_string();
 
-    // Detect database path
-    let db_path = if let Ok(env_db) = std::env::var("MYAOS_DB_PATH") {
-        env_db
-    } else {
-        let hardcoded_db = PathBuf::from("/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team/data/myaos.db");
-        if hardcoded_db.exists() {
-            hardcoded_db.to_string_lossy().to_string()
-        } else {
-            let root_db = exe_dir.join("../data/myaos.db");
-            let fallback_db = exe_dir.join("data/myaos.db");
-            if root_db.exists() {
-                root_db.to_string_lossy().to_string()
-            } else {
-                fallback_db.to_string_lossy().to_string()
+    let db_path = cfg
+        .resolve_db_path()
+        .or_else(|| system::config::home_dir().map(|h| h.join(".myaos").join("myaos.db")))
+        .unwrap_or_else(|| cwd.join("data").join("myaos.db"));
+    if let Some(parent) = db_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    // The store is not in git; a fresh clone starts from the exported schema.
+    if !db_path.exists() {
+        if let Some(schema) = cfg
+            .resolve_team_repo()
+            .map(|r| r.join("data").join("myaos.schema.sql"))
+            .and_then(|p| std::fs::read_to_string(p).ok())
+        {
+            match rusqlite::Connection::open(&db_path).and_then(|c| c.execute_batch(&schema)) {
+                Ok(()) => println!("[MyaOS Desktop] Created a new database from data/myaos.schema.sql"),
+                Err(e) => eprintln!("[MyaOS Desktop] Could not create database from schema: {}", e),
             }
         }
-    };
+    }
+    let db_path = db_path.to_string_lossy().to_string();
 
     println!("[MyaOS Desktop] Using database path: {}", db_path);
     println!("[MyaOS Desktop] Using workspace root: {}", workspace_root);
@@ -60,13 +61,12 @@ fn main() {
             pty_spawn_antigravity,
             pty_spawn_shell,
             runtime_list_adapters,
+            myaos_get_config,
             myaos_get_summary,
             myaos_get_identities,
             myaos_get_pending_decisions,
             myaos_record_decision,
             myaos_create_task,
-            myaos_wake_all_agents,
-            myaos_sleep_all_agents,
             system_enable_sleep_prevention,
             system_disable_sleep_prevention,
             system_is_sleep_prevented,
@@ -76,6 +76,7 @@ fn main() {
             myaos_get_evidence,
             myaos_get_observability_metrics,
             myaos_get_gemini_api_key,
+            myaos_knowledge_call,
             myaos_get_agent_working_dir,
             myaos_get_claude_latest_turn,
             myaos_log_mission_event,

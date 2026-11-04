@@ -1,0 +1,271 @@
+# Desktop v2 — handoff for the UI workstream
+
+> Written by the Lead, 2026-10-26. Read [DESKTOP_V2_DECISIONS.md](DESKTOP_V2_DECISIONS.md) first.
+> Scope: this document is the contract between the runtime owner (Lead) and the app owner (Claude). The runtime/worktree is at `runtime/`; the app is at `apps/desktop/`.
+
+## Status
+
+**Implemented on this branch since the review (all committed, 32/32 runtime tests green):**
+
+| Commit | What |
+|---|---|
+| `5319740` | Phase 1 foundation: schema v2, full write API, hardened store/events/SSE |
+| `c9f9acc` | runtime-owned checks, worktree snapshots, independent verification |
+| `03824a9` | reviewed v1 identity/team/project import + export (applied locally: 29 identities, 3 teams, 7 projects, 7 rooms) |
+| `047d39d` | Phase 0.6 ACP spike harness + findings + evidence model |
+| `4d34df2` | ACP session manager: spawn, transcript, permission→approval, snapshots, cancel |
+| `7fbe4ba` | rooms bind their repo path from the project |
+| `c3e89e8` | planning council engine: cards, scoring rules, verdict → plan + tasks |
+| `958d5c3` | team bridge: job dossiers to threads + inbox notes (opt-in) |
+| (current) | Phase 1 engine walkthrough passes with real Claude: builder turn → auto-commit → runtime check → independent verify → owner approval → done. |
+| UI | Job screen is a working control plane (plan, criteria, tasks, checks, sessions, approvals, verification, budget); Dev shows live session transcript; new Needs-you approval inbox and Jobs index; Workspaces + Settings screens merged and routed; Room can start a job from its draft. Terminal/PTY branch in review. |
+| `9681193` | fix(v2): remove demo data and canned AI output. Design Studio templates removed (`/generate` and `/extract` return 501); `/v1/communication/ai/generate` returns 503 instead of canned text; communication lists only registry coworkers. |
+| `d6f3872` | feat(design-studio): agents build designs live onto the canvas. Design runs API, design-session permission rule, run listing and cancel; frame approval records Observed evidence. |
+
+A foundation commit implements:
+
+- schema **version 2** — projects, repos, teams, members, identity provenance, job plans/tasks/criteria/stage history, sessions/transcript, hash-chained evidence, approvals + policies + escalation, settings, budgets, usage, adapters, idempotency;
+- full write API for the job lifecycle, approvals, evidence verification, sessions/transcript, budgets and workspaces;
+- runtime-owned **checks, worktree snapshots and independent verification**;
+- **planning council engine**: options/seats, weighted card scoring, the disaster cap, cannot-undo and too-fast-agreement rules, verdict → plan + tasks;
+- **team bridge (outbound)**: opt-in mirror of each job dossier into `community/threads/desktop/JOB-<n>-<slug>.md` and inbox notes to assigned agents; never writes canonical state back;
+- **ACP session manager**: spawns an adapter over stdio, streams its transcript, converts permission requests into approvals (blocking with timeout), snapshots the worktree before/after each turn and kills the process group;
+- runtime hardening: OS lock (one runtime per machine), atomic `~/.myaos/runtime.json`, owner-only store (`0700`/`0600`), transactional events with hash chain, gap-aware SSE, validation, `Idempotency-Key`, real health checks, session reconciliation on restart.
+
+Verified: `runtime` 25/25 tests pass, `tsc --noEmit` clean; `apps/desktop` `tsc -b` clean. The session-manager path is tested end-to-end against a scripted ACP agent; **no real adapter is authenticated on this machine today** (see below), so a real Claude/Gemini/Codex run still needs a re-login / key / install before the UI can show a live turn.
+
+## How to run
+
+```bash
+# runtime
+cd runtime && npm test && npx tsc --noEmit
+
+# app
+cd apps/desktop && npm run typecheck && npm run tauri -- dev
+
+# reset the local store (dev only)
+rm -f ~/.myaos/runtime.db ~/.myaos/runtime.db-wal ~/.myaos/runtime.db-shm ~/.myaos/runtime.json ~/.myaos/runtime.lock
+
+# inspect
+curl -s http://127.0.0.1:<port>/health
+node ../bin/myaos.js status   # from the repo root
+```
+
+The app still discovers the runtime through the Rust side (or Vite's `/__myaos/runtime` in a browser). No API tokens belong in the UI; use `RuntimeClient`.
+
+## Data model (what the UI can rely on)
+
+| Record | Notes |
+|---|---|
+| `projects` | A project can have several `repos` (path, remote, branch). `rootPath` is the primary folder. |
+| `rooms` | `projectId`, `teamId`, `kind` (`project`/`squad`/`adhoc`). Members are separate records. |
+| `identities` | `teamId`, `lane`, `symbol`, `capabilities[]`, `provenance` (DECLARED/ATTESTED/OBSERVED/VERIFIED), `isOwner`, `approvalLevel` (`owner`/`lead`/`member`/`none`), `adapterId`. |
+| `jobs` | `stage` (`brief`/`plan`/`build`/`verify`/`approve`/`done`/`cancelled`), `plan` JSON (summary/options/chosen/approvedAt), `risk`, `priority`, `budgetCents`, `costCents`, `startedAt`, `endedAt`, `stageNote`, `baseSha`, `shipSha`, `ownerId`, stage history. |
+| `criteria` | Text + computed `evidenceClass` (strongest evidence from the criterion or its linked tasks) + `taskIds`. |
+| `tasks` | `position`, `planTaskId`, `mode` (build/verify/review/ops/design), `checkCommand`, `gate`, `status`, timestamps, `evidenceRequired`. |
+| `sessions` | ACP fields (`acpSessionId`, `adapterId`), `mode`, `worktree`, `baseSha/branch`, `state`, `pid`, `exitCode`, `error`, `cancelRequestedAt`, `turnCount`. |
+| `transcript_entries` | Per-session `seq`, `kind`, `role`, `turnId`, `itemId`, `payload`. |
+| `evidence` | Append-only, `prevHash`/`contentHash` chain, `class`, `kind` (command/diff/file/test/message/review/browser/deploy/db_read/db_write/api/approval/artifact), `command`, `exitCode`, `commitSha`, `worktree`, `verifiedBy`, `supersedes`. |
+| `approvals` | `actionType`, `action` JSON, `risk`, assigned/escalated to, `expiresAt`, `policyId`, `decidedBy(Kind)`, `note`, `execution`, `requestId`, `reversible`, `sessionId`/`taskId`. |
+| `approval_policies` | scope global/project/room, action type, max risk for lead, lead id, escalate-to, timeout. |
+| `settings` | `ownerId`, `defaultBudgetCents`, `defaultMonthlyBudgetCents` (free-form key/value too). |
+| `budgets` | global/project, period job/day/month, amount cents, currency. |
+| `usage` | per job/session/model tokens + cost; job cost rolls up automatically. |
+| `adapters` | presets Claude / Codex / Gemini / DeepSeek Harness merged with user overrides; `installed/version/abilities` are probed, never assumed. |
+
+## API map (all need `Authorization: Bearer <token>` except `/health`)
+
+### Read / meta
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/health` | open; `ok`, `schemaVersion`, `checks.store/git/node/adapters/workspaceRoots` |
+| GET | `/v1/summary` | counts (kept stable for the existing sidebar) |
+| GET | `/v1/settings` | object |
+| POST | `/v1/settings` | merge patch |
+| GET | `/v1/events/recent?since=&type=&subjectId=&limit=` | JSON replay (for debugging / catch-up) |
+| GET | `/v1/events` | **SSE** stream; `Last-Event-ID`; may emit `event: gap` with `{requestedSince, oldestAvailable, latestAvailable, truncated}`. Show a gap as Unknown. |
+
+### Identities / teams
+
+| Method | Path |
+|---|---|
+| GET/POST | `/v1/identities`, `/v1/identities/:id` (POST updates) |
+| POST | `/v1/import/identities` `{ owner?, teams?, identities? }` |
+| GET/POST | `/v1/teams`, `/v1/teams/:id` (POST updates) |
+| GET/POST | `/v1/teams/:id/members`; DELETE `/v1/teams/:id/members/:memberId` |
+
+### Projects / repos / workspaces
+
+| Method | Path | Notes |
+|---|---|---|
+| GET/POST | `/v1/projects` | create with `{name, rootPath?, teamId?, repos?[]}` |
+| POST | `/v1/projects/attach` | `{path, name?}` — validates under `workspaceRoots`, reads real git state |
+| POST | `/v1/projects/clone` | `{url, parentDir?, name?}` |
+| POST | `/v1/projects/create-folder` | `{path, name?, initGit?}` |
+| GET | `/v1/projects/:id` | includes repos |
+| GET | `/v1/projects/:id/status` | `{project, repos:[{repo,state}]}` — `state` is real git state or `unknown` with error |
+| POST | `/v1/projects/:id/repos`; DELETE `/v1/repos/:id` | add/remove repo |
+
+### Rooms / members / messages
+
+| Method | Path |
+|---|---|
+| GET/POST | `/v1/rooms` (create with `projectId`, `teamId`, `kind`) |
+| GET/POST | `/v1/rooms/:id` (POST updates name/project/team/archived) |
+| GET/POST | `/v1/rooms/:id/members`; DELETE `/v1/rooms/:id/members/:memberId` |
+| GET/POST | `/v1/rooms/:id/messages` |
+
+### Jobs / plan / tasks / evidence / approvals
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/jobs?roomId=&projectId=&stage=&limit=` | summaries |
+| POST | `/v1/jobs` | `{roomId,title,brief,createdBy,criteria?,risk?,priority?,budgetCents?}` |
+| GET | `/v1/jobs/:id` | full detail: plan, criteria, tasks, evidence, approvals, sessions, usage, history |
+| PATCH | `/v1/jobs/:id` | title, brief, risk, priority, budgetCents, blockedReason |
+| POST | `/v1/jobs/:id/stage` | `{to, actorId, actorKind?, note?, force?}` — validated transitions + gates; force is owner-only and audited |
+| POST | `/v1/jobs/:id/plan` | `{plan:{summary, options?, chosen?}, actorId}` |
+| POST | `/v1/jobs/:id/plan/accept` | `{actorId}` |
+| GET | `/v1/jobs/:id/history` | stage history |
+| GET | `/v1/jobs/:id/budget`; POST `/v1/jobs/:id/budget/check` | `{estimateCents}` → 409 when over |
+| GET/POST | `/v1/jobs/:id/criteria` | POST add criterion; PATCH/DELETE `/v1/criteria/:id` |
+| GET/POST | `/v1/jobs/:id/tasks` | POST create with `criterionIds?[]`; PATCH `/v1/tasks/:id` |
+| GET/POST | `/v1/jobs/:id/evidence` | append (see rules); GET `/v1/evidence/:id`; POST `/v1/evidence/:id/verify` `{verifiedBy, note?, command?, exitCode?, commitSha?}` |
+| POST | `/v1/jobs/:id/checks` | `{taskId}` — **the runtime runs the task's check itself** in the job worktree; records OBSERVED evidence with real exit code/output/commit |
+| POST | `/v1/jobs/:id/snapshot` | `{actorId?}` — git status + `git diff HEAD` in the job worktree; records OBSERVED diff evidence with content-addressed artifacts |
+| POST | `/v1/jobs/:id/commit` | `{message?, actorId?}` — commits the job worktree (builder changes) and records OBSERVED evidence with the commit SHA + patch/stat artifacts. The session manager also auto-commits after each builder turn, so verification can run on a clean checkout of exactly what was built. |
+| POST | `/v1/jobs/:id/verify` | `{actorId, taskIds?}` — re-runs each check in a **clean detached worktree** at the job base commit; passing runs become VERIFIED, failing runs stay Observed; rejects self-verification |
+| GET | `/v1/artifacts/:sha` | raw artifact bytes (diff/output), token required |
+| GET/POST | `/v1/jobs/:id/approvals`; GET `/v1/approvals?status=&assignedTo=`; GET `/v1/approvals/:id`; POST `/v1/approvals/:id/decision` | decision `{decision:'approve'\|'decline', decidedBy, decidedByKind?, note?, execution?}` |
+| GET/POST | `/v1/policies`; PATCH/DELETE `/v1/policies/:id` | approval defaults |
+| GET/POST | `/v1/budgets` | create/update global/project budgets |
+| GET/POST | `/v1/jobs/:id/usage` | record usage `{model, inputTokens, outputTokens, costCents, sessionId?}` |
+
+### Council / verdict
+
+| Method | Path | Notes |
+|---|---|---|
+| GET/POST | `/v1/jobs/:id/councils` | create `{mode:'quick'\|'full', options:[{id,label}], seats:[{seat,question,weight,identityId?}]}` |
+| GET | `/v1/councils/:id` | config + cards + verdict |
+| POST | `/v1/councils/:id/cards` | `{seat, scores:{optionId:0–10}, pillar:0–10, confidence?, ruin:{optionId:'none'\|'possible'\|'likely'}, reversible?, argument?, round?}` — validated; scores only from cards |
+| POST | `/v1/councils/:id/verdict` | Chair computes weighted scores, spread, confidence, support, label, conditions; response is the verdict row **plus** the computed payload flattened (`label`, `call`, `scores`, `rules`, `conditions`, …) |
+| POST | `/v1/councils/:id/accept` | `{actorId, tasks?:[...]}` — writes `job.plan` (summary/chosen/options/councilId), creates the tasks, marks the council accepted; the plan then unlocks `brief→plan→build` |
+| GET | `/v1/councils/:id/verdict` | latest verdict |
+
+The Council/Verdict preview screens map almost field-for-field: `Council { options, seats, cards[], verdict }`, card payload = `CouncilCardResult`, verdict = `CouncilResult`. Wire those screens to the endpoints above; seats are recorded manually for now (an ACP seat-run loop is a later step).
+
+### Bridge / team
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/bridge/status` | configured/enabled/teamRepo/threadsDir/inboxDir/lastMirrorAt/lastError |
+| POST | `/v1/bridge/mirror/:jobId` | force-write the job dossier (works even when auto-mirror is off) |
+| POST | `/v1/bridge/ingest` | import new inbox notes + thread replies below the job thread's `<!-- replies -->` marker; idempotent per source path/hash. **Claimed** messages + evidence. Auto-runs every 20s when the bridge is enabled. |
+
+Enable auto-mirror/ingest with `POST /v1/settings {"bridge":{"enabled":true,"inbox":true}}`; disable with `{"bridge":{"enabled":false}}`. Threads are mirrors: the runtime owns job/approval/evidence state. Replies below `<!-- replies -->` and inbox notes are imported as Claimed (see [AGENT_BRIDGE.md](../desktop-v2/AGENT_BRIDGE.md)); the CLI path is `node runtime/scripts/agent-write.mjs`.
+
+### Sessions / transcript
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/sessions`; GET `/v1/sessions/:id` | includes ACP fields |
+| POST | `/v1/jobs/:id/sessions` | **starts a real ACP session**: `{agentId, adapterId?, taskId?, prompt?, mode?}` → `202` with the session row; progress streams as transcript/SSE. The manager creates the worktree, snapshots, prompts, records evidence, and handles permission→approval. |
+| POST | `/v1/sessions` | register a session record manually (used by CLI/debug; the manager uses its own path) |
+| PATCH | `/v1/sessions/:id` | runtime records state/exit/error/turnCount; UI should read, not write |
+| POST | `/v1/sessions/:id/cancel` | `{actorId}` — cancels the live ACP turn (or records a cancel request) and answers pending permissions as cancelled |
+| POST | `/v1/sessions/:id/prompt` | `{text}` — follow-up turn while the session is idle (`202`) |
+| GET/POST | `/v1/sessions/:id/transcript?since=&limit=` | append with `{seq?, kind, role?, turnId?, itemId?, title?, payload?}` |
+
+### Adapters
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/adapters` | presets + overrides; `installed/version` probed; `?probe=1` forces |
+| POST | `/v1/adapters/:id` | override `{command?, args?, enabled?, abilities?}` |
+
+### Design Studio
+
+| Method | Path | Notes |
+|---|---|---|
+| GET/POST | `/v1/design-boards` | GET filters `projectId`, `jobId`, `roomId`. POST `{title, description?, projectId?, jobId?, roomId?, mode?}`; a new board starts empty. |
+| GET/PATCH/DELETE | `/v1/design-boards/:id` | GET first syncs frames whose files changed on disk: a new version, noted as "Updated via workspace file sync". |
+| POST | `/v1/design-boards/:id/runs` | Starts an agent session on the board; `202` with the `DesignRun`. Body is `StartDesignRunInput`: `kind` (`new`, `from-code`, `iterate`), `prompt` (required), `device` (`phone`, `tablet`, `desktop`, `custom`), `variants` (`new`, 1 to 4), `scope` (`from-code`: screens or paths, empty means the whole app), `frameIds` (`iterate`, at least one), `action` (`update` or `fork`, `iterate`), `pinnedElement` (`iterate`), `agentId`, `adapterId`, `actorId`. `from-code` needs a board linked to a project (400 otherwise). |
+| GET | `/v1/design-boards/:id/runs` | Runs on the board: `sessionId`, `kind`, `prompt`, `state`, `error`, `framesTouched`. |
+| POST | `/v1/design-boards/:id/runs/:sessionId/cancel` | `{actorId?}`. Refused (400) unless the session is a run on this board. |
+| POST | `/v1/design-boards/:id/frames` | Creates a frame by hand. Its HTML file goes to the board folder `~/.myaos/designs/<board>/`, like agent-built frames. |
+| PATCH/DELETE | `/v1/design-frames/:id` | PATCH with `htmlContent` also rewrites the frame's file. |
+| POST | `/v1/design-frames/:id/approve` | `{actorId, note?, targetFiles?, dispatchBuildTask?, assigneeId?}`. Records OBSERVED artifact evidence for this exact frame version. |
+| POST | `/v1/design-boards/:id/generate`, `/extract` | **501**. Template generation and extraction were removed. Use a run instead. |
+
+**How a run works.** The agent session's working folder is `~/.myaos/designs/<board>/` (under `$MYAOS_HOME` when set), outside every project repo. The agent writes one self-contained HTML file per screen. Each file starts with a `<!-- myaos:frame title="..." device="..." -->` header; `parent`, `source`, `notes`, `width` and `height` are optional. The runtime watches the folder (a file watcher, with a 2-second poll as fallback). A new file becomes a frame, and a changed file becomes a new version of its frame, both credited to the run's agent as the file lands. Approved frames move to `iterating` when edited. The last pass runs when the session ends.
+
+Design sessions have their own permission rule, not the job approval queue. Writes are allowed only inside the board folder. Reads and read-only commands are allowed. Anything else is refused and recorded in the transcript. The default agent is a coworker whose role or lane mentions design, UX or UI and who has an agent runtime; the owner is never picked. Cancelling stops the session. A session row is a run record, not proof that a process is alive.
+
+Approving a frame records **Observed** evidence of that exact version. It is never Verified, because the owner's approval is not a re-run check.
+
+## Semantics the UI must honor
+
+- **Stage gates.** `brief→plan→build→verify→approve→done` (plus `cancelled`, and `verify→build` / `approve→build` for send-back). Build requires a plan summary and at least one task. Verify requires all tasks done and each evidence-required task has evidence. Approve requires every criterion at `OBSERVED` or better. Done requires no pending approvals. A `409` body explains which gate failed. Owner-only `force` is an escape hatch and is recorded.
+- **Evidence.** Agents can record `DECLARED`/`ATTESTED`; only the runtime records `OBSERVED`; `VERIFIED` exists only by calling `/v1/evidence/:id/verify` with a different actor. A successful verify supersedes the original and raises the criterion's class. Never render a claim as Observed.
+- **Approvals.** On create, policy decides lead vs owner: risk ≤ `maxRiskForLead` and a lead is configured → lead agent; otherwise owner. Timeout escalates to the owner; expiry is visible. The owner can decide any pending approval; the lead can decide only what is assigned. Decline is a decision, not a delete. History is the `events` log + approval row.
+- **Budgets.** `GET /v1/jobs/:id/budget` returns `configured:false` (not zero!) when no ceiling is set. `POST /v1/jobs/:id/budget/check` is a 409 when over. Show remaining only when configured.
+- **Sessions.** A session row is evidence of an intent/run record, not proof a process is alive. `reconcileSessions` marks dead ones failed on runtime start. The UI should show state + last seen, and treat stale as Unknown/Offline.
+- **Events.** Every write emits a hash-chained event; the chain is verifiable via `/v1/events/recent`. A `gap` SSE event means the client missed data: show Unknown and refetch.
+- **Idempotency.** Send `Idempotency-Key` on retryable POSTs; the runtime replays the stored response.
+- **Errors.** 400 validation with a field message; 403 permission/owner-only; 404; 409 gate/conflict/overspend. Show these, don't swallow.
+- **AI text.** `POST /v1/communication/ai/generate` returns `503` when no model answers. Only Gemini is tried, and only when `GEMINI_API_KEY` is set. There is no canned fallback text. Show the error; never invent a summary.
+
+## UI workstream (owned by Claude)
+
+Read the task board entries `task-7` and `task-8`. Concrete order:
+
+1. **Runtime client types/methods** in `src/lib/runtime.ts`: add the endpoints above (projects, workspaces/status, teams, members, job PATCH/stage/plan, criteria, tasks, evidence verify, approvals decision, policies, budgets, settings, adapters, transcript). Everything is typed in `runtime/src/api/types.ts`; import the types, don't duplicate.
+2. **Workspaces screen + first-run**: attach folder / clone / create empty; show repo state (branch/dirty/unknown); bind a room to a project; make Home's brief box require/choose a project (or create one). This is the blocker for a real job.
+3. **Coworkers**: group by team; show provenance, capabilities, approval level, liveness from sessions; owner record; import action (call `/v1/import/identities` with the import payload from `runtime/scripts/` once the import workstream lands).
+4. **Job lifecycle + plan surface**: stage transitions with gate explanations, plan editor (summary/options/tasks/criteria), task board with checks/gates, criteria with evidence classes and drill-down.
+5. **Approval center**: Needs-you queue, structured card (action/consequence/risk/reversibility/evidence/expiry/assignee), approve/decline/send back, audit link, notifications; show lead vs owner clearly.
+6. **Budget/settings**: owner identity, global/project budgets, approval policy defaults, adapter health.
+7. **Work/Dev modes**: Work = story + cards; Dev = transcript + tool steps + diff + evidence ledger + terminal. Same records.
+8. **Dev terminal**: port the v1 PTY (`desktop/src-tauri/src/pty/mod.rs`, `XTermTerminal.tsx`) into `apps/desktop/src-tauri` + xterm; add a Terminal tab and "open terminal here". This is a separate Tauri/PTY task, coordinate with Lead before changing Rust build config.
+9. **Council/Verdict**: the screens already exist; wire them once the council endpoints land (Phase 3). Until then leave the placeholder honest.
+
+Remove disabled placeholders as endpoints land. No fixture data in live routes. Dates show date+time (not time only). Handle `UNKNOWN`/`Offline`/`configured:false` honestly.
+
+## Ground rules
+
+- **Own your files.** Claude: `apps/desktop/**`. Lead: `runtime/**`, `bin/myaos.js`, docs. Do not edit the other side; write a request in this doc instead.
+- Small commits, tests/typecheck before commit, no force pushes.
+- Update the task board (`task-7`, `task-8`) as you go; record what is done and what is blocked.
+- If an API is missing, say exactly what shape you need in the "Requests" section below; the Lead will add it.
+
+## Adapter reality (Phase 0.6, 2026-10-26)
+
+Read [ACP_SPIKE_FINDINGS.md](ACP_SPIKE_FINDINGS.md) before building adapter UI. Current machine state:
+
+| Adapter | State to show |
+|---|---|
+| Claude (`claude-agent-acp` 0.97.0) | **Ready** — signed in natively; runtime smoke turn passed |
+| Codex (`codex-acp` 1.11.0 + codex 0.164.0) | **Ready** — logged in via ChatGPT; runtime smoke turn passed (outside-workspace scenario has a known timeout in the spike) |
+| Gemini (`gemini --acp`) | **Needs login / key** — OAuth expired and the `.env` key is invalid (401); set a valid key with `node runtime/scripts/set-adapter-key.mjs GEMINI_API_KEY <key>` or run `gemini` |
+| DeepSeek Harness | **Unsupported as an ACP agent** (no spawnable entry point) |
+
+`GET /v1/adapters` now returns `installed`, `version` and `auth {state, detail}` (Claude/Codex read their CLI auth; Gemini checks credentials). The Coworkers screen shows this panel. A configured key is shown as "Configured" until a turn actually succeeds — auth is not proven by configuration alone. The session manager reports a failed session with the adapter's error in the transcript; show that as Unknown/failed, never as a successful empty turn. Starting a session with a blocked adapter returns a `409` with the reason. A custom adapter can be added via `POST /v1/adapters/:id` (command/args) — the tests use that with a scripted fake agent. Runtime-level check: `node runtime/scripts/smoke-adapter.mjs claude|codex|gemini`.
+
+## Antigravity agents
+
+Two additional agents are working the Phase 1 close-out in parallel. Their assignments, registration steps, branches and file ownership are in [ANTIGRAVITY_ASSIGNMENTS.md](../desktop-v2/ANTIGRAVITY_ASSIGNMENTS.md). Registration helper: `node runtime/scripts/register-agent.mjs`.
+
+## Requests from the UI side
+
+_(Claude: append here when you need a runtime change.)_
+
+## Known gaps owned by the Lead
+
+- Real-adapter verification of the session manager: the code path is tested with a scripted ACP agent; unblock auth/install and run the spike again (Phase 0.6 §9) before claiming any adapter is live.
+- Worktree snapshots, runtime check runner and the independent verifier are implemented; the ACP manager still needs to call them after each turn.
+- Artifact GC/retention and diff review UI.
+- Council seat *sessions* (running each seat as a read-only ACP session) — the storage/scoring/verdict/accept API is done; the seat loop is next.
+- Non-code job execution (ops/data/browser/deploy) beyond the evidence kinds.
+- Identity import: the reviewed export is in `community/desktop-v2/import/` and `runtime/scripts/apply-import.mjs` applies it (29 identities incl. owner, 3 teams, projects, rooms, lead policies). It has been applied to the local store.
+- PTY port and packaging (bundle Node/runtime, signing) for Phase 4.

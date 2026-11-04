@@ -83,21 +83,33 @@ test('Autonomous Chain Proof: Real OS Process Worker, Cryptographic Handshake, A
     env: { ...process.env, MYAOS_BASE_DIR: tmpDir }
   });
 
-  assert.equal(workerRun.status, 0, `Worker failed: ${workerRun.stderr || workerRun.stdout}`);
+  // The process worker has no agent behind it, so it must refuse task work
+  // instead of writing a SUCCESS proof for work it never did.
+  assert.equal(workerRun.status, 2, `Worker should refuse task work: ${workerRun.stderr || workerRun.stdout}`);
   assert.match(workerRun.stdout, /Started real process worker for @Atlas/);
-  assert.match(workerRun.stdout, /Claiming and executing task TASK_AUTONOMOUS_001/);
-
-  // 5. Verify machine artifact existence & hash
+  assert.match(workerRun.stderr, /Refusing task TASK_AUTONOMOUS_001/);
   const artifactPath = path.join(tmpDir, 'data/artifacts/task_autonomous_001_proof.json');
-  assert.ok(fs.existsSync(artifactPath), 'Artifact must physically exist on disk');
-  const artifactContent = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
-  assert.equal(artifactContent.task_id, task1.id);
-  assert.equal(artifactContent.worker, 'Atlas');
-  assert.ok(artifactContent.pid > 0, 'Real process PID must be present in artifact');
+  assert.ok(!fs.existsSync(artifactPath), 'Refused worker must not write a proof artifact');
+  myaos.taskManager.data = myaos.taskManager.load();
+  assert.notEqual(myaos.taskManager.getTask(task1.id).status, 'VERIFICATION', 'Refused worker must not complete the task');
+
+  // 5. Test fixture standing in for real work output, so the verifier and
+  //    proof bundle below are exercised. Written by the test, not by the worker.
+  fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+  const artifactContent = {
+    task_id: task1.id,
+    worker: 'Atlas',
+    pid: process.pid,
+    cwd: tmpDir,
+    timestamp: new Date().toISOString(),
+    status: 'SUCCESS'
+  };
+  fs.writeFileSync(artifactPath, JSON.stringify(artifactContent, null, 2), 'utf8');
+  myaos.taskManager.startTask(task1.id, 'Atlas');
+  myaos.taskManager.completeTask(task1.id, 'Atlas', [artifactPath]);
 
   const completedAt = new Date().toISOString();
 
-  // Reload task state after worker completion
   myaos.taskManager.data = myaos.taskManager.load();
   const taskAfterWork = myaos.taskManager.getTask(task1.id);
   assert.equal(taskAfterWork.status, 'VERIFICATION');

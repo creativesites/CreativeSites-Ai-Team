@@ -123,7 +123,7 @@ class Orchestrator {
     // outcome - a prior version of this said "I have initiated wake sequences"
     // even when every single wake attempt failed underneath.
     if (lower.includes('wake')) {
-      const dbPath = path.resolve(this.baseDir, 'data/myaos.db');
+      const dbPath = require('./paths').dbPath(this.baseDir);
       const targets = lower.includes('all')
         ? ['atlas', 'iris', 'lyra', 'vela', 'astra']
         : ['atlas', 'iris', 'lyra', 'vela', 'astra', 'kael', 'nexus', 'meridian'].filter(a => lower.includes(a));

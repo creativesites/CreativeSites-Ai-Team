@@ -1,3 +1,5 @@
+import { agentWorkspace, shortPath } from '../services/appConfig';
+
 export interface AgentDirectoryInfo {
   id: string;
   name: string;
@@ -8,79 +10,74 @@ export interface AgentDirectoryInfo {
   recommendedEngine: 'claude' | 'gemini' | 'antigravity' | 'shell';
 }
 
+// Repo paths are read from config each time, so they follow ~/.myaos/config.json.
+const agent = (base: Omit<AgentDirectoryInfo, 'defaultWorkspace' | 'shortPath'>): AgentDirectoryInfo => ({
+  ...base,
+  get defaultWorkspace() {
+    return agentWorkspace(base.id);
+  },
+  get shortPath() {
+    return shortPath(agentWorkspace(base.id));
+  },
+});
+
 export const AGENT_DIRECTORY_MAP: Record<string, AgentDirectoryInfo> = {
-  astra: {
+  astra: agent({
     id: 'astra',
     name: 'Astra',
     symbol: 'AS',
     domain: 'Widget SDK & AI Protocol',
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot',
-    shortPath: 'WebstormProjects/Myavana-Chatbot',
     recommendedEngine: 'gemini',
-  },
-  iris: {
+  }),
+  iris: agent({
     id: 'iris',
     name: 'Iris',
     symbol: 'IR',
     domain: 'Observer & Telemetry Lead',
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot-Dashboard',
-    shortPath: 'WebstormProjects/Myavana-Chatbot-Dashboard',
     recommendedEngine: 'gemini',
-  },
-  vela: {
+  }),
+  vela: agent({
     id: 'vela',
     name: 'Vela',
     symbol: 'VE',
     domain: 'WordPress System of Record & Host Bridge',
-    defaultWorkspace: '/Users/winstonzulu/Documents/GitHub/Myavana-Hair-Journey',
-    shortPath: 'GitHub/Myavana-Hair-Journey',
     recommendedEngine: 'claude',
-  },
-  lyra: {
+  }),
+  lyra: agent({
     id: 'lyra',
     name: 'Lyra',
     symbol: 'LY',
     domain: 'Mobile Integration & React Native SDK',
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/MyAvana_FrontEnd_RN',
-    shortPath: 'WebstormProjects/MyAvana_FrontEnd_RN',
     recommendedEngine: 'gemini',
-  },
-  kael: {
+  }),
+  kael: agent({
     id: 'kael',
     name: 'Kael',
     symbol: 'KL',
     domain: 'QA & Independent Machine Proofs',
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot',
-    shortPath: 'WebstormProjects/Myavana-Chatbot',
     recommendedEngine: 'claude',
-  },
-  atlas: {
+  }),
+  atlas: agent({
     id: 'atlas',
     name: 'Atlas',
     symbol: 'AT',
     domain: 'Interim Coordinator & Security Guardian',
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team',
-    shortPath: 'WebstormProjects/CreativeSites-Ai-Team',
     recommendedEngine: 'claude',
-  },
-  nexus: {
+  }),
+  nexus: agent({
     id: 'nexus',
     name: 'Nexus',
     symbol: 'NX',
     domain: 'Platform Runtime Engineering',
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team',
-    shortPath: 'WebstormProjects/CreativeSites-Ai-Team',
     recommendedEngine: 'claude',
-  },
-  antigravity: {
+  }),
+  antigravity: agent({
     id: 'antigravity',
     name: 'Antigravity',
     symbol: 'AG',
     domain: 'Automated Browser QA & Production Smoke Testing',
-    defaultWorkspace: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team',
-    shortPath: 'WebstormProjects/CreativeSites-Ai-Team',
     recommendedEngine: 'antigravity',
-  },
+  }),
 };
 
 export const getAgentDirectoryInfo = (agentId: string = 'atlas'): AgentDirectoryInfo => {

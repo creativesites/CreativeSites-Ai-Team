@@ -1,9 +1,12 @@
 # Agent onboarding and workflow
 
-This repository contains both a Node-based MyaOS runtime (`src/`, `bin/`, `community/`) and a Tauri desktop application (`desktop/`). They currently have overlapping but separate task, communication, and orchestration paths. Do not assume a capability in one path is available in the other.
+This repository's canonical system is **MyaOS V2**: the runtime in `runtime/` (owns `~/.myaos/runtime.db`, the only workflow store) and the desktop in `apps/desktop/`. The v1 Tauri app (`desktop/`) and Node runtime (`src/`, `bin/`) are **legacy, read-only import sources** (see their `LEGACY.md`). Decision K1 in the programme plan, approved by Winston on 2026-11-03.
+
+Before pushing runtime or desktop changes, run `npm test` and `npm run typecheck` in `runtime/`, and `npm run typecheck` in `apps/desktop/` (CI: `.github/workflows/v2-ci.yml`, Node 24).
 
 ## Read first
 
+0. [`community/proposals/MYAOS_V2_AUTONOMOUS_ORGANISATION_VISION.md`](community/proposals/MYAOS_V2_AUTONOMOUS_ORGANISATION_VISION.md) — owner-approved V2 vision; with its [gap audit](community/proposals/MYAOS_V2_VISION_GAP_AUDIT.md) and [programme plan](community/proposals/MYAOS_V2_PROGRAMME_PLAN.md), it supersedes conflicting proposals below.
 1. [`community/proposals/MYAOS_WORKFLOW_OPERATING_MODEL.md`](community/proposals/MYAOS_WORKFLOW_OPERATING_MODEL.md) — proposed end-to-end workflow and planner routing.
 2. [`community/proposals/MYAOS_WORKFLOW_IMPLEMENTATION_PLAN.md`](community/proposals/MYAOS_WORKFLOW_IMPLEMENTATION_PLAN.md) — staged work and acceptance criteria.
 3. [`community/threads/041_myaos_workflow_from_scratch.md`](community/threads/041_myaos_workflow_from_scratch.md) — current-state audit and independent review discussion.

@@ -1,0 +1,23 @@
+{
+  "option": "F",
+  "label": "GO WITH CONDITIONS",
+  "recommendation": "Run a 90-day pilot of one channel under the 'science and history, told as stories' umbrella, with 'what if' as the labelled lead. Five long videos, 4 hours a week, a paid Odoo offer on every video. Stop at day 90 with no second vote if no qualified Odoo inquiry comes from the channel.",
+  "conditions": [
+    "Kill criteria written in a dated file before the first upload",
+    "Two-week hour log started, with the Odoo billing rate written at the top; raise the rate first if it is under $30 an hour",
+    "Named list of 100 people who would be upset if the channel stopped, by day 14; fewer than 30 means stop",
+    "Odoo billing stays within 10% of the three-month baseline through day 90",
+    "Channel hours capped at 4 a week; more than 4 for three straight weeks pauses the channel",
+    "Every factual claim has a named primary source and a second check before upload",
+    "$150 cash cap across 90 days; tool spend under $50 a month"
+  ],
+  "next_steps": [
+    "This week: write the kill criteria, start the two-week hour log, write the Odoo billing rate at the top of the log",
+    "By day 14: name the 100 people, check the hour log against the 10-hour first-video estimate; cut to two videos if the first video runs over 10 hours",
+    "By day 45: check Odoo billing against the baseline; pause if down more than 10%",
+    "By day 60: read views, retention and offers by format; switch the lead to history if two videos are under 1,000 views each",
+    "By day 90: continue only if at least one qualified Odoo inquiry came from the channel"
+  ],
+  "cheapest_test": "The two-week hour log, then one long video with a paid Odoo link. Under $150 and about 20 founder hours.",
+  "kill_criteria": "Day 90: no qualified Odoo inquiry from the channel, or Odoo billing down more than 10% from baseline. Either one ends the channel."
+}

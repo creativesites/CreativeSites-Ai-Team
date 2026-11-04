@@ -61,6 +61,7 @@ import {
   ProjectUiScanData,
   DesignPhilosophyData,
 } from '../services/geminiOrchestrator';
+import { agentWorkspace, teamRepo, workspacePath } from '../services/appConfig';
 
 export type ViewportMode = 'desktop' | 'tablet' | 'mobile' | 'fluid';
 export type DisplayMode = 'preview' | 'board' | 'tsx' | 'code' | 'split';
@@ -133,9 +134,9 @@ interface ChatMessage {
 export const DesignStudioView: React.FC = () => {
   // --- WORKSPACE & PROJECT SELECTION ---
   const [projects, setProjects] = useState<ProjectOption[]>([
-    { id: 'proj_deployfleet', name: 'DeployFleet Continuous Cloud Orchestration', repo: '/Users/winstonzulu/Documents/GitHub/DeployFleet-website', description: 'Logistics Mission Control & Fleet Orchestrator' },
-    { id: 'proj_myaos', name: 'MyaOS Orchestration & Telemetry Platform', repo: '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team', description: 'Autonomous Agent Orchestration' },
-    { id: 'proj_chatbot', name: 'Myavana AI Chatbot & Streaming Core', repo: '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot', description: 'Realtime hair diagnostic intelligence' },
+    { id: 'proj_deployfleet', name: 'DeployFleet Continuous Cloud Orchestration', repo: workspacePath('DeployFleet-website'), description: 'Logistics Mission Control & Fleet Orchestrator' },
+    { id: 'proj_myaos', name: 'MyaOS Orchestration & Telemetry Platform', repo: teamRepo(), description: 'Autonomous Agent Orchestration' },
+    { id: 'proj_chatbot', name: 'Myavana AI Chatbot & Streaming Core', repo: agentWorkspace('astra'), description: 'Realtime hair diagnostic intelligence' },
   ]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('proj_deployfleet');
   const [currentProject, setCurrentProject] = useState<ProjectOption | null>(null);
@@ -324,11 +325,11 @@ export const DesignStudioView: React.FC = () => {
       // 4. Scan Project Codebase with intelligent path resolution
       let targetPath = repoPath || '';
       if (projId.toLowerCase().includes('deployfleet')) {
-        targetPath = '/Users/winstonzulu/Documents/GitHub/DeployFleet-website';
+        targetPath = workspacePath('DeployFleet-website');
       } else if (projId.toLowerCase().includes('chatbot')) {
-        targetPath = '/Users/winstonzulu/WebstormProjects/Myavana-Chatbot';
+        targetPath = agentWorkspace('astra');
       } else if (!targetPath || !targetPath.startsWith('/')) {
-        targetPath = '/Users/winstonzulu/WebstormProjects/CreativeSites-Ai-Team';
+        targetPath = teamRepo();
       }
 
       scanProjectFiles(projId, targetPath, vers);
@@ -461,7 +462,7 @@ export const DesignStudioView: React.FC = () => {
     // Ensure fallback scanData if not yet scanned
     const activeScan: ProjectUiScanData = scanData || {
       projectId: selectedProjectId || 'proj_deployfleet',
-      workspacePath: currentProject?.repo || '/Users/winstonzulu/Documents/GitHub/DeployFleet-website',
+      workspacePath: currentProject?.repo || workspacePath('DeployFleet-website'),
       totalFiles: 1,
       routes: [screenToUse],
       components: ['Header', 'MetricCard', 'DataTable'],
@@ -789,7 +790,7 @@ export const DesignStudioView: React.FC = () => {
     try {
       const repoPath =
         currentProject?.repo ||
-        '/Users/winstonzulu/Documents/GitHub/DeployFleet-website';
+        workspacePath('DeployFleet-website');
 
       // 1. Create branch if not exists
       try {

@@ -15,7 +15,7 @@ const path = require('path');
 
 class ModelRouter {
   constructor(dbPath) {
-    this.dbPath = dbPath || path.join(__dirname, '../data/myaos.db');
+    this.dbPath = dbPath || require('./paths').dbPath();
     this.db = null;
   }
 

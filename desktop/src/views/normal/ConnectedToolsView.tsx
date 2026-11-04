@@ -41,8 +41,14 @@ export const ConnectedToolsView: React.FC<ConnectedToolsViewProps> = ({ tools })
                   </div>
                 </div>
 
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  ● Connected
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
+                    tool.status === 'connected'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-zinc-50 text-zinc-500 border-zinc-200'
+                  }`}
+                >
+                  ● {tool.status === 'connected' ? 'Connected' : tool.status === 'unchecked' ? 'Not checked' : tool.status === 'requires_auth' ? 'Needs sign-in' : 'Disconnected'}
                 </span>
               </div>
 

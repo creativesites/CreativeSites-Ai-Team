@@ -1,7 +1,8 @@
 import path from 'path';
 import { execFileSync } from 'child_process';
 
-const dbPath = path.resolve(process.cwd(), '../data/myaos.db');
+// Same rule as src/paths.js: $MYAOS_DB_PATH wins, else the repo's data/myaos.db.
+export const dbPath = process.env.MYAOS_DB_PATH || path.resolve(process.cwd(), '../data/myaos.db');
 
 export function queryDb(sql: string) {
   try {
