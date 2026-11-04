@@ -418,6 +418,7 @@ pub struct ProjectComponentRow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScannedProjectUiFile {
     pub path: String,
     pub file_name: String,
@@ -426,6 +427,7 @@ pub struct ScannedProjectUiFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectUiInspectionResult {
     pub project_id: String,
     pub workspace_path: String,
@@ -2492,32 +2494,57 @@ impl DbBridge {
         }
 
         let mut scanned = Vec::new();
+        let mut seen_paths = std::collections::HashSet::new();
         let mut routes = Vec::new();
         let mut components = Vec::new();
         let mut screens = Vec::new();
         let mut style_tokens = None;
+        const MAX_SCANNED_FILES: usize = 150;
 
-        // Candidate subdirectories to scan
-        let target_dirs = ["src/app", "src/pages", "src/views", "src/screens", "src/components", "src"];
-        
-        for rel_dir in &target_dirs {
+        // Candidate subdirectories to scan: React/Next.js, WordPress/PHP template plugins,
+        // and React Native shapes all land somewhere in here.
+        let target_dirs = [
+            "templates/views", "templates/pages", "templates/components", "templates", "assets/css", "assets/js",
+            "src/app", "src/pages", "src/views", "src/screens", "src/components", "src",
+        ];
+
+        'dirs: for rel_dir in &target_dirs {
             let dir_path = root.join(rel_dir);
             if dir_path.exists() && dir_path.is_dir() {
                 if let Ok(entries) = walk_dir_limited(&dir_path, 3) {
                     for entry in entries {
+                        if scanned.len() >= MAX_SCANNED_FILES {
+                            break 'dirs;
+                        }
                         let path_str = entry.to_string_lossy().to_string();
+                        if !seen_paths.insert(path_str.clone()) {
+                            continue; // already captured via an overlapping target dir
+                        }
                         let file_name = entry.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                        
-                        if file_name.ends_with(".tsx") || file_name.ends_with(".jsx") || file_name.ends_with(".vue") || file_name.ends_with(".html") {
+                        let file_name_lower = file_name.to_lowercase();
+
+                        let is_ui_file = file_name_lower.ends_with(".tsx")
+                            || file_name_lower.ends_with(".jsx")
+                            || file_name_lower.ends_with(".vue")
+                            || file_name_lower.ends_with(".html")
+                            || file_name_lower.ends_with(".js")
+                            || file_name_lower.ends_with(".php")
+                            || file_name_lower.ends_with(".css");
+
+                        if is_ui_file {
                             let rel_path = path_str.replace(workspace_path, "");
+                            let rel_path_lower = rel_path.to_lowercase();
                             let mut category = "component";
-                            if rel_path.contains("/app/") || rel_path.contains("/pages/") || file_name.contains("page.") {
+                            if rel_path_lower.contains("/assets/css/") || rel_path_lower.contains("/assets/js/") {
+                                category = "style";
+                            }
+                            if category != "style" && (rel_path_lower.contains("/app/") || rel_path_lower.contains("/pages/") || file_name_lower.contains("page.")) {
                                 category = "route";
                                 routes.push(rel_path.clone());
-                            } else if rel_path.contains("/screens/") || rel_path.contains("/views/") || file_name.contains("Screen") || file_name.contains("View") {
+                            } else if category != "style" && (rel_path_lower.contains("/screens/") || rel_path_lower.contains("/views/") || file_name_lower.contains("screen") || file_name_lower.contains("view")) {
                                 category = "screen";
-                                screens.push(file_name.clone());
-                            } else {
+                                screens.push(rel_path.clone());
+                            } else if category != "style" {
                                 components.push(file_name.clone());
                             }
 
@@ -2542,10 +2569,13 @@ impl DbBridge {
             }
         }
 
-        // Check for styling tokens (e.g. globals.css, tailwind.config.*)
+        // Check for real styling tokens / design system files. A dedicated tokens.css
+        // (WordPress/PHP plugin convention) is the most authoritative source when present.
         let style_candidates = [
+            root.join("assets/css/tokens.css"),
             root.join("src/app/globals.css"),
             root.join("src/globals.css"),
+            root.join("assets/css/base.css"),
             root.join("tailwind.config.js"),
             root.join("tailwind.config.ts"),
             root.join("tailwind.config.mjs"),
@@ -2554,7 +2584,7 @@ impl DbBridge {
         for sc in &style_candidates {
             if sc.exists() {
                 if let Ok(c) = std::fs::read_to_string(sc) {
-                    style_tokens = Some(if c.len() > 3000 { c[..3000].to_string() } else { c });
+                    style_tokens = Some(if c.len() > 4000 { c[..4000].to_string() } else { c });
                     break;
                 }
             }

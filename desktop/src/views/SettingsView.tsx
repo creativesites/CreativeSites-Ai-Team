@@ -95,6 +95,12 @@ export const SettingsView: React.FC = () => {
   const [claudeKey, setClaudeKey] = useState('');
   const [showClaudeKey, setShowClaudeKey] = useState(false);
 
+  const [antigravityKey, setAntigravityKey] = useState('');
+  const [showAntigravityKey, setShowAntigravityKey] = useState(false);
+
+  const [codexKey, setCodexKey] = useState('');
+  const [showCodexKey, setShowCodexKey] = useState(false);
+
   const [slackWebhook, setSlackWebhook] = useState('');
   const [slackTesting, setSlackTesting] = useState(false);
   const [slackStatus, setSlackStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -151,8 +157,14 @@ export const SettingsView: React.FC = () => {
         } catch (_) {}
       }
 
-      const cKey = secrets.find((s) => s.key === 'anthropic_api_key');
+       const cKey = secrets.find((s) => s.key === 'anthropic_api_key');
       if (cKey) setClaudeKey(cKey.value);
+
+      const aKey = secrets.find((s) => s.key === 'antigravity_api_key');
+      if (aKey) setAntigravityKey(aKey.value);
+
+      const oKey = secrets.find((s) => s.key === 'openai_api_key' || s.key === 'codex_api_key');
+      if (oKey) setCodexKey(oKey.value);
 
       const sHook = secrets.find((s) => s.key === 'slack_webhook_url');
       if (sHook) setSlackWebhook(sHook.value);
@@ -241,6 +253,42 @@ export const SettingsView: React.FC = () => {
       setTimeout(() => setSaveSuccessMsg(null), 4000);
     } catch (err: any) {
       alert(`Error saving Claude API Key: ${err}`);
+    } finally {
+      setSavingSecret(false);
+    }
+  };
+
+  // Save Antigravity Key
+  const handleSaveAntigravityKey = async () => {
+    try {
+      setSavingSecret(true);
+      await invoke('myaos_set_secret', {
+        key: 'antigravity_api_key',
+        value: antigravityKey.trim(),
+        description: 'Google Antigravity / Gemini Agent API Key',
+      });
+      setSaveSuccessMsg('Antigravity API Key successfully saved!');
+      setTimeout(() => setSaveSuccessMsg(null), 4000);
+    } catch (err: any) {
+      alert(`Error saving Antigravity API Key: ${err}`);
+    } finally {
+      setSavingSecret(false);
+    }
+  };
+
+  // Save Codex Key
+  const handleSaveCodexKey = async () => {
+    try {
+      setSavingSecret(true);
+      await invoke('myaos_set_secret', {
+        key: 'openai_api_key',
+        value: codexKey.trim(),
+        description: 'OpenAI / Codex API Key',
+      });
+      setSaveSuccessMsg('Codex API Key successfully saved!');
+      setTimeout(() => setSaveSuccessMsg(null), 4000);
+    } catch (err: any) {
+      alert(`Error saving Codex API Key: ${err}`);
     } finally {
       setSavingSecret(false);
     }
@@ -627,6 +675,105 @@ export const SettingsView: React.FC = () => {
                 className="absolute right-3 top-3 p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer"
               >
                 {showClaudeKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Antigravity AI Engine (Recommended Team Agent Runtime) */}
+          <div className="bg-white border-2 border-indigo-500/20 p-6 rounded-3xl shadow-xs space-y-4 relative overflow-hidden">
+            <div className="absolute top-0 right-0 px-3 py-1 bg-indigo-600 text-white text-[10px] font-mono font-bold rounded-bl-xl shadow-xs uppercase tracking-wider">
+              Recommended Team Engine
+            </div>
+
+            <div className="flex items-start justify-between pr-24">
+              <div>
+                <h2 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <span>Google Antigravity Engine</span>
+                  <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-mono font-bold rounded-md border border-emerald-200">
+                    antigravity --acp
+                  </span>
+                </h2>
+                <p className="text-xs text-zinc-500 mt-1 max-w-2xl">
+                  Primary agent runtime for team coworkers (Astra, Daedalus, Forge, Cinder, Sol, Orion, etc.).
+                  Drives native terminal autonomy, IDE socket orchestration, and multi-turn planning via the Agent Client Protocol.
+                </p>
+              </div>
+
+              <button
+                onClick={handleSaveAntigravityKey}
+                disabled={savingSecret}
+                className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Save Key</span>
+              </button>
+            </div>
+
+            <div className="relative">
+              <input
+                type={showAntigravityKey ? 'text' : 'password'}
+                value={antigravityKey}
+                onChange={(e) => setAntigravityKey(e.target.value)}
+                placeholder="Enter ANTIGRAVITY_API_KEY or GEMINI_API_KEY (optional if logged in via CLI)..."
+                className="w-full px-4 py-3 bg-zinc-50 border border-black/[0.08] rounded-2xl font-mono text-xs text-zinc-800 pr-12 focus:outline-none focus:border-zinc-500 focus:bg-white transition"
+              />
+              <button
+                type="button"
+                onClick={() => setShowAntigravityKey(!showAntigravityKey)}
+                className="absolute right-3 top-3 p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+              >
+                {showAntigravityKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1 text-[11px] text-zinc-500 font-mono">
+              <span className="flex items-center gap-1.5 text-emerald-600 font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                CLI binary detected at ~/.local/bin/antigravity
+              </span>
+              <span>·</span>
+              <span>Adapter: antigravity (stdio ACP)</span>
+            </div>
+          </div>
+
+          {/* Codex CLI API Key */}
+          <div className="bg-white border border-black/[0.06] p-6 rounded-3xl shadow-xs space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-zinc-900 flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-emerald-600" />
+                  <span>OpenAI / Codex API Key (Optional)</span>
+                </h2>
+                <p className="text-xs text-zinc-500 mt-1 max-w-2xl">
+                  Used by Codex agent sessions (<code className="font-mono text-[10px]">codex-acp</code>) for code synthesis and review.
+                </p>
+              </div>
+
+              <button
+                onClick={handleSaveCodexKey}
+                disabled={savingSecret}
+                className="px-4 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Save Key</span>
+              </button>
+            </div>
+
+            <div className="relative">
+              <input
+                type={showCodexKey ? 'text' : 'password'}
+                value={codexKey}
+                onChange={(e) => setCodexKey(e.target.value)}
+                placeholder="sk-proj-..."
+                className="w-full px-4 py-3 bg-zinc-50 border border-black/[0.08] rounded-2xl font-mono text-xs text-zinc-800 pr-12 focus:outline-none focus:border-zinc-500 focus:bg-white transition"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCodexKey(!showCodexKey)}
+                className="absolute right-3 top-3 p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+              >
+                {showCodexKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
           </div>

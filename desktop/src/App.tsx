@@ -35,7 +35,7 @@ import {
   DEFAULT_CONNECTED_TOOLS,
   DEFAULT_SKILLS,
 } from './services/normalModeData';
-import { Job, Coworker, ConnectedTool, Approval, Routine, Skill, ActivityItem } from './types/normalMode';
+import { Job, Artifact, Coworker, ConnectedTool, Approval, Routine, Skill, ActivityItem } from './types/normalMode';
 import { teamRepo } from './services/appConfig';
 
 export interface PtySession {
@@ -353,16 +353,25 @@ export function App() {
   };
 
   // Normal Mode Job Creators & Action Handlers
-  const handleStartNormalJob = (userPrompt: string, coworkerIdPreference?: string) => {
+  const handleStartNormalJob = (
+    userPrompt: string,
+    coworkerIdPreference?: string,
+    displayTitle?: string,
+    workspacePath?: string,
+    initialArtifact?: Artifact,
+  ) => {
     const assignedCoworker = coworkerIdPreference || 'vela';
+    const targetWorkspace = workspacePath || currentWorkspace;
+    const titleSource = displayTitle || userPrompt;
+    const newJobId = `job_${Date.now()}`;
     const newJob: Job = {
-      id: `job_${Date.now()}`,
-      title: userPrompt.length > 50 ? `${userPrompt.slice(0, 50)}...` : userPrompt,
+      id: newJobId,
+      title: titleSource.length > 50 ? `${titleSource.slice(0, 50)}...` : titleSource,
       userPrompt,
       status: 'working',
       progressPercentage: 35,
       assignedCoworkers: [assignedCoworker, 'kael'],
-      targetWorkspace: currentWorkspace,
+      targetWorkspace,
       connectedToolsUsed: ['web_search', 'local_files', 'sqlite_substrate'],
       stages: [
         { id: 's1', stepNumber: 1, label: 'Understanding Request', status: 'completed' },
@@ -377,9 +386,9 @@ export function App() {
       ],
       technicalLogs: [
         `pty_spawn_claude agent=${assignedCoworker} prompt="${userPrompt}"`,
-        `myaos_log_mission_event event=job.started cwd=${currentWorkspace}`,
+        `myaos_log_mission_event event=job.started cwd=${targetWorkspace}`,
       ],
-      artifacts: [],
+      artifacts: initialArtifact ? [{ ...initialArtifact, jobId: newJobId }] : [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -389,7 +398,7 @@ export function App() {
     setWorkView('my_work');
 
     // Trigger actual background agent execution via PTY CLI
-    handleSpawnClaude(assignedCoworker, currentWorkspace, true, userPrompt);
+    handleSpawnClaude(assignedCoworker, targetWorkspace, true, userPrompt);
   };
 
   const handleApproveAction = (approvalId: string) => {
@@ -541,8 +550,23 @@ export function App() {
               {workView === 'design' && (
                 <DesignStudioNormalView
                   currentWorkspace={currentWorkspace}
-                  onBuildWithMyaOS={(title, html) => {
-                    handleStartNormalJob(`Implement verified React component for design '${title}'`, 'astra');
+                  onBuildWithMyaOS={(title, html, workspacePath) => {
+                    handleStartNormalJob(
+                      `Implement the approved design '${title}' faithfully in the project's existing UI stack. Inspect the real source and assets in this workspace, reuse its CSS, JavaScript, images, and components where appropriate, and match the approved prototype exactly:\n\n\`\`\`html\n${html}\n\`\`\``,
+                      'astra',
+                      `Build design '${title}' with MyaOS`,
+                      workspacePath,
+                      {
+                        id: `design_${Date.now()}`,
+                        jobId: '',
+                        type: 'design_concept',
+                        title: `Approved design — ${title}`,
+                        subtitle: workspacePath,
+                        summary: 'Approved visual design artifact attached to the implementation session.',
+                        content: html,
+                        createdAt: new Date().toISOString(),
+                      }
+                    );
                   }}
                 />
               )}
