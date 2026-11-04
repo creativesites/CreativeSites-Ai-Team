@@ -10,7 +10,6 @@ import {
   Scale,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
   Target,
   Terminal,
   Users,
@@ -19,7 +18,6 @@ import {
 } from 'lucide-react';
 import type { Identity, JobSummary, Room, SearchHit, SearchKind, Session } from '@runtime/types';
 import { Avatar } from '@/components/app/avatar';
-import type { Mode } from '@/components/app/shell';
 import { href, type Route } from '@/lib/route';
 import { useRuntime } from '@/lib/runtime-context';
 import { cn } from '@/lib/utils';
@@ -78,8 +76,6 @@ export function CommandPalette({
   jobs,
   identities,
   sessions = [],
-  mode,
-  onModeChange,
   onClose,
 }: {
   ownerId: string;
@@ -87,8 +83,6 @@ export function CommandPalette({
   jobs: JobSummary[];
   identities: Identity[];
   sessions?: Session[];
-  mode?: Mode;
-  onModeChange?: (m: Mode) => void;
   onClose: () => void;
 }) {
   const { client } = useRuntime();
@@ -175,12 +169,6 @@ export function CommandPalette({
       }
     };
 
-    const toggleMode = () => {
-      if (onModeChange && mode) {
-        onModeChange(mode === 'work' ? 'dev' : 'work');
-      }
-      onClose();
-    };
 
     if (pending?.action === 'wake' && !pending.agent) {
       return agents
@@ -273,14 +261,6 @@ export function CommandPalette({
         icon: <Target />,
         run: go({ name: 'okrs' }),
       },
-      {
-        key: 'action-toggle-mode',
-        group: 'Quick actions',
-        label: mode === 'work' ? 'Switch to Dev Mode' : 'Switch to Work Mode',
-        detail: `Toggle mode (currently ${mode ?? 'work'})`,
-        icon: <SlidersHorizontal />,
-        run: toggleMode,
-      },
     ];
 
     const keywords: Record<string, string> = {
@@ -290,7 +270,6 @@ export function CommandPalette({
       'action-council': 'run council roast room convene deliberate review evaluate',
       'jump-team-org': 'team org organization chart hierarchy governance lanes audit',
       'jump-okrs': 'okr strategic objectives key results target goals metrics reality audit north star',
-      'action-toggle-mode': 'toggle work dev mode developer switch view',
     };
 
     for (const a of actions) {
@@ -352,7 +331,7 @@ export function CommandPalette({
     }
 
     return out;
-  }, [pending, q, qLower, hits, rooms, jobs, agents, sessions, mode, onModeChange, onClose]);
+  }, [pending, q, qLower, hits, rooms, jobs, agents, sessions, onClose]);
 
   const active = items.length ? Math.min(index, items.length - 1) : 0;
   const instructing =

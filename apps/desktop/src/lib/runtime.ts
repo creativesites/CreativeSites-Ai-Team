@@ -1,5 +1,17 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type {
+  Engagement,
+  LatestStandup,
+  ModelRegistryRow,
+  ScheduleRunRow,
+  SkillDetail,
+  SkillList,
+  TimeInterval,
+  TimelineItem,
+  TimeSummary,
+  Timesheet,
+} from '@/lib/wp11-types';
+import type {
   AccountWeeklyUsage,
   AiAccount,
   AiAccountWithSnapshot,
@@ -406,6 +418,37 @@ export class RuntimeClient {
   deleteOkrKeyResult = (id: string) => this.request<unknown>('DELETE', `/v1/okrs/key-results/${encodeURIComponent(id)}`);
   updateOkrProgress = (krId: string, currentValue: number) =>
     this.request<{ keyResult: OkrKeyResult; objective: OkrObjective }>('POST', `/v1/okrs/key-results/${encodeURIComponent(krId)}/progress`, { current_value: currentValue });
+  // WP9 time ledger. Owner-only writes: the client already sends the owner key.
+  timeIntervals = (q: { from?: string; to?: string; identityId?: string; jobId?: string; actorKind?: string } = {}) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);
+    return this.request<TimeInterval[]>('GET', `/v1/time/intervals${p.toString() ? `?${p}` : ''}`);
+  };
+  startTimer = (input: { category: string; jobId?: string; engagementId?: string }) => this.request<TimeInterval>('POST', '/v1/time/timer/start', input);
+  stopTimer = () => this.request<TimeInterval>('POST', '/v1/time/timer/stop', {});
+  addTimeEntry = (input: { startedAt: string; endedAt: string; category: string; engagementId?: string; note?: string }) =>
+    this.request<TimeInterval>('POST', '/v1/time/entries', input);
+  adjustInterval = (id: string, input: { deltaMs: number; note: string }) =>
+    this.request<TimeInterval>('POST', `/v1/time/intervals/${encodeURIComponent(id)}/adjust`, input);
+  timeSummary = (from: string, to: string, engagementId?: string) =>
+    this.request<TimeSummary>('GET', `/v1/time/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${engagementId ? `&engagementId=${encodeURIComponent(engagementId)}` : ''}`);
+  engagements = () => this.request<Engagement[]>('GET', '/v1/engagements');
+  timesheets = (engagementId?: string) => this.request<Timesheet[]>('GET', `/v1/timesheets${engagementId ? `?engagementId=${encodeURIComponent(engagementId)}` : ''}`);
+  draftTimesheet = (engagementId: string, periodStart: string) => this.request<Timesheet>('POST', '/v1/timesheets', { engagementId, periodStart });
+  submitTimesheet = (id: string) => this.request<Timesheet>('POST', `/v1/timesheets/${encodeURIComponent(id)}/submit`, {});
+  approveTimesheet = (id: string) => this.request<Timesheet>('POST', `/v1/timesheets/${encodeURIComponent(id)}/approve`, {});
+  exportTimesheet = (id: string) => this.request<{ csv: string; hash: string; reconciles: boolean }>('GET', `/v1/timesheets/${encodeURIComponent(id)}/export`);
+
+  // WP8 skills, WP6 stand-ups, WP11 timeline and model registry.
+  skills = () => this.request<SkillList>('GET', '/v1/skills');
+  skill = (id: string) => this.request<SkillDetail>('GET', `/v1/skills/${encodeURIComponent(id)}`);
+  reloadSkills = () => this.request<{ root: string | null; found: number; added: number; unchanged: number; skipped: { path: string; reason: string }[] }>('POST', '/v1/skills/reload', {});
+  latestStandup = () => this.request<LatestStandup | null>('GET', '/v1/standups/latest');
+  runStandupNow = () => this.request<{ existing: boolean; run: unknown }>('POST', '/v1/standups/run-now', {});
+  scheduleRuns = (scheduleId?: string, limit = 50) =>
+    this.request<ScheduleRunRow[]>('GET', `/v1/schedules/runs?limit=${limit}${scheduleId ? `&scheduleId=${encodeURIComponent(scheduleId)}` : ''}`);
+  jobTimeline = (jobId: string) => this.request<TimelineItem[]>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/timeline`);
+  modelRegistry = () => this.request<ModelRegistryRow[]>('GET', '/v1/model-registry');
   realityAudit = () => this.request<RealityAuditSummary>('GET', '/v1/okrs/reality-audit');
 
   // ---- subscription AI usage (K6/K9)

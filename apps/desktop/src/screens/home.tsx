@@ -5,6 +5,8 @@ import { isLive } from '@/components/app/shell';
 import { EmptyState, jobLabel, SectionTitle, StageBar, Tag } from '@/components/app/status';
 import { buttonVariants } from '@/components/ui/button';
 import { href } from '@/lib/route';
+import { useRuntimeData } from '@/lib/runtime-context';
+import { HomeCards } from '@/screens/home-cards';
 import { cn } from '@/lib/utils';
 
 export interface StartJobRequest {
@@ -22,6 +24,7 @@ export function HomeScreen({
   sessions,
   projects,
   onStartJob,
+  live = false,
 }: {
   rooms: Room[];
   jobs: JobSummary[];
@@ -30,6 +33,8 @@ export function HomeScreen({
   projects: Project[];
   /** Absent while the runtime is unreachable: the form then can't be sent. */
   onStartJob?: (req: StartJobRequest) => Promise<void>;
+  /** True inside the running app, where the runtime-backed cards can load. Previews leave it off. */
+  live?: boolean;
 }) {
   const needsYou = jobs.filter((j) => j.pendingApprovals > 0);
   const running = jobs.filter((j) => !['done', 'cancelled'].includes(j.stage) && j.pendingApprovals === 0);
@@ -41,6 +46,7 @@ export function HomeScreen({
       <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-1 flex-col gap-7 px-1 py-6">
         <h1 className="text-[28px] font-medium tracking-tight">What do you want done?</h1>
         <BriefBox rooms={rooms} projects={projects} onStartJob={onStartJob} />
+        {live && <HomeCards jobs={jobs} />}
 
         <section aria-label="Needs you" className="flex flex-col gap-2.5">
           <SectionTitle aside={needsYou.length ? undefined : 'nothing waiting'}>
@@ -64,6 +70,7 @@ export function HomeScreen({
               </a>
             </div>
           ))}
+          {live && <OtherNeedsYou />}
         </section>
 
         <section aria-label="Running" className="flex flex-col gap-2.5">
@@ -105,6 +112,30 @@ export function HomeScreen({
 
       <TeamNow identities={identities} sessions={sessions} className="lg:w-80" />
     </div>
+  );
+}
+
+/** Blockers, budget exceptions and reassignments from the aggregate feed; approvals are listed above. */
+function OtherNeedsYou() {
+  const feed = useRuntimeData((c) => c.needsYou(), []);
+  const items = feed.status === 'ready' ? feed.data.filter((i) => i.kind !== 'approval') : [];
+  return (
+    <>
+      {items.map((i) => (
+        <div key={`${i.kind}:${i.id}`} className="bg-card flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3.5">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <Tag tone={i.severity === 'high' ? 'risk' : 'needs-you'}>{i.kind.replace(/_/g, ' ')}</Tag>
+            </div>
+            <span className="text-[15px]">{i.title}</span>
+            <span className="text-[13px] text-muted-foreground">{i.detail}</span>
+          </div>
+          <a href={i.kind === 'budget_exception' ? href({ name: 'ai' }) : i.jobId ? href({ name: 'job', jobId: i.jobId }) : href({ name: 'approvals' })} className={buttonVariants({ variant: 'glass' })}>
+            Review
+          </a>
+        </div>
+      ))}
+    </>
   );
 }
 
