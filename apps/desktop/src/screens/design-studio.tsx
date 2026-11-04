@@ -15,12 +15,14 @@ import {
   Pin,
   Plus,
   RefreshCw,
+  RotateCcw,
   Send,
   Smartphone,
   Sparkles,
   Square,
   Tablet,
   Trash2,
+  X,
 } from 'lucide-react';
 import type {
   DesignBoard,
@@ -168,6 +170,11 @@ export function DesignStudioScreen({
 
   // Agent runs on the active board: every frame is written by a real agent session.
   const [runs, setRuns] = React.useState<DesignRun[]>([]);
+  const [dismissedRunIds, setDismissedRunIds] = React.useState<Set<string>>(() => new Set());
+  const visibleRuns = React.useMemo(
+    () => runs.filter((r) => !dismissedRunIds.has(r.sessionId)),
+    [runs, dismissedRunIds]
+  );
   const designers = React.useMemo(
     () => identities.filter((i) => !i.isOwner && (i.adapterId || i.runtime)),
     [identities]
@@ -179,7 +186,7 @@ export function DesignStudioScreen({
     setDesignerId(pick.id);
   }, [designers, designerId]);
   const nameOf = (id: string) => identities.find((i) => i.id === id)?.name ?? id;
-  const activeRun = runs.find((r) => r.state === 'starting' || r.state === 'running') ?? null;
+  const activeRun = visibleRuns.find((r) => r.state === 'starting' || r.state === 'running') ?? null;
 
   const loadBoards = React.useCallback(
     async (preferBoardId?: string) => {
@@ -360,6 +367,51 @@ export function DesignStudioScreen({
     try {
       const updated = await client.cancelDesignRun(run.boardId, run.sessionId, ownerId);
       setRuns((prev) => prev.map((r) => (r.sessionId === updated.sessionId ? updated : r)));
+    } catch (err) {
+      notify.error((err as Error).message);
+    }
+  };
+
+  const handleDismissRun = async (sessionId: string) => {
+    setDismissedRunIds((prev) => new Set([...prev, sessionId]));
+    setRuns((prev) => prev.filter((r) => r.sessionId !== sessionId));
+    if (client && activeBoard) {
+      try {
+        await client.dismissDesignRun(activeBoard.id, sessionId);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  const handleClearFailedRuns = async () => {
+    const failedIds = runs.filter((r) => r.state === 'failed').map((r) => r.sessionId);
+    setDismissedRunIds((prev) => new Set([...prev, ...failedIds]));
+    setRuns((prev) => prev.filter((r) => r.state !== 'failed'));
+    if (client && activeBoard) {
+      try {
+        await client.clearDesignRuns(activeBoard.id, 'failed');
+        notify.success('Cleared failed design runs');
+      } catch (err) {
+        notify.error((err as Error).message);
+      }
+    }
+  };
+
+  const handleRetryRun = async (r: DesignRun) => {
+    void handleDismissRun(r.sessionId);
+    setPrompt(r.prompt);
+    try {
+      if (r.kind === 'new') {
+        await startRun(r.boardId, { kind: 'new', prompt: r.prompt, device: r.device || 'phone', variants: 1 });
+      } else {
+        await startRun(r.boardId, {
+          kind: 'iterate',
+          action: 'update',
+          prompt: r.prompt,
+          frameIds: r.frameIds || [],
+        });
+      }
     } catch (err) {
       notify.error((err as Error).message);
     }
@@ -1067,12 +1119,24 @@ export function DesignStudioScreen({
       </div>
 
       {/* Agent runs on this board */}
-      {runs.length > 0 && (
-        <div className="glass-panel flex flex-col gap-1.5 rounded-xl px-4 py-2.5 text-xs" aria-label="Design runs">
-          {runs.slice(0, 3).map((r) => {
+      {visibleRuns.length > 0 && (
+        <div className="glass-panel flex flex-col gap-2 rounded-xl px-4 py-2.5 text-xs" aria-label="Design runs">
+          <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-1.5 text-[11px]">
+            <span className="font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Recent Runs</span>
+            {visibleRuns.some((r) => r.state === 'failed') && (
+              <button
+                type="button"
+                onClick={() => void handleClearFailedRuns()}
+                className="font-medium text-red-400 hover:text-red-300 hover:underline cursor-pointer transition-colors"
+              >
+                Clear all failed ({visibleRuns.filter((r) => r.state === 'failed').length})
+              </button>
+            )}
+          </div>
+          {visibleRuns.slice(0, 5).map((r) => {
             const live = r.state === 'starting' || r.state === 'running';
             return (
-              <div key={r.sessionId} className="flex flex-wrap items-center gap-2.5">
+              <div key={r.sessionId} className="flex flex-wrap items-center gap-2.5 py-0.5">
                 <Tag tone={live ? 'observed' : r.state === 'failed' ? 'risk' : 'quiet'}>
                   {live ? 'Designing' : r.state === 'failed' ? 'Failed' : r.state === 'stopped' ? 'Stopped' : 'Done'}
                 </Tag>
@@ -1083,11 +1147,14 @@ export function DesignStudioScreen({
                 <span className="min-w-0 flex-1 truncate text-foreground/80" title={r.prompt}>
                   {r.prompt}
                 </span>
-                <span className="text-muted-foreground">
+                <span className="text-muted-foreground shrink-0">
                   {r.framesTouched} frame{r.framesTouched === 1 ? '' : 's'}
                 </span>
                 {r.error && (
-                  <span className="max-w-[40%] truncate text-red-300" title={r.error}>
+                  <span
+                    className="max-w-[35%] truncate text-red-300 font-mono text-[11px] bg-red-500/10 border border-red-500/25 px-2 py-0.5 rounded-md"
+                    title={r.error}
+                  >
                     {r.error}
                   </span>
                 )}
@@ -1095,6 +1162,28 @@ export function DesignStudioScreen({
                   <Button size="sm" variant="glass" onClick={() => void handleCancelRun(r)}>
                     <Square className="size-3" /> Stop
                   </Button>
+                )}
+                {r.state === 'failed' && (
+                  <Button
+                    size="sm"
+                    variant="glass"
+                    onClick={() => void handleRetryRun(r)}
+                    className="border-red-400/30 text-red-200 hover:bg-red-500/20 text-xs py-1 h-7"
+                    title="Retry this design run"
+                  >
+                    <RotateCcw className="size-3 mr-1" /> Retry
+                  </Button>
+                )}
+                {!live && (
+                  <button
+                    type="button"
+                    onClick={() => void handleDismissRun(r.sessionId)}
+                    className="rounded p-1 text-muted-foreground hover:bg-white/10 hover:text-foreground cursor-pointer transition-colors"
+                    title="Dismiss this run pill"
+                    aria-label="Dismiss run"
+                  >
+                    <X className="size-3.5" />
+                  </button>
                 )}
               </div>
             );

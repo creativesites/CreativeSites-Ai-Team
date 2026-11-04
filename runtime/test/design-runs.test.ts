@@ -124,3 +124,25 @@ test('design sessions may write only inside their board folder and run only read
   assert.equal(designPermission(board, { kind: 'execute' }, { command: 'npm install' }).allow, false);
   assert.equal(designPermission(board, { kind: 'execute' }, { command: 'ls; rm -rf /' }).allow, false);
 });
+
+test('runs can be dismissed individually and cleared in bulk', async () => {
+  const runsBefore = await call('GET', `/v1/design-boards/${boardId}/runs`);
+  assert.ok(runsBefore.json.length >= 1);
+  const targetId = runsBefore.json[0].sessionId;
+
+  // Dismiss single run
+  const dismissed = await call('DELETE', `/v1/design-boards/${boardId}/runs/${targetId}`);
+  assert.equal(dismissed.status, 200);
+  assert.equal(dismissed.json.ok, true);
+
+  const runsAfter = await call('GET', `/v1/design-boards/${boardId}/runs`);
+  assert.ok(!runsAfter.json.some((r: any) => r.sessionId === targetId));
+
+  // Clear remaining runs
+  const cleared = await call('DELETE', `/v1/design-boards/${boardId}/runs?mode=all`);
+  assert.equal(cleared.status, 200);
+  assert.equal(cleared.json.ok, true);
+
+  const runsFinal = await call('GET', `/v1/design-boards/${boardId}/runs`);
+  assert.equal(runsFinal.json.length, 0);
+});

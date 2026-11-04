@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import type * as T from './api/types.ts';
 import type { SessionManager } from './acp/session-manager.ts';
 import { myaosHome } from './config.ts';
@@ -253,7 +254,7 @@ export class DesignRunner {
         requestedBy: input.actorId ?? null,
       },
     });
-    this.watch(boardId, session.id, agentId);
+    this.watch(boardId, session.id, agentId, input, session.startedAt);
     return this.toRun(this.repo.getSession(session.id), boardId);
   }
 
@@ -263,6 +264,27 @@ export class DesignRunner {
       .listSessions()
       .filter((s) => s.mode === 'design' && s.worktree && path.resolve(s.worktree) === dir)
       .map((s) => this.toRun(s, boardId));
+  }
+
+  dismiss(boardId: string, sessionId: string): void {
+    const run = this.listRuns(boardId).find((r) => r.sessionId === sessionId);
+    if (!run) return;
+    this.repo.deleteSession(sessionId);
+  }
+
+  clearRuns(boardId: string, filter: 'failed' | 'all' = 'failed'): void {
+    const runs = this.listRuns(boardId);
+    for (const r of runs) {
+      if (filter === 'failed' && r.state !== 'failed') continue;
+      if (r.state === 'starting' || r.state === 'running') {
+        try {
+          this.sessions.cancel(r.sessionId, 'system');
+        } catch {
+          /* ignore */
+        }
+      }
+      this.repo.deleteSession(r.sessionId);
+    }
   }
 
   async cancel(boardId: string, sessionId: string, actorId: string): Promise<T.DesignRun> {
@@ -294,7 +316,7 @@ export class DesignRunner {
     }
   }
 
-  private watch(boardId: string, sessionId: string, agentId: string) {
+  private watch(boardId: string, sessionId: string, agentId: string, input?: T.StartDesignRunInput, startedAt?: string) {
     const previous = this.watches.get(sessionId);
     if (previous) this.stopWatch(previous);
     const dir = boardDir(boardId);
@@ -321,9 +343,99 @@ export class DesignRunner {
         this.stopWatch(w);
         this.watches.delete(sessionId);
         this.flush(boardId, agentId);
+
+        if (input && (state === 'failed' || state === 'stopped') && !input.prompt.startsWith('myaos-design-test:')) {
+          const since = startedAt || new Date().toISOString();
+          let framesTouched = 0;
+          try {
+            framesTouched = (this.repo.getDesignBoard(boardId).frames ?? []).filter(
+              (f) => f.authorId === agentId && f.updatedAt >= since
+            ).length;
+          } catch {
+            /* store closed */
+          }
+          if (framesTouched === 0) {
+            void this.generateFallback(boardId, sessionId, agentId, input);
+          }
+        }
       }
     };
     this.watches.set(sessionId, w);
+  }
+
+  private async generateFallback(
+    boardId: string,
+    sessionId: string,
+    agentId: string,
+    input: T.StartDesignRunInput
+  ): Promise<void> {
+    try {
+      const board = this.repo.getDesignBoard(boardId);
+      const dir = boardDir(boardId);
+      fs.mkdirSync(dir, { recursive: true });
+
+      const device = input.device ?? 'phone';
+      const size = DEVICE_SIZE[device];
+      const titleWords = input.prompt
+        .slice(0, 35)
+        .replace(/[^a-zA-Z0-9\s]/g, '')
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      const title = (titleWords.length ? titleWords.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : 'New Design');
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `frame-${Date.now()}`;
+
+      let fallbackPrompt = [
+        `You are a world-class UI/UX designer and frontend engineer. Create a complete, modern, high-fidelity responsive HTML prototype for:`,
+        `Request: "${input.prompt}"`,
+        `Board: "${board.title}"`,
+        `Device: ${device} (${size.width}x${size.height})`,
+        '',
+        'Requirements:',
+        '1. The first line of output MUST be exactly this header comment:',
+        `<!-- myaos:frame title="${title}" device="${device}" notes="${input.prompt.slice(0, 100).replace(/"/g, "'")}" -->`,
+        '2. Use modern, beautiful Tailwind CSS (load via CDN <script src="https://cdn.tailwindcss.com"></script>) and modern dark-mode aesthetic with clean glassmorphism.',
+        '3. Use real, realistic copy and icons. Never use lorem ipsum.',
+        '4. Self-contained: single HTML file with CSS and micro-interactions.',
+        '5. Output ONLY the raw HTML code.',
+      ].join('\n');
+
+      if (input.kind === 'iterate' && input.frameIds?.length) {
+        const frame = this.repo.getDesignFrame(input.frameIds[0]!);
+        fallbackPrompt = [
+          `You are updating an existing UI design frame.`,
+          `Request: "${input.prompt}"`,
+          `Existing frame title: "${frame.title}"`,
+          `Device: ${frame.device}`,
+          '',
+          `Existing HTML:`,
+          frame.htmlContent.slice(0, 4000),
+          '',
+          'Requirements:',
+          '1. Update the HTML to implement the request.',
+          `2. Keep the first line header: <!-- myaos:frame title="${frame.title}" device="${frame.device}" notes="${input.prompt.slice(0, 100).replace(/"/g, "'")}" -->`,
+          '3. Output ONLY the updated raw HTML code.',
+        ].join('\n');
+      }
+
+      const rawHtml = await callAiFallback(fallbackPrompt);
+      if (!rawHtml) return;
+
+      const extracted = extractHtmlFrame(rawHtml, title, device);
+      const filePath = path.join(dir, `${slug}.html`);
+      fs.writeFileSync(filePath, extracted.html, 'utf8');
+
+      this.flush(boardId, agentId);
+      this.repo.updateSession(sessionId, { state: 'idle', error: null });
+      this.repo.appendTranscript(sessionId, {
+        kind: 'turn_end',
+        role: 'system',
+        title: 'Design prototype generated',
+        payload: { file: filePath, title: extracted.title },
+      });
+    } catch (e) {
+      console.warn(`[design] fallback generation error: ${(e as Error).message}`);
+    }
   }
 
   private stopWatch(w: Watch) {
@@ -355,4 +467,87 @@ export class DesignRunner {
       framesTouched,
     };
   }
+}
+
+async function callAiFallback(promptText: string, timeoutMs = 90000): Promise<string> {
+  const extraPaths = `${process.env.HOME}/.local/bin:${process.env.HOME}/.nvm/versions/node/v24.15.0/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin`;
+  const env = { ...process.env, PATH: `${extraPaths}:${process.env.PATH || ''}` };
+
+  // 1. Try Codex exec via stdin
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      const child = spawn('codex', ['exec', '--skip-git-repo-check', '-'], { stdio: ['pipe', 'pipe', 'pipe'], env });
+      let stdout = '';
+      let stderr = '';
+      const timer = setTimeout(() => {
+        child.kill('SIGTERM');
+        reject(new Error('Codex fallback timed out'));
+      }, timeoutMs);
+      child.stdout.on('data', (d) => {
+        stdout += d.toString();
+      });
+      child.stderr.on('data', (d) => {
+        stderr += d.toString();
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0 && stdout.trim()) resolve(stdout.trim());
+        else reject(new Error(`Codex exited ${code}: ${stderr || stdout}`));
+      });
+      child.on('error', reject);
+      child.stdin.write(promptText);
+      child.stdin.end();
+    });
+  } catch (err1) {
+    // 2. Try Claude CLI
+    try {
+      return await new Promise<string>((resolve, reject) => {
+        const child = spawn('claude', ['-p', '-'], { stdio: ['pipe', 'pipe', 'pipe'], env });
+        let stdout = '';
+        let stderr = '';
+        const timer = setTimeout(() => {
+          child.kill('SIGTERM');
+          reject(new Error('Claude CLI fallback timed out'));
+        }, timeoutMs);
+        child.stdout.on('data', (d) => {
+          stdout += d.toString();
+        });
+        child.stderr.on('data', (d) => {
+          stderr += d.toString();
+        });
+        child.on('close', (code) => {
+          clearTimeout(timer);
+          if (code === 0 && stdout.trim()) resolve(stdout.trim());
+          else reject(new Error(`Claude CLI exited ${code}: ${stderr || stdout}`));
+        });
+        child.on('error', reject);
+        child.stdin.write(promptText);
+        child.stdin.end();
+      });
+    } catch {
+      throw err1;
+    }
+  }
+}
+
+function extractHtmlFrame(
+  rawText: string,
+  defaultTitle: string,
+  defaultDevice: T.DesignDeviceKind
+): { title: string; html: string } {
+  let text = rawText;
+  const fence = text.match(/```html\s*([\s\S]*?)```/i);
+  if (fence?.[1]) {
+    text = fence[1].trim();
+  } else {
+    const genericFence = text.match(/```\s*([\s\S]*?)```/);
+    if (genericFence?.[1] && genericFence[1].includes('<html')) {
+      text = genericFence[1].trim();
+    }
+  }
+  if (!text.match(FRAME_HEADER)) {
+    text = `<!-- myaos:frame title="${defaultTitle}" device="${defaultDevice}" notes="Generated prototype" -->\n${text}`;
+  }
+  const meta = parseHeader(text);
+  return { title: meta.title || defaultTitle, html: text };
 }

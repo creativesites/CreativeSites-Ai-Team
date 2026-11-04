@@ -1447,7 +1447,20 @@ export function designPermission(
   raw: Record<string, unknown>
 ): { allow: boolean; reason: string } {
   const kind = String(toolCall.kind ?? '');
-  const target = typeof raw.file_path === 'string' ? raw.file_path : typeof raw.path === 'string' ? raw.path : '';
+  const target =
+    typeof raw.file_path === 'string'
+      ? raw.file_path
+      : typeof raw.path === 'string'
+        ? raw.path
+        : typeof raw.filePath === 'string'
+          ? raw.filePath
+          : typeof raw.filename === 'string'
+            ? raw.filename
+            : typeof raw.file === 'string'
+              ? raw.file
+              : typeof raw.destination === 'string'
+                ? raw.destination
+                : '';
   const command = typeof raw.command === 'string' ? raw.command.trim() : '';
   const inside = (p: string) => {
     if (!boardDir || !p) return false;
