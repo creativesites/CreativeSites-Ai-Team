@@ -18,7 +18,7 @@ Self-contained subsystem in `src/knowledge/` (Node ≥ 22, `node:sqlite`, no new
 * **CLI/ops:** `node bin/myaos.js knowledge <health|worker|rebuild-index|weekly-review|search …>`, `npm run test:knowledge`, `npm run ki:weekly-review`.
 
 ## 3. Database changes
-One migration (`ki_core`, v1): 29 tables incl. FTS5 `ki_fts`. No change to `data/myaos.db` or any existing table. Backup-before-upgrade built in.
+One migration (`ki_core`, v1): 24 tables plus FTS5 virtual table `ki_fts`. No change to `data/myaos.db` or any existing table. Backup-before-upgrade built in.
 
 ## 4. Reference
 * **Services:** see `src/knowledge/index.js` (`createKnowledgeSystem({baseDir, dbPath, work, embeddingProvider, notifier, agentDirectory, skillsDir})`).
