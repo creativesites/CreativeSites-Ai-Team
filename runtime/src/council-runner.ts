@@ -200,7 +200,8 @@ function callAi(promptText: string, timeoutMs = 60000): Promise<string> {
 
 async function deriveOptionsFromPromptAsync(
   prompt: string,
-  customOptions?: T.CouncilOption[]
+  customOptions?: T.CouncilOption[],
+  isSimulation = false
 ): Promise<{
   title: string;
   decision: string;
@@ -242,26 +243,28 @@ Generate a JSON object with:
 
 Output valid JSON only without markdown formatting.`;
 
-  try {
-    const raw = await callAi(aiPrompt, 25000);
-    const cleanJson = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    const parsed = JSON.parse(cleanJson);
-    if (parsed.options && Array.isArray(parsed.options) && parsed.options.length >= 2) {
-      return {
-        title: String(parsed.title || 'Strategic Architecture Decision'),
-        decision: String(parsed.decision || clean.split('\n')[0]?.slice(0, 160) || 'Strategic Decision'),
-        brief: String(parsed.brief || clean),
-        options: parsed.options.slice(0, 3).map((o: any, idx: number) => ({
-          id: String(o.id || String.fromCharCode(65 + idx)),
-          label: String(o.label || `Option ${String.fromCharCode(65 + idx)}`),
-        })),
-        assumptions: Array.isArray(parsed.assumptions) && parsed.assumptions.length
-          ? parsed.assumptions.map(String)
-          : ['Outcome-led execution with verifiable gates', 'Technical constraints proven before full spend', 'Explicit system boundaries'],
-      };
+  if (!isSimulation) {
+    try {
+      const raw = await callAi(aiPrompt, 25000);
+      const cleanJson = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      if (parsed.options && Array.isArray(parsed.options) && parsed.options.length >= 2) {
+        return {
+          title: String(parsed.title || 'Strategic Architecture Decision'),
+          decision: String(parsed.decision || clean.split('\n')[0]?.slice(0, 160) || 'Strategic Decision'),
+          brief: String(parsed.brief || clean),
+          options: parsed.options.slice(0, 3).map((o: any, idx: number) => ({
+            id: String(o.id || String.fromCharCode(65 + idx)),
+            label: String(o.label || `Option ${String.fromCharCode(65 + idx)}`),
+          })),
+          assumptions: Array.isArray(parsed.assumptions) && parsed.assumptions.length
+            ? parsed.assumptions.map(String)
+            : ['Outcome-led execution with verifiable gates', 'Technical constraints proven before full spend', 'Explicit system boundaries'],
+        };
+      }
+    } catch {
+      // fallback dynamic parsing if AI unavailable
     }
-  } catch {
-    // fallback dynamic parsing if AI unavailable
   }
 
   const words = clean.replace(/[^\w\s-]/g, '').split(/\s+/).filter(Boolean);
@@ -288,7 +291,8 @@ async function generateRound1CardsAsync(
   decision: string,
   options: T.CouncilOption[],
   seats: CouncilRosterSeat[],
-  weights: Record<string, { weight: number; reason: string }>
+  weights: Record<string, { weight: number; reason: string }>,
+  isSimulation = false
 ): Promise<Record<string, { text: string; parsed: any; quotes: any[] }>> {
   const optSummary = options.map((o) => `${o.id}: ${o.label}`).join('\n');
   const seatsSummary = seats
@@ -333,26 +337,28 @@ Separate each seat card with "---CARD_BREAK---". Output text only.`;
 
   const cards: Record<string, { text: string; parsed: any; quotes: any[] }> = {};
 
-  try {
-    const raw = await callAi(aiPrompt, 45000);
-    const blocks = raw.split('---CARD_BREAK---').map((b) => b.trim()).filter(Boolean);
+  if (!isSimulation) {
+    try {
+      const raw = await callAi(aiPrompt, 45000);
+      const blocks = raw.split('---CARD_BREAK---').map((b) => b.trim()).filter(Boolean);
 
-    for (let i = 0; i < seats.length; i++) {
-      const seat = seats[i]!;
-      const match = blocks.find((b) => {
-        const top = b.slice(0, 100).toLowerCase();
-        return top.includes(seat.short.toLowerCase()) || top.includes(seat.key.toLowerCase());
-      }) || blocks[i];
+      for (let i = 0; i < seats.length; i++) {
+        const seat = seats[i]!;
+        const match = blocks.find((b) => {
+          const top = b.slice(0, 100).toLowerCase();
+          return top.includes(seat.short.toLowerCase()) || top.includes(seat.key.toLowerCase());
+        }) || blocks[i];
 
-      if (match && match.includes('SEAT:') && match.includes('OPTION SCORES:')) {
-        const text = match;
-        const parsed = parseCard(text, options.map((o) => o.id));
-        const quotes = checkQuotes(seat.key, text);
-        cards[seat.key] = { text, parsed, quotes };
+        if (match && match.includes('SEAT:') && match.includes('OPTION SCORES:')) {
+          const text = match;
+          const parsed = parseCard(text, options.map((o) => o.id));
+          const quotes = checkQuotes(seat.key, text);
+          cards[seat.key] = { text, parsed, quotes };
+        }
       }
+    } catch {
+      // fallback if AI call fails
     }
-  } catch {
-    // fallback if AI call fails
   }
 
   // Ensure every seat has a valid card
@@ -401,7 +407,8 @@ async function generateCruxesAndDebateAsync(
   decision: string,
   options: T.CouncilOption[],
   r1Cards: Record<string, { text: string; parsed: any }>,
-  seats: CouncilRosterSeat[]
+  seats: CouncilRosterSeat[],
+  isSimulation = false
 ): Promise<{
   cruxes: T.CouncilCrux[];
   note: string;
@@ -470,26 +477,28 @@ Separate each seat card with "---CARD_BREAK---". Output text only.`;
 
   const r2Cards: Record<string, { text: string; parsed: any; quotes: any[] }> = {};
 
-  try {
-    const raw = await callAi(aiPrompt, 45000);
-    const blocks = raw.split('---CARD_BREAK---').map((b) => b.trim()).filter(Boolean);
+  if (!isSimulation) {
+    try {
+      const raw = await callAi(aiPrompt, 45000);
+      const blocks = raw.split('---CARD_BREAK---').map((b) => b.trim()).filter(Boolean);
 
-    for (let i = 0; i < seats.length; i++) {
-      const seat = seats[i]!;
-      const match = blocks.find((b) => {
-        const top = b.slice(0, 100).toLowerCase();
-        return top.includes(seat.short.toLowerCase()) || top.includes(seat.key.toLowerCase());
-      }) || blocks[i];
+      for (let i = 0; i < seats.length; i++) {
+        const seat = seats[i]!;
+        const match = blocks.find((b) => {
+          const top = b.slice(0, 100).toLowerCase();
+          return top.includes(seat.short.toLowerCase()) || top.includes(seat.key.toLowerCase());
+        }) || blocks[i];
 
-      if (match && match.includes('SEAT:') && match.includes('I DISAGREE MOST WITH:')) {
-        const text = match;
-        const parsed = parseCard(text, options.map((o) => o.id));
-        const quotes = checkQuotes(seat.key, text);
-        r2Cards[seat.key] = { text, parsed, quotes };
+        if (match && match.includes('SEAT:') && match.includes('I DISAGREE MOST WITH:')) {
+          const text = match;
+          const parsed = parseCard(text, options.map((o) => o.id));
+          const quotes = checkQuotes(seat.key, text);
+          r2Cards[seat.key] = { text, parsed, quotes };
+        }
       }
+    } catch {
+      // fallback
     }
-  } catch {
-    // fallback
   }
 
   for (let i = 0; i < seats.length; i++) {
@@ -531,7 +540,8 @@ async function generateRound3CardsAsync(
   decision: string,
   options: T.CouncilOption[],
   topOption: string,
-  seats: CouncilRosterSeat[]
+  seats: CouncilRosterSeat[],
+  isSimulation = false
 ): Promise<Record<string, { text: string; parsed: any; quotes: any[] }>> {
   const topOptObj = options.find((o) => o.id === topOption) ?? options[0]!;
 
@@ -555,26 +565,28 @@ Separate each seat card with "---CARD_BREAK---". Output text only.`;
 
   const cards: Record<string, { text: string; parsed: any; quotes: any[] }> = {};
 
-  try {
-    const raw = await callAi(aiPrompt, 35000);
-    const blocks = raw.split('---CARD_BREAK---').map((b) => b.trim()).filter(Boolean);
+  if (!isSimulation) {
+    try {
+      const raw = await callAi(aiPrompt, 35000);
+      const blocks = raw.split('---CARD_BREAK---').map((b) => b.trim()).filter(Boolean);
 
-    for (let i = 0; i < seats.length; i++) {
-      const seat = seats[i]!;
-      const match = blocks.find((b) => {
-        const top = b.slice(0, 100).toLowerCase();
-        return top.includes(seat.short.toLowerCase()) || top.includes(seat.key.toLowerCase());
-      }) || blocks[i];
+      for (let i = 0; i < seats.length; i++) {
+        const seat = seats[i]!;
+        const match = blocks.find((b) => {
+          const top = b.slice(0, 100).toLowerCase();
+          return top.includes(seat.short.toLowerCase()) || top.includes(seat.key.toLowerCase());
+        }) || blocks[i];
 
-      if (match && match.includes('SEAT:') && match.includes('VOTE:')) {
-        const text = match;
-        const parsed = parseCard(text, options.map((o) => o.id));
-        const quotes = checkQuotes(seat.key, text);
-        cards[seat.key] = { text, parsed, quotes };
+        if (match && match.includes('SEAT:') && match.includes('VOTE:')) {
+          const text = match;
+          const parsed = parseCard(text, options.map((o) => o.id));
+          const quotes = checkQuotes(seat.key, text);
+          cards[seat.key] = { text, parsed, quotes };
+        }
       }
+    } catch {
+      // fallback
     }
-  } catch {
-    // fallback
   }
 
   for (let i = 0; i < seats.length; i++) {
@@ -611,7 +623,8 @@ async function generateVerdictTasksAsync(
   decision: string,
   topOption: string,
   topLabel: string,
-  existingIdentities: Set<string>
+  existingIdentities: Set<string>,
+  isSimulation = false
 ): Promise<T.CreateTaskInput[]> {
   const aiPrompt = `You are the lead architect of the MyaOS Planning Council.
 The council has voted to adopt: Option ${topOption}: "${topLabel}"
@@ -636,21 +649,23 @@ Output a JSON array of objects with:
 ]
 Output JSON only.`;
 
-  try {
-    const raw = await callAi(aiPrompt, 25000);
-    const cleanJson = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    const parsed = JSON.parse(cleanJson);
-    if (Array.isArray(parsed) && parsed.length >= 2) {
-      return parsed.slice(0, 4).map((t: any) => ({
-        title: String(t.title || `Execute ${topOption}`),
-        assigneeId: t.assigneeId && existingIdentities.has(t.assigneeId) ? t.assigneeId : null,
-        checkCommand: String(t.checkCommand || 'npm test'),
-        gate: String(t.gate || 'Verification check succeeds cleanly with zero errors'),
-        mode: t.mode === 'verify' ? 'verify' : 'build',
-      }));
+  if (!isSimulation) {
+    try {
+      const raw = await callAi(aiPrompt, 25000);
+      const cleanJson = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      if (Array.isArray(parsed) && parsed.length >= 2) {
+        return parsed.slice(0, 4).map((t: any) => ({
+          title: String(t.title || `Execute ${topOption}`),
+          assigneeId: t.assigneeId && existingIdentities.has(t.assigneeId) ? t.assigneeId : null,
+          checkCommand: String(t.checkCommand || 'npm test'),
+          gate: String(t.gate || 'Verification check succeeds cleanly with zero errors'),
+          mode: t.mode === 'verify' ? 'verify' : 'build',
+        }));
+      }
+    } catch {
+      // fallback
     }
-  } catch {
-    // fallback
   }
 
   return [
@@ -776,7 +791,7 @@ export function startLiveCouncilRunner(
       emit('phase', { phase: 'setup', label: 'The Chair is analyzing your decision' }, cid);
 
       // STEP 1: Derive tailored options and assumptions via AI
-      const setupInfo = await deriveOptionsFromPromptAsync(prompt, input.options);
+      const setupInfo = await deriveOptionsFromPromptAsync(prompt, input.options, isSimulation);
 
       const weights = Object.fromEntries(
         councilSeats.map((s) => [s.seat, { weight: s.weight, reason: s.reason || s.question }])
@@ -829,7 +844,7 @@ export function startLiveCouncilRunner(
       emit('round_start', { round: 1 }, cid);
       for (const k of seatKeys) emit('seat_start', { round: 1, seat: k }, cid);
 
-      const r1Cards = await generateRound1CardsAsync(prompt, setupInfo.decision, setupInfo.options, rosterSeats, weights);
+      const r1Cards = await generateRound1CardsAsync(prompt, setupInfo.decision, setupInfo.options, rosterSeats, weights, isSimulation);
 
       for (let i = 0; i < rosterSeats.length; i++) {
         await sleep(120);
@@ -873,7 +888,8 @@ export function startLiveCouncilRunner(
         setupInfo.decision,
         setupInfo.options,
         r1Cards,
-        rosterSeats
+        rosterSeats,
+        isSimulation
       );
 
       repo.updateCouncilState(cid, { cruxes });
@@ -962,7 +978,7 @@ export function startLiveCouncilRunner(
         emit('round_start', { round: 3 }, cid);
         for (const k of seatKeys) emit('seat_start', { round: 3, seat: k }, cid);
 
-        const r3Cards = await generateRound3CardsAsync(prompt, setupInfo.decision, setupInfo.options, topOpt, rosterSeats);
+        const r3Cards = await generateRound3CardsAsync(prompt, setupInfo.decision, setupInfo.options, topOpt, rosterSeats, isSimulation);
 
         for (let i = 0; i < rosterSeats.length; i++) {
           await sleep(100);
@@ -1010,7 +1026,8 @@ export function startLiveCouncilRunner(
         setupInfo.decision,
         recommended,
         recommendedOptionLabel,
-        existingIdentities
+        existingIdentities,
+        isSimulation
       );
 
       const richVerdict: Partial<T.CouncilResult> = {
