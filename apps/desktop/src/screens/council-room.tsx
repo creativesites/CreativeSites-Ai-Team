@@ -152,6 +152,8 @@ export function CouncilRoomScreen({
   const [boardGroup, setBoardGroup] = React.useState<'myaos' | 'operators'>('myaos');
   const [phaseLabel, setPhaseLabel] = React.useState<string>('Choose a question to begin');
   const [busy, setBusy] = React.useState<boolean>(false);
+  // 'simulation' = the scripted runner (template cards, no agent woken); never presented as deliberation.
+  const [runMode, setRunMode] = React.useState<string | null>(null);
 
   const [sessionId, setSessionId] = React.useState<string | null>(null);
   const [councilId, setCouncilId] = React.useState<string | null>(null);
@@ -221,6 +223,7 @@ export function CouncilRoomScreen({
     }
     player.resetPlayer();
     setBusy(false);
+    setRunMode(null);
     setSessionId(null);
     setCouncilId(null);
     setActiveSeats(null);
@@ -265,6 +268,7 @@ export function CouncilRoomScreen({
             options: sOpts,
             seats: sSeats,
           });
+          setRunMode(typeof ev.runMode === 'string' ? ev.runMode : null);
           setActiveSeats(sSeats);
           setOptions(sOpts);
           setWeights(sWeights);
@@ -516,7 +520,19 @@ export function CouncilRoomScreen({
           </span>
         </div>
 
-        <div className="phase">{phaseLabel}</div>
+        <div className="phase">
+          {runMode === 'simulation' ? (
+            <span
+              className="sub"
+              role="status"
+              title="Scripted cards with template scores. No agent was woken; this is not a council decision."
+              style={{ marginRight: 8, padding: '2px 8px', borderRadius: 4, border: '1px solid currentColor', fontWeight: 700, letterSpacing: '0.08em' }}
+            >
+              SIMULATION
+            </span>
+          ) : null}
+          {phaseLabel}
+        </div>
 
         <div className="top-actions">
           <button type="button" className="ghost" onClick={() => setHowOpen(true)}>
@@ -587,7 +603,7 @@ export function CouncilRoomScreen({
           ownerId={ownerId}
           onClose={() => setVerdictOpen(false)}
           onOpenSeatCard={(seatKey, round) => setSeatModal({ seatKey, round })}
-          onAcceptPlan={councilId && jobId ? handleAcceptPlan : undefined}
+          onAcceptPlan={councilId && jobId && runMode !== 'simulation' ? handleAcceptPlan : undefined}
           accepting={accepting}
           acceptedNotice={acceptedNotice}
         />
