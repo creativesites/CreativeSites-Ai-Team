@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Briefcase, ChevronDown, ChevronRight, FolderGit2, Hash, Home, Inbox, Kanban, MessageSquare, Palette, RefreshCw, Search, Settings, ShieldCheck, Target, Terminal, Users, Workflow } from 'lucide-react';
+import { Activity, BookOpen, Briefcase, CalendarCheck, ChevronDown, ChevronRight, ClipboardCheck, Clock, FolderGit2, Gauge, Hash, Inbox, Kanban, LayoutDashboard, MessageSquare, Palette, RefreshCw, Scale, Search, Settings, Target, Terminal, Users, Workflow } from 'lucide-react';
 import type { Identity, JobSummary, Room, Session } from '@runtime/types';
 import { Avatar, OwnerAvatar } from '@/components/app/avatar';
 import { CommandPalette } from '@/components/app/command-palette';
@@ -11,32 +11,13 @@ import { cn } from '@/lib/utils';
 
 export type Mode = 'work' | 'dev';
 
-export function useMode(): [Mode, (m: Mode) => void] {
-  const [mode, setMode] = React.useState<Mode>(() => {
-    try {
-      return localStorage.getItem('myaos.mode') === 'dev' ? 'dev' : 'work';
-    } catch {
-      return 'work';
-    }
-  });
-  const set = (m: Mode) => {
-    setMode(m);
-    try {
-      localStorage.setItem('myaos.mode', m);
-    } catch {
-      /* the mode just won't be remembered */
-    }
-  };
-  return [mode, set];
-}
-
 function NavLink({ to, active, icon, children, trailing }: { to: Route; active?: boolean; icon: React.ReactNode; children: React.ReactNode; trailing?: React.ReactNode }) {
   return (
     <a
       href={href(to)}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex min-h-9 items-center justify-between gap-2.5 rounded-lg px-2.5 text-sm text-foreground/80 transition-colors hover:bg-foreground/[0.06] hover:text-foreground',
+        'flex min-h-8 items-center justify-between gap-2.5 rounded-lg px-2.5 text-sm text-foreground/80 transition-colors hover:bg-foreground/[0.06] hover:text-foreground',
         active && 'glass-chosen text-foreground'
       )}
     >
@@ -56,8 +37,6 @@ export function isLive(s: Session) {
 
 export function Sidebar({
   route,
-  mode,
-  onModeChange,
   ownerName,
   ownerId = 'winston',
   rooms,
@@ -66,8 +45,6 @@ export function Sidebar({
   sessions,
 }: {
   route: Route;
-  mode: Mode;
-  onModeChange: (m: Mode) => void;
   ownerName: string;
   ownerId?: string;
   rooms: Room[];
@@ -120,6 +97,7 @@ export function Sidebar({
   const activeJobs = jobs.filter((j) => !['done', 'cancelled'].includes(j.stage)).length;
   const liveAgents = new Set(sessions.filter(isLive).map((s) => s.agentId));
   const liveSessions = sessions.filter(isLive);
+  const verifyQueue = jobs.filter((j) => j.stage === 'verify' || j.stage === 'approve').length;
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -134,24 +112,9 @@ export function Sidebar({
 
   return (
     <nav aria-label="Workspace" className="flex h-full max-h-full w-full flex-col gap-4 overflow-y-auto px-1.5 py-2.5 md:w-64 md:shrink-0">
-      <div className="flex items-center justify-between px-1.5">
-        <div className="flex items-center gap-2.5">
-          <span className="inline-flex size-7 items-center justify-center rounded-lg bg-foreground text-sm font-semibold text-background">M</span>
-          <span className="text-[15px] font-semibold">MyaOS</span>
-        </div>
-        <div role="group" aria-label="Mode" className="glass-panel inline-flex rounded-lg p-0.5">
-          {(['work', 'dev'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={mode === m}
-              onClick={() => onModeChange(m)}
-              className={cn('rounded-md px-2.5 py-1 text-xs capitalize text-muted-foreground', mode === m && 'glass-chosen text-foreground')}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
+      <div className="flex items-center gap-2.5 px-1.5">
+        <span className="inline-flex size-7 items-center justify-center rounded-lg bg-foreground text-sm font-semibold text-background">M</span>
+        <span className="text-[15px] font-semibold">MyaOS</span>
       </div>
 
       <button
@@ -167,63 +130,63 @@ export function Sidebar({
         <span className="font-mono text-xs">⌘K</span>
       </button>
 
-      <div className="flex flex-col gap-0.5">
-        <NavLink to={{ name: 'home' }} active={route.name === 'home'} icon={<Home />}>
-          Home
+      <div className="flex flex-col gap-0.5" role="group" aria-label="Core navigation">
+        <NavLink to={{ name: 'home' }} active={route.name === 'home'} icon={<LayoutDashboard />}>
+          Executive Home
         </NavLink>
-        {mode === 'work' ? (
-          <>
-            <NavLink to={{ name: 'approvals' }} active={route.name === 'approvals'} icon={<Inbox />} trailing={needsYou > 0 ? <Tag tone="needs-you">{needsYou}</Tag> : undefined}>
-              Needs you
-            </NavLink>
-            <NavLink to={{ name: 'jobs' }} active={route.name === 'jobs' || route.name === 'job'} icon={<Briefcase />} trailing={activeJobs > 0 ? <span className="text-xs text-muted-foreground">{activeJobs}</span> : undefined}>
-              Jobs
-            </NavLink>
-          </>
-        ) : (
-          <>
-            <NavLink to={{ name: 'dev' }} active={route.name === 'dev'} icon={<Terminal />} trailing={liveSessions.length > 0 ? <Tag tone="observed">{liveSessions.length} live</Tag> : undefined}>
-              Sessions
-            </NavLink>
-            <NavLink to={{ name: 'dev' }} icon={<ShieldCheck />}>
-              Evidence
-            </NavLink>
-          </>
-        )}
-        <NavLink to={{ name: 'team' }} active={route.name === 'team'} icon={<Workflow />} trailing={<Tag tone="quiet">Org</Tag>}>
-          Team &amp; Org
-        </NavLink>
-        <NavLink to={{ name: 'okrs' }} active={route.name === 'okrs'} icon={<Target />} trailing={<Tag tone="quiet">Goals</Tag>}>
-          Strategic OKRs
-        </NavLink>
-        <NavLink to={{ name: 'communication' }} active={route.name === 'communication'} icon={<MessageSquare />}>
-          Communication Hub
+        <NavLink to={{ name: 'jobs' }} active={route.name === 'jobs' || route.name === 'job'} icon={<Briefcase />} trailing={activeJobs > 0 ? <span className="text-xs text-muted-foreground">{activeJobs}</span> : undefined}>
+          Workflows
         </NavLink>
         <NavLink to={{ name: 'coworkers' }} active={route.name === 'coworkers'} icon={<Users />} trailing={rateLimitedCount > 0 ? <Tag tone="risk">{rateLimitedCount} paused</Tag> : undefined}>
           Coworkers
         </NavLink>
-        {jobs[0] && (
-          <NavLink
-            to={{ name: 'council', jobId: route.name === 'job' || route.name === 'council' ? route.jobId : jobs[0].id }}
-            active={route.name === 'council'}
-            icon={<ShieldCheck />}
-          >
-            Council Room
-          </NavLink>
-        )}
-        <NavLink
-          to={{ name: 'design-studio' }}
-          active={route.name === 'design-studio'}
-          icon={<Palette />}
-          trailing={<Tag tone="quiet">Canvas</Tag>}
-        >
+        <NavLink to={{ name: 'planning' }} active={route.name === 'planning' || route.name === 'council' || route.name === 'verdict'} icon={<Scale />}>
+          Planning Council
+        </NavLink>
+        <NavLink to={{ name: 'projects' }} active={route.name === 'projects'} icon={<Kanban />}>
+          Projects
+        </NavLink>
+        <NavLink to={{ name: 'communication' }} active={route.name === 'communication'} icon={<MessageSquare />}>
+          Communications
+        </NavLink>
+        <NavLink to={{ name: 'standups' }} active={route.name === 'standups'} icon={<CalendarCheck />}>
+          Stand-ups
+        </NavLink>
+        <NavLink to={{ name: 'design-studio' }} active={route.name === 'design-studio'} icon={<Palette />}>
           Design Studio
+        </NavLink>
+        <NavLink to={{ name: 'okrs' }} active={route.name === 'okrs'} icon={<Target />}>
+          Strategy &amp; OKRs
+        </NavLink>
+        <NavLink to={{ name: 'skills' }} active={route.name === 'skills'} icon={<BookOpen />}>
+          Skills &amp; Knowledge
+        </NavLink>
+        <NavLink to={{ name: 'time' }} active={route.name === 'time'} icon={<Clock />}>
+          Time &amp; Productivity
+        </NavLink>
+        <NavLink to={{ name: 'ai' }} active={route.name === 'ai'} icon={<Gauge />}>
+          AI Resources &amp; Usage
+        </NavLink>
+        <NavLink to={{ name: 'qa' }} active={route.name === 'qa'} icon={<ClipboardCheck />} trailing={verifyQueue > 0 ? <span className="text-xs text-muted-foreground">{verifyQueue}</span> : undefined}>
+          QA &amp; Verification
+        </NavLink>
+        <NavLink to={{ name: 'dev' }} active={route.name === 'dev'} icon={<Terminal />} trailing={liveSessions.length > 0 ? <Tag tone="observed">{liveSessions.length} live</Tag> : undefined}>
+          Engineering Cockpit
+        </NavLink>
+        <NavLink to={{ name: 'health' }} active={route.name === 'health'} icon={<Activity />}>
+          Runtime &amp; Health
+        </NavLink>
+      </div>
+
+      <div className="flex flex-col gap-0.5 border-t border-border/50 pt-2" role="group" aria-label="More">
+        <NavLink to={{ name: 'approvals' }} active={route.name === 'approvals'} icon={<Inbox />} trailing={needsYou > 0 ? <Tag tone="needs-you">{needsYou}</Tag> : undefined}>
+          Needs you
+        </NavLink>
+        <NavLink to={{ name: 'team' }} active={route.name === 'team'} icon={<Workflow />}>
+          Team &amp; Org
         </NavLink>
         <NavLink to={{ name: 'workspaces' }} active={route.name === 'workspaces'} icon={<FolderGit2 />}>
           Workspaces
-        </NavLink>
-        <NavLink to={{ name: 'projects' }} active={route.name === 'projects'} icon={<Kanban />}>
-          Project Management
         </NavLink>
         <NavLink to={{ name: 'settings' }} active={route.name === 'settings'} icon={<Settings />}>
           Settings
@@ -306,8 +269,6 @@ export function Sidebar({
           jobs={jobs}
           identities={identities}
           sessions={sessions}
-          mode={mode}
-          onModeChange={onModeChange}
           onClose={() => setOpenPalette(false)}
         />
       )}

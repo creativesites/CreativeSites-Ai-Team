@@ -22,7 +22,6 @@ import type {
   Budget,
   CreateBudgetInput,
   CreatePolicyInput,
-  Health,
   Identity,
   Project,
   Risk,
@@ -33,9 +32,8 @@ import { Avatar, OwnerAvatar } from '@/components/app/avatar';
 import { EmptyState, SectionTitle, Tag } from '@/components/app/status';
 import { buttonVariants } from '@/components/ui/button';
 import { useRuntime, useRuntimeData, type Loadable } from '@/lib/runtime-context';
-import type { ConnectionState } from '@/lib/runtime';
+import { href } from '@/lib/route';
 import { cn } from '@/lib/utils';
-import { AiUsageSection } from '@/screens/ai-usage';
 
 export interface SettingsScreenProps {
   settings?: Settings;
@@ -212,9 +210,6 @@ export function SettingsScreen(props: SettingsScreenProps) {
         revision={revision}
       />
 
-      {/* 4b. AI Usage (subscription plans) */}
-      <AiUsageSection isOffline={isOffline} />
-
       {/* 5. Team Bridge */}
       <TeamBridgeSection
         settings={settings}
@@ -223,8 +218,14 @@ export function SettingsScreen(props: SettingsScreenProps) {
         onUpdateSettings={handleUpdateSettings}
       />
 
-      {/* 6. Runtime Health */}
-      <RuntimeHealthSection connectionState={connectionState} />
+      {/* 6. Runtime Health moved to its own screen (WP11) */}
+      <section aria-label="Moved screens" className="bg-card flex flex-col gap-2 rounded-xl p-5 text-sm">
+        <SectionTitle>Moved</SectionTitle>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Runtime health and adapter readiness now live in <a className="underline" href={href({ name: 'health' })}>Runtime &amp; Health</a>. AI usage lives in{' '}
+          <a className="underline" href={href({ name: 'ai' })}>AI Resources &amp; Usage</a>.
+        </p>
+      </section>
     </div>
   );
 }
@@ -1481,102 +1482,6 @@ function TeamBridgeSection({
           </div>
         )}
       </div>
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------- 6. Runtime Health Section
-
-function RuntimeHealthSection({ connectionState }: { connectionState: ConnectionState }) {
-  const isConnected = connectionState.status === 'connected';
-  const health: Health | undefined = isConnected ? connectionState.health : undefined;
-
-  return (
-    <section aria-label="Runtime health" className="bg-card flex flex-col gap-4 rounded-xl p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <SectionTitle aside="Local API daemon status">Runtime Health</SectionTitle>
-        <Tag tone={isConnected ? 'verified' : connectionState.status === 'connecting' ? 'needs-you' : 'risk'}>
-          {isConnected ? 'Online' : connectionState.status === 'connecting' ? 'Connecting' : 'Offline'}
-        </Tag>
-      </div>
-
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        The desktop connects exclusively to the local MyaOS runtime process over HTTP and SSE. The runtime owns the
-        SQLite store, ACP sessions, git operations, and independent verification.
-      </p>
-
-      {isConnected && health ? (
-        <div className="glass-panel grid grid-cols-1 gap-3 rounded-lg p-3 text-xs sm:grid-cols-2 md:grid-cols-3">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-muted-foreground">Local Endpoint</span>
-            <span className="font-mono text-foreground break-all">{connectionState.connection.url}</span>
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-muted-foreground">Owner key</span>
-            <span className="font-medium" title={connectionState.ownerKey?.detail ?? ''}>
-              <Tag tone={connectionState.ownerKey?.state === 'ok' ? 'verified' : connectionState.ownerKey?.state === 'mismatch' ? 'risk' : 'needs-you'}>
-                {connectionState.ownerKey?.state === 'ok'
-                  ? `Enrolled ${connectionState.ownerKey.fingerprint ?? ''}`
-                  : connectionState.ownerKey?.state === 'mismatch'
-                    ? 'Mismatch: owner actions refused'
-                    : 'Not available'}
-              </Tag>
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-muted-foreground">Process PID</span>
-            <span className="font-mono text-foreground">{health.pid}</span>
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-muted-foreground">Schema Version</span>
-            <span className="font-mono text-foreground">v{health.schemaVersion} ({health.version})</span>
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-muted-foreground">Store Health</span>
-            <span className="font-medium">
-              <Tag tone={health.checks?.store ? 'verified' : 'risk'}>
-                {health.checks?.store ? 'Healthy (WAL mode)' : 'Store Error'}
-              </Tag>
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-muted-foreground">Host Git</span>
-            <span className="font-medium">
-              <Tag tone={health.checks?.git ? 'verified' : 'risk'}>
-                {health.checks?.git ? 'Available' : 'Missing'}
-              </Tag>
-            </span>
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-muted-foreground">Node Runtime</span>
-            <span className="font-mono text-muted-foreground">{health.checks?.node ?? 'unknown'}</span>
-          </div>
-
-          <div className="flex flex-col gap-0.5 sm:col-span-2 md:col-span-3">
-            <span className="text-[11px] text-muted-foreground">Allowed Workspace Roots</span>
-            <span className="text-muted-foreground">
-              {health.checks?.workspaceRoots ?? 0} directory root(s) configured under <span className="font-mono">~/.myaos/runtime.json</span>
-            </span>
-          </div>
-        </div>
-      ) : (
-        <div className="glass-panel flex items-center gap-2.5 rounded-lg p-3 text-xs text-risk">
-          <AlertCircle className="size-4 shrink-0" />
-          <span>
-            {connectionState.status === 'connecting'
-              ? 'Attempting to discover and connect to local MyaOS runtime…'
-              : connectionState.status === 'unavailable'
-                ? `Runtime unreachable: ${connectionState.reason}`
-                : 'Runtime is not connected.'}
-          </span>
-        </div>
-      )}
     </section>
   );
 }

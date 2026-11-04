@@ -21,6 +21,13 @@ export type Route =
   | { name: 'workspaces' }
   | { name: 'okrs'; quarter?: string }
   | { name: 'settings' }
+  | { name: 'planning' }
+  | { name: 'standups' }
+  | { name: 'skills'; skillId?: string }
+  | { name: 'time' }
+  | { name: 'ai' }
+  | { name: 'qa' }
+  | { name: 'health' }
   | { name: 'preview'; screen: string };
 
 export function parseRoute(hash: string): Route {
@@ -33,7 +40,7 @@ export function parseRoute(hash: string): Route {
       if (parts[1] && parts[2] === 'council') return { name: 'council', jobId: parts[1] };
       if (parts[1] && parts[2] === 'verdict') return { name: 'verdict', jobId: parts[1] };
       if (parts[1]) return { name: 'job', jobId: parts[1] };
-      break;
+      return { name: 'jobs' };
     case 'design-studio':
       return { name: 'design-studio', boardId: parts[1] };
     case 'dev':
@@ -47,8 +54,22 @@ export function parseRoute(hash: string): Route {
       return { name: 'communication', tab: parts[1] as CommunicationSubpage | undefined };
     case 'approvals':
       return { name: 'approvals' };
-    case 'jobs':
+    case 'workflows':
       return { name: 'jobs' };
+    case 'planning':
+      return { name: 'planning' };
+    case 'standups':
+      return { name: 'standups' };
+    case 'skills':
+      return { name: 'skills', skillId: parts[1] };
+    case 'time':
+      return { name: 'time' };
+    case 'ai':
+      return { name: 'ai' };
+    case 'qa':
+      return { name: 'qa' };
+    case 'health':
+      return { name: 'health' };
     case 'projects':
     case 'project':
     case 'board':
@@ -96,6 +117,20 @@ export function href(route: Route): string {
       return '#/approvals';
     case 'jobs':
       return '#/jobs';
+    case 'planning':
+      return '#/planning';
+    case 'standups':
+      return '#/standups';
+    case 'skills':
+      return route.skillId ? `#/skills/${e(route.skillId)}` : '#/skills';
+    case 'time':
+      return '#/time';
+    case 'ai':
+      return '#/ai';
+    case 'qa':
+      return '#/qa';
+    case 'health':
+      return '#/health';
     case 'projects':
       if (route.subpage) return `#/projects/${e(route.subpage)}`;
       if (route.projectId) return `#/projects/${e(route.projectId)}`;

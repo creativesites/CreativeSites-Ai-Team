@@ -146,6 +146,11 @@ export function ApprovalsScreen() {
                     Open job
                   </a>
                 )}
+                {item.kind === 'budget_exception' && (
+                  <a href={href({ name: 'ai' })} className={buttonVariants({ variant: 'glass', size: 'sm' })}>
+                    Open AI usage
+                  </a>
+                )}
                 {item.kind === 'blocker' && (
                   <button type="button" onClick={() => resolve(item.id)} disabled={busy !== null} className={buttonVariants({ variant: 'default', size: 'sm' })}>
                     {busy === item.id ? 'Resolving…' : 'Resolve'}

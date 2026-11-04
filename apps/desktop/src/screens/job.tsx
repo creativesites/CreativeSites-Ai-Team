@@ -19,6 +19,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { href } from '@/lib/route';
 import type { RuntimeClient } from '@/lib/runtime';
 import { useRuntime, useRuntimeData } from '@/lib/runtime-context';
+import { LoadNote } from '@/components/app/metric';
 import { cn } from '@/lib/utils';
 
 const time = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -503,6 +504,8 @@ export function JobScreen({
             )}
           </section>
 
+          <JobTimeline jobId={job.id} identities={identities} />
+
           <section aria-label="What happened" className="bg-card flex flex-col gap-2 rounded-xl px-5 py-4">
             <details className="group" open={job.evidence.length > 0 && job.evidence.length <= 6}>
               <summary className="flex cursor-pointer list-none items-center justify-between gap-2 select-none">
@@ -746,3 +749,61 @@ export function JobStageHint({ stage }: { stage: JobStage }) {
 }
 
 export type { AdapterInfo };
+
+const TIMELINE_GROUPS: { id: string; label: string; match: (kind: string) => boolean }[] = [
+  { id: 'all', label: 'Everything', match: () => true },
+  { id: 'work', label: 'Stages and tasks', match: (k) => k === 'stage' || k.startsWith('task') || k.startsWith('job') || k === 'intake' },
+  { id: 'agents', label: 'Sessions and time', match: (k) => k.startsWith('session') || k === 'time' || k === 'usage' },
+  { id: 'proof', label: 'Evidence and approvals', match: (k) => k === 'evidence' || k.startsWith('approval') || k === 'blocker' },
+];
+
+/** One chronological list from the records the runtime keeps (vision 14.4). Each row names its source table. */
+function JobTimeline({ jobId, identities }: { jobId: string; identities: Identity[] }) {
+  const timeline = useRuntimeData((c) => c.jobTimeline(jobId), [jobId]);
+  const [group, setGroup] = React.useState('all');
+  const items = timeline.status === 'ready' ? timeline.data : [];
+  const active = TIMELINE_GROUPS.find((g) => g.id === group) ?? TIMELINE_GROUPS[0]!;
+  const shown = items.filter((i) => active.match(i.kind));
+  const nameOf = (id: string | null) => (id ? (identities.find((i) => i.id === id)?.name ?? id) : null);
+  return (
+    <section aria-label="Timeline" className="bg-card flex flex-col gap-2 rounded-xl px-5 py-4">
+      <details className="group" open>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 select-none">
+          <SectionTitle aside={timeline.status === 'ready' ? `${items.length} records` : undefined}>Timeline</SectionTitle>
+          <span className="rounded bg-foreground/[0.06] px-2 py-0.5 font-mono text-[11px] text-muted-foreground group-open:hidden">Show</span>
+          <span className="hidden rounded bg-foreground/[0.06] px-2 py-0.5 font-mono text-[11px] text-muted-foreground group-open:inline">Hide</span>
+        </summary>
+        <div className="mt-3 flex flex-col gap-2">
+          <LoadNote what="the timeline" state={timeline} />
+          <div role="group" aria-label="Filter the timeline" className="flex flex-wrap gap-1.5">
+            {TIMELINE_GROUPS.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                aria-pressed={group === g.id}
+                onClick={() => setGroup(g.id)}
+                className={cn('rounded-md px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground', group === g.id && 'glass-chosen text-foreground')}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+          {timeline.status === 'ready' && shown.length === 0 && <EmptyState title="Nothing on the timeline yet">Records appear as the job moves.</EmptyState>}
+          <ol className="flex max-h-96 flex-col overflow-y-auto">
+            {shown.map((i, n) => (
+              <li key={`${i.kind}:${i.ref ?? n}:${i.at}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-border/40 py-1.5 text-xs last:border-b-0">
+                <time dateTime={i.at} className="w-28 shrink-0 font-mono text-muted-foreground">{time(i.at)}</time>
+                <Tag tone="quiet">{i.kind}</Tag>
+                <span className="min-w-0 flex-1 basis-60 break-words">{i.summary}</span>
+                <span className="text-muted-foreground" title={`recorded in ${i.source}`}>
+                  {nameOf(i.actor) ? `${nameOf(i.actor)} · ` : ''}
+                  {i.source}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </details>
+    </section>
+  );
+}

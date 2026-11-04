@@ -1,6 +1,6 @@
 import * as React from 'react';
 import type { AdapterInfo, Identity, JobSummary, Project, Room, Session, Team } from '@runtime/types';
-import { RuntimeBanner, Sidebar, useMode } from '@/components/app/shell';
+import { RuntimeBanner, Sidebar } from '@/components/app/shell';
 import { EmptyState } from '@/components/app/status';
 import { Toaster } from '@/components/app/toaster';
 import { href, useRoute, type Route } from '@/lib/route';
@@ -20,6 +20,13 @@ import { CommunicationScreen } from '@/screens/communication';
 import { RoomScreen } from '@/screens/room';
 import { OkrsScreen } from '@/screens/okrs';
 import { ProjectsScreen } from '@/screens/projects';
+import { AiResourcesScreen } from '@/screens/ai-resources';
+import { HealthScreen } from '@/screens/health';
+import { PlanningScreen } from '@/screens/planning';
+import { QaScreen } from '@/screens/qa';
+import { SkillsScreen } from '@/screens/skills';
+import { StandupsScreen } from '@/screens/standups';
+import { TimeScreen } from '@/screens/time';
 
 const DEFAULT_OWNER_ID = 'winston';
 const DEFAULT_OWNER_NAME = 'Winston';
@@ -48,7 +55,6 @@ export default function App() {
 }
 
 function Workspace({ route }: { route: Route }) {
-  const [mode, setMode] = useMode();
   const rooms = useRuntimeData((c) => c.rooms());
   const jobs = useRuntimeData((c) => c.jobs());
   const identities = useRuntimeData((c) => c.identities());
@@ -72,8 +78,6 @@ function Workspace({ route }: { route: Route }) {
     <div className="flex h-screen flex-col gap-3 overflow-hidden p-3 md:flex-row">
       <Sidebar
         route={route}
-        mode={mode}
-        onModeChange={setMode}
         ownerName={ownerName}
         ownerId={ownerId}
         rooms={list(rooms)}
@@ -143,11 +147,25 @@ function Screen({
 
   switch (route.name) {
     case 'home':
-      return <HomeScreen rooms={rooms} jobs={jobs} identities={identities} sessions={sessions} projects={projects} onStartJob={client ? startJob : undefined} />;
+      return <HomeScreen rooms={rooms} jobs={jobs} identities={identities} sessions={sessions} projects={projects} onStartJob={client ? startJob : undefined} live />;
     case 'approvals':
       return <ApprovalsScreen />;
     case 'jobs':
       return <JobsScreen />;
+    case 'planning':
+      return <PlanningScreen jobs={jobs} />;
+    case 'standups':
+      return <StandupsScreen />;
+    case 'skills':
+      return <SkillsScreen skillId={route.skillId} />;
+    case 'time':
+      return <TimeScreen identities={identities} />;
+    case 'ai':
+      return <AiResourcesScreen identities={identities} />;
+    case 'qa':
+      return <QaScreen jobs={jobs} />;
+    case 'health':
+      return <HealthScreen />;
     case 'room':
       return <RoomContainer roomId={route.roomId} rooms={rooms} jobs={jobs} identities={identities} ownerId={ownerId} ownerName={ownerName} />;
     case 'job':
