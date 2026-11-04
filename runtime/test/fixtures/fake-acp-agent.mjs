@@ -291,7 +291,10 @@ rl.on('line', (line) => {
       break;
     case 'session/new':
       mcpServers = message.params?.mcpServers ?? [];
-      respond(message.id, { sessionId });
+      respond(message.id, {
+        sessionId,
+        ...(process.env.FAKE_MODEL_ID ? { models: { currentModelId: process.env.FAKE_MODEL_ID, availableModels: [{ modelId: process.env.FAKE_MODEL_ID }] } } : {}),
+      });
       break;
     case 'session/load':
       mcpServers = message.params?.mcpServers ?? [];

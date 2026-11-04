@@ -923,6 +923,16 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       repo.deletePolicy(ctx.params.id!);
       return { status: 204 };
     }),
+    // Model registry (K6): context windows, no prices. Renewal policy override per identity (K7).
+    route('GET', '/v1/model-registry', () => ({ status: 200, body: repo.listModelRegistry() })),
+    route('POST', '/v1/model-registry', (ctx) => {
+      repo.upsertModel(ctx.body as { provider: string; modelId: string; contextWindow?: number | null; notes?: string });
+      return { status: 201, body: repo.listModelRegistry() };
+    }),
+    route('POST', '/v1/identities/:id/renewal-policy', (ctx) => ({
+      status: 200,
+      body: repo.setIdentityRenewalPolicy(ctx.params.id!, (ctx.body.policy ?? null) as Record<string, number> | null),
+    })),
     route('GET', '/v1/budgets', () => ({ status: 200, body: repo.listBudgets() })),
     route('POST', '/v1/budgets', (ctx) => ({ status: 201, body: repo.createBudget(ctx.body as unknown as T.CreateBudgetInput) })),
 

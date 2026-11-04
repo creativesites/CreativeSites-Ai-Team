@@ -8,6 +8,9 @@ import { ADAPTER_PRESETS, adapterBlockReason, adapterInfo, findExecutable } from
 import type { Checker } from '../checks.ts';
 import { ConflictError, ForbiddenError, InputError, type Repo } from '../store/repo.ts';
 import { compileBatonCapsule, shouldRotateSession } from './baton.ts';
+import { afterTurn, emitSessionRenewed } from './renewal.ts';
+import { extractModelId, mapAcpUsage, providerOfAdapter } from '../usage/mapAcpUsage.ts';
+import { checkBudgets } from '../usage/budgets.ts';
 import { AcpClient, AcpError, type PermissionOption, type PermissionOutcome, type PermissionRequest } from './client.ts';
 import { skillServiceFor } from '../skills/service.ts';
 
@@ -459,7 +462,6 @@ export class SessionManager {
     if (task && task.status === 'pending' && !this.repo.dependenciesMet(task.id)) {
       throw new ConflictError('This task depends on work that is not done yet');
     }
-    if (job) this.repo.assertBudget(job.id, 0);
 
     const adapter = this.resolveAdapter(input.adapterId ?? agent.adapterId ?? agent.runtime);
 
@@ -471,6 +473,15 @@ export class SessionManager {
       if (!decision.ok) throw new ForbiddenError(`${ISOLATION_PREFIX}${decision.reason} Nothing was started.`);
       usageAccountId = decision.accountId;
     }
+
+    // K6/WP10 10.4: budgets are checked before every prompt send, including this first one.
+    checkBudgets(this.repo, {
+      agentId: agent.id,
+      taskId: task?.id ?? null,
+      jobId: job?.id ?? null,
+      projectId: job?.projectId ?? room?.projectId ?? null,
+      accountId: usageAccountId,
+    });
 
     let worktreePath = input.worktree ?? room?.repoPath ?? process.cwd() ?? os.homedir();
     let baseSha: string | null = null;
@@ -619,7 +630,7 @@ export class SessionManager {
     opts?: { prompt?: string; taskId?: string | null; reason?: string }
   ): Promise<T.SessionRotationResult> {
     const existing = this.repo.getSession(sessionId);
-    const { capsule, previousContextTokens, capsuleTokens } = compileBatonCapsule(this.repo, sessionId);
+    const { capsule, previousContextTokens, capsuleTokens, continuation } = compileBatonCapsule(this.repo, sessionId);
     const estimatedSavedTokens = Math.max(0, previousContextTokens - capsuleTokens);
 
     // Close live subprocess on old session if still active
@@ -648,6 +659,15 @@ export class SessionManager {
       prompt: nextPrompt,
     });
 
+    this.repo.updateSession(newSession.id, { continuationPackage: continuation as unknown as Record<string, unknown> });
+    emitSessionRenewed(this.repo, {
+      from: sessionId,
+      to: newSession.id,
+      reason: opts?.reason ?? 'manual',
+      agentId: existing.agentId,
+      jobId: existing.jobId ?? null,
+      taskId: existing.taskId ?? null,
+    });
     this.repo.appendTranscript(sessionId, {
       kind: 'session_rotated',
       role: 'system',
@@ -685,17 +705,27 @@ export class SessionManager {
     const cleanText = stripCoordinationBoilerplate(text);
     const existing = this.repo.getSession(sessionId);
 
-    // Check if the session has crossed our internal token/turn threshold and should relay the baton
-    if (!opts?.skipAutoRotate) {
-      const rotCheck = shouldRotateSession(this.repo, existing, opts?.taskId);
-      if (rotCheck.rotate) {
-        const rotated = await this.rotate(sessionId, {
-          prompt: cleanText,
-          taskId: opts?.taskId,
-          reason: rotCheck.reason,
-        });
-        return rotated.newSession;
-      }
+    // K6: budgets are checked before every prompt send. A hard limit refuses with a 409 and opens a Needs You card.
+    checkBudgets(this.repo, this.budgetContextFor(existing));
+
+    // K7: ONE renewal decision (baton.shouldRotateSession). At the renew band the prompt is carried into a
+    // fresh generation; at the block band a prompt that cannot be carried (skipAutoRotate, or auto-renew off)
+    // is refused unless the owner set renewal.allowOverBlock.
+    const rotCheck = shouldRotateSession(this.repo, existing, opts?.taskId);
+    const autoRenew = this.repo.getSetting('renewal.autoRenew') !== false;
+    if (rotCheck.blocked && (opts?.skipAutoRotate || !autoRenew)) {
+      throw new ConflictError(
+        `This session is at the context block level (${rotCheck.pct != null ? `${rotCheck.pct}% of its ${rotCheck.contextWindow}-token window` : `about ${rotCheck.contextTokens} tokens, ${rotCheck.measurement}`}). ` +
+          'Renew it (POST /v1/sessions/:id/rotate) or set renewal.allowOverBlock to true to send anyway. Nothing was sent.'
+      );
+    }
+    if (!opts?.skipAutoRotate && autoRenew && rotCheck.rotate) {
+      const rotated = await this.rotate(sessionId, {
+        prompt: cleanText,
+        taskId: opts?.taskId,
+        reason: rotCheck.reason,
+      });
+      return rotated.newSession;
     }
 
     const live = this.live.get(sessionId);
@@ -703,24 +733,10 @@ export class SessionManager {
       this.repo.appendTranscript(sessionId, { kind: 'prompt', role: 'user', payload: { text: cleanText } });
       this.repo.updateSession(sessionId, { state: 'running' });
       const result = await live.client.prompt(text);
-      if (result && typeof result === 'object' && 'usage' in result && result.usage) {
-        const u = result.usage as Record<string, unknown>;
-        const inputTokens = Number(u.inputTokens ?? u.input_tokens ?? 0) || 0;
-        const outputTokens = Number(u.outputTokens ?? u.output_tokens ?? 0) || 0;
-        const costCents = Number(u.costCents ?? u.cost_cents ?? 0) || 0;
-        if (inputTokens || outputTokens || costCents) {
-          this.repo.recordUsage({
-            jobId: live.jobId,
-            sessionId: live.sessionId,
-            inputTokens,
-            outputTokens,
-            costCents,
-            source: 'acp',
-          });
-        }
-      }
+      this.recordTurnUsage(live, result.usage);
       this.repo.appendTranscript(sessionId, { kind: 'turn', role: 'system', payload: result });
       this.repo.updateSession(sessionId, { state: 'idle' });
+      afterTurn(this.repo, sessionId);
       return this.repo.getSession(sessionId);
     }
 
@@ -864,33 +880,21 @@ export class SessionManager {
       const acpSessionId = opened.acpSessionId;
       live.acpSessionId = acpSessionId;
       const agentInfo = (init.agentInfo ?? {}) as { name?: string };
+      // `model` keeps the ACP agent name for compatibility; `modelId` is the real model the adapter reports (WP10 10.1).
+      const reportedModelId = extractModelId(init, client.newSessionResult);
       this.repo.updateSession(live.sessionId, {
         state: 'running',
         pid: client.pid,
         acpSessionId,
         model: agentInfo.name ?? null,
+        ...(reportedModelId ? { modelId: reportedModelId } : {}),
       });
 
       const result = await client.prompt(opened.prompt);
       if (live.closed) return;
 
-      if (result.usage) {
-        const u = result.usage as Record<string, unknown>;
-        const inputTokens = Number(u.inputTokens ?? u.input_tokens ?? u.tokensIn ?? 0) || 0;
-        const outputTokens = Number(u.outputTokens ?? u.output_tokens ?? u.tokensOut ?? 0) || 0;
-        const costCents = Number(u.costCents ?? u.cost_cents ?? (typeof u.cost === 'object' && u.cost ? (u.cost as any).amount : 0)) || 0;
-        if (inputTokens || outputTokens || costCents) {
-          this.repo.recordUsage({
-            jobId: live.jobId,
-            sessionId: live.sessionId,
-            model: (u.model as string) ?? null,
-            inputTokens,
-            outputTokens,
-            costCents,
-            source: 'acp',
-          });
-        }
-      }
+      this.recordTurnUsage(live, result.usage);
+      afterTurn(this.repo, live.sessionId);
 
       this.repo.appendTranscript(live.sessionId, {
         kind: 'turn_end',
@@ -1008,6 +1012,84 @@ export class SessionManager {
     return { acpSessionId, prompt };
   }
 
+  /** Records what an ACP `usage_update` reported. A context-only update records the window, not tokens. */
+  private recordUpdateUsage(live: LiveSession, update: Record<string, unknown>): void {
+    const m = mapAcpUsage(update);
+    if (m.measurement === 'unavailable') return;
+    this.persistUsage(live, m, 'acp');
+  }
+
+  /** Records a finished turn's usage; a turn that reported nothing is stored as 'unavailable', never as zero. */
+  private recordTurnUsage(live: LiveSession, usage: Record<string, unknown> | undefined): void {
+    const m = mapAcpUsage(usage ? { usage } : {});
+    if (m.measurement === 'unavailable') {
+      this.repo.recordUsage({
+        jobId: live.jobId,
+        sessionId: live.sessionId,
+        agentId: live.agentId,
+        taskId: live.taskId,
+        provider: providerOfAdapter(live.adapterId),
+        measurement: 'unavailable',
+        source: 'acp',
+      });
+    } else {
+      this.persistUsage(live, m, 'acp');
+    }
+  }
+
+  private persistUsage(live: LiveSession, m: ReturnType<typeof mapAcpUsage>, source: string): void {
+    this.repo.recordUsage({
+      jobId: live.jobId,
+      sessionId: live.sessionId,
+      agentId: live.agentId,
+      taskId: live.taskId,
+      provider: providerOfAdapter(live.adapterId),
+      modelId: m.modelId ?? this.sessionModelId(live.sessionId),
+      inputTokens: m.inputTokens,
+      outputTokens: m.outputTokens,
+      cachedInputTokens: m.cachedInputTokens,
+      cacheWriteTokens: m.cacheWriteTokens,
+      reasoningTokens: m.reasoningTokens,
+      costCents: m.costCents,
+      contextUsed: m.contextUsed,
+      contextSize: m.contextSize,
+      measurement: m.measurement,
+      source,
+    });
+    if (m.modelId && !this.sessionModelId(live.sessionId)) this.repo.updateSession(live.sessionId, { modelId: m.modelId });
+  }
+
+  private sessionModelId(sessionId: string): string | null {
+    try {
+      return this.repo.getSession(sessionId).modelId ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private budgetContextFor(session: T.Session): Parameters<typeof checkBudgets>[1] {
+    const job = session.jobId ? this.repo.getJob(session.jobId) : null;
+    const room = session.roomId ? this.repo.getRoom(session.roomId) : null;
+    let accountId: string | null = null;
+    try {
+      const row = this.repo
+        .sqlite()
+        .prepare('SELECT account_id FROM task_usage WHERE session_id = ? ORDER BY rowid DESC LIMIT 1')
+        .get(session.id) as { account_id?: string } | undefined;
+      accountId = row?.account_id ?? null;
+    } catch {
+      /* older store */
+    }
+    return {
+      agentId: session.agentId,
+      sessionId: session.id,
+      taskId: session.taskId ?? null,
+      jobId: session.jobId ?? null,
+      projectId: job?.projectId ?? room?.projectId ?? null,
+      accountId,
+    };
+  }
+
   private handleUpdate(sessionId: string, update: Record<string, unknown>): void {
     const live = this.live.get(sessionId);
     if (!live || live.closed || !update || live.replaying) return;
@@ -1050,21 +1132,7 @@ export class SessionManager {
       return;
     }
     if (kind === 'usage_update' || kind === 'usage' || Boolean(update.usage)) {
-      const u = (update.usage && typeof update.usage === 'object' ? update.usage : update) as Record<string, unknown>;
-      const inputTokens = Number(u.inputTokens ?? u.input_tokens ?? u.tokensIn ?? 0) || 0;
-      const outputTokens = Number(u.outputTokens ?? u.output_tokens ?? u.tokensOut ?? 0) || 0;
-      const costCents = Number(u.costCents ?? u.cost_cents ?? (typeof u.cost === 'object' && u.cost ? (u.cost as any).amount : 0)) || 0;
-      if (inputTokens || outputTokens || costCents) {
-        this.repo.recordUsage({
-          jobId: live.jobId,
-          sessionId: live.sessionId,
-          model: (u.model as string) ?? null,
-          inputTokens,
-          outputTokens,
-          costCents,
-          source: 'acp',
-        });
-      }
+      this.recordUpdateUsage(live, update);
     }
     this.repo.appendTranscript(sessionId, {
       kind,

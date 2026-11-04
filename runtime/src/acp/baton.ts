@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import type * as T from '../api/types.ts';
 import type { Repo } from '../store/repo.ts';
 import { stripCoordinationBoilerplate } from './session-manager.ts';
+import { evaluateRenewal, type RenewalBand, type RenewalEvaluation } from './renewal.ts';
 
 export interface BatonPolicy {
   softContextTokens: number;
@@ -43,56 +44,59 @@ export function getBatonPolicy(repo: Repo): BatonPolicy {
 
 export interface RotationCheck {
   rotate: boolean;
-  reason: 'healthy' | 'context_tokens_threshold' | 'turn_count_threshold' | 'task_boundary' | 'manual';
+  reason: 'healthy' | 'context_tokens_threshold' | 'context_pct_threshold' | 'turn_count_threshold' | 'task_boundary' | 'manual';
   contextTokens: number;
   logicalTurns: number;
   policy: BatonPolicy;
+  /** K7: the renewal band (monitor/prepare/renew/block) the session is in; 'healthy' below monitor. */
+  band: RenewalBand;
+  /** Context utilisation %, only when the context window is known; otherwise null. */
+  pct: number | null;
+  /** 'estimated' whenever the window or the token count is not reported by the adapter. */
+  measurement: 'actual' | 'estimated';
+  contextWindow: number | null;
+  /** At the block band: a normal prompt must not go to this session. */
+  blocked: boolean;
 }
 
+/**
+ * The single renewal decision (K7). Known context window: percentage bands from the resolved policy.
+ * Unknown window: the absolute token thresholds, labelled 'estimated'. Turn count and task boundary
+ * still apply as before.
+ */
 export function shouldRotateSession(repo: Repo, session: T.Session, nextTaskId?: string | null): RotationCheck {
   const policy = getBatonPolicy(repo);
   const entries = repo.listTranscript(session.id, 0, 5000);
   const logicalTurns = entries.filter((e) => e.kind === 'prompt').length;
-  const contextTokens = Math.max(
+  const fallbackTokens = Math.max(
     session.contextTokens ?? 0,
     session.usage?.inputTokens ?? 0,
     estimateTranscriptTokens(entries)
   );
-
-  if (contextTokens >= policy.softContextTokens) {
-    return {
-      rotate: true,
-      reason: 'context_tokens_threshold',
-      contextTokens,
-      logicalTurns,
-      policy,
-    };
-  }
-  if (logicalTurns >= policy.softLogicalTurns) {
-    return {
-      rotate: true,
-      reason: 'turn_count_threshold',
-      contextTokens,
-      logicalTurns,
-      policy,
-    };
-  }
-  if (nextTaskId && session.taskId && nextTaskId !== session.taskId && contextTokens >= policy.taskSwitchTokens) {
-    return {
-      rotate: true,
-      reason: 'task_boundary',
-      contextTokens,
-      logicalTurns,
-      policy,
-    };
-  }
-  return {
-    rotate: false,
-    reason: 'healthy',
+  const ev: RenewalEvaluation = evaluateRenewal(repo, session, { fallbackTokens, policy });
+  const contextTokens = ev.tokens;
+  const common = {
     contextTokens,
     logicalTurns,
     policy,
+    band: ev.band,
+    pct: ev.pct,
+    measurement: ev.measurement,
+    contextWindow: ev.window,
+    blocked: ev.band === 'block' && repo.getSetting('renewal.allowOverBlock') !== true,
   };
+
+  if (ev.rank >= 3) {
+    return { rotate: true, reason: ev.window ? 'context_pct_threshold' : 'context_tokens_threshold', ...common };
+  }
+  if (logicalTurns >= policy.softLogicalTurns) {
+    return { rotate: true, reason: 'turn_count_threshold', ...common };
+  }
+  const taskSwitchHit = ev.window ? ev.rank >= 1 : contextTokens >= policy.taskSwitchTokens;
+  if (nextTaskId && session.taskId && nextTaskId !== session.taskId && taskSwitchHit) {
+    return { rotate: true, reason: 'task_boundary', ...common };
+  }
+  return { rotate: false, reason: 'healthy', ...common };
 }
 
 export function estimateTranscriptTokens(entries: T.TranscriptEntry[]): number {
@@ -161,7 +165,7 @@ function readGitWorktreeDigest(worktree: string | null): string {
   }
 }
 
-interface TurnBucket {
+export interface TurnBucket {
   promptText: string;
   assistantText: string;
   tools: string[];
@@ -204,11 +208,97 @@ function groupTranscriptIntoTurns(entries: T.TranscriptEntry[]): TurnBucket[] {
   return turns;
 }
 
+export interface ContinuationPackage {
+  generatedAt: string;
+  sessionId: string;
+  discoveries: string[];
+  decisions: string[];
+  commits: string[];
+  blockers: string[];
+  acceptanceCriteria: { text: string; evidence: string }[];
+  nextActions: string[];
+}
+
+const clip = (v: string, n: number) => v.replace(/\s+/g, ' ').trim().slice(0, n);
+
+function stateLines(block: string | null, keys: string[]): string[] {
+  if (!block) return [];
+  const re = new RegExp(`^\\s*(?:${keys.join('|')})\\s*:\\s*(.+)$`, 'i');
+  return block.split('\n').map((l) => l.match(re)?.[1]?.trim() ?? '').filter(Boolean);
+}
+
+/**
+ * K7 continuation package: what a fresh session needs to carry on, taken from evidence, blockers,
+ * criteria and the transcript. No LLM call; every field is a verbatim or truncated record.
+ */
+export function buildContinuationPackage(
+  repo: Repo,
+  session: T.Session,
+  entries: T.TranscriptEntry[],
+  turns: TurnBucket[],
+  latestStateBlock: string | null
+): ContinuationPackage {
+  const job = session.jobId ? repo.getJob(session.jobId) : null;
+  const discoveries: string[] = stateLines(latestStateBlock, ['done']);
+  const decisions: string[] = stateLines(latestStateBlock, ['decision', 'decisions']);
+  const commits: string[] = [];
+  const blockers: string[] = [];
+  const nextActions: string[] = stateLines(latestStateBlock, ['next']);
+
+  for (const ev of (job?.evidence ?? []).filter((e) => e.kind !== 'command' && e.kind !== 'test' && e.class !== 'UNKNOWN').slice(-6)) {
+    discoveries.push(clip(`[${ev.class}] ${ev.summary}`, 200));
+  }
+  for (const d of job?.plan?.humanDecisions ?? []) decisions.push(clip(d, 200));
+  for (const t of turns) {
+    for (const m of t.assistantText.split(/(?<=[.!?])\s+/)) {
+      if (/\b(decided|decision|we chose|chose to|will use)\b/i.test(m) && decisions.length < 8) decisions.push(clip(m, 200));
+    }
+  }
+  for (const e of entries) {
+    if (e.kind !== 'commit') continue;
+    const p = (e.payload && typeof e.payload === 'object' ? e.payload : {}) as Record<string, unknown>;
+    if (typeof p.commitSha === 'string') commits.push(p.commitSha.slice(0, 8));
+  }
+  if (job) {
+    for (const b of repo.listBlockers({ status: 'open', jobId: job.id })) {
+      blockers.push(clip(`${b.summary}${b.needs ? ` (needs: ${b.needs})` : ''}`, 220));
+    }
+    for (const t of job.tasks) {
+      if (['done', 'verified', 'cancelled'].includes(t.status)) continue;
+      nextActions.push(clip(`${t.title} (${t.status})${t.checkCommand ? ` check: ${t.checkCommand}` : ''}`, 200));
+    }
+  }
+  const uniq = (xs: string[], max: number) => [...new Set(xs)].slice(-max);
+  return {
+    generatedAt: new Date().toISOString(),
+    sessionId: session.id,
+    discoveries: uniq(discoveries, 8),
+    decisions: uniq(decisions, 8),
+    commits: uniq(commits, 10),
+    blockers: uniq(blockers, 6),
+    acceptanceCriteria: (job?.criteria ?? []).slice(0, 10).map((c) => ({ text: clip(c.text, 200), evidence: c.evidenceClass })),
+    nextActions: uniq(nextActions, 8),
+  };
+}
+
+function renderContinuationPackage(pkg: ContinuationPackage): string {
+  const list = (title: string, xs: string[]) => (xs.length ? [`${title}:`, ...xs.map((x) => `  - ${x}`)] : [`${title}: none recorded`]);
+  return [
+    '\n[CONTINUATION PACKAGE]',
+    ...list('Discoveries', pkg.discoveries),
+    ...list('Decisions', pkg.decisions),
+    ...list('Commits', pkg.commits),
+    ...list('Open blockers', pkg.blockers),
+    ...list('Acceptance criteria', pkg.acceptanceCriteria.map((c) => `${c.text} [evidence: ${c.evidence}]`)),
+    ...list('Next actions', pkg.nextActions),
+  ].join('\n');
+}
+
 /**
  * Deterministically compiles a 3-Tier Baton Capsule (~1,500–2,000 tokens) from SQLite + Git
  * with zero LLM calls, preserving 100% of recent working memory while shedding older token bloat.
  */
-export function compileBatonCapsule(repo: Repo, sessionId: string): { capsule: string; previousContextTokens: number; capsuleTokens: number } {
+export function compileBatonCapsule(repo: Repo, sessionId: string): { capsule: string; previousContextTokens: number; capsuleTokens: number; continuation: ContinuationPackage } {
   const session = repo.getSession(sessionId);
   const agent = repo.getIdentity(session.agentId);
   const job = session.jobId ? repo.getJob(session.jobId) : null;
@@ -314,9 +404,11 @@ export function compileBatonCapsule(repo: Repo, sessionId: string): { capsule: s
   }
 
   sections.push(tier3.filter(Boolean).join('\n'));
+  const continuation = buildContinuationPackage(repo, session, entries, turns, latestStateBlock);
+  sections.push(renderContinuationPackage(continuation));
   sections.push('=== END OF BATON CAPSULE — CONTINUE SEAMLESSLY FROM TIER 3 ===\n');
 
   const capsule = sections.join('\n');
   const capsuleTokens = Math.ceil(capsule.length / 3.8);
-  return { capsule, previousContextTokens, capsuleTokens };
+  return { capsule, previousContextTokens, capsuleTokens, continuation };
 }
