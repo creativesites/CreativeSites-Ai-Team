@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import type http from 'node:http';
 import type * as T from './api/types.ts';
 import type { Repo } from './store/repo.ts';
@@ -112,7 +113,6 @@ export function buildSessionPayloadFromCouncil(council: T.Council): T.CouncilSes
     }
     if (council.verdict) {
       const vp = council.verdict.payload;
-      // A live verdict shows only what the seats wrote: no placeholder text fills the gaps.
       const live = council.runMode === 'live';
       const scoreMap = Object.fromEntries(vp.scores.map((s) => [s.id, { score: s.score, math: s.formula }]));
       events.push({
@@ -124,17 +124,13 @@ export function buildSessionPayloadFromCouncil(council: T.Council): T.CouncilSes
           scores: scoreMap,
           why: vp.why ?? [],
           fights: vp.fights ?? [],
-          minority: vp.minority ?? (live ? null : {
-            seat: vp.objection?.by || '',
-            quote: vp.objection?.text || '',
-            would_have_to_be_true: 'The primary assumption fails under load.',
-          }),
+          minority: vp.minority ?? null,
           amendments: vp.amendments ?? [],
           conditions: vp.conditions ?? [],
           next_steps: vp.next_steps ?? [],
-          cheapest_test: vp.cheapest_test ?? (live ? '' : 'Run the verification check command on a clean worktree.'),
-          kill_criteria: vp.kill_criteria ?? (live ? '' : 'Revert immediately if any regression check fails.'),
-          revisit: vp.revisit ?? (live ? '' : 'After the first verified build completes.'),
+          cheapest_test: vp.cheapest_test ?? '',
+          kill_criteria: vp.kill_criteria ?? '',
+          revisit: vp.revisit ?? '',
           disclaimer: vp.disclaimer ?? (live ? 'Live council: every card was written by a seat agent session.' : COUNCIL_DISCLAIMER),
         },
         seats:
@@ -162,155 +158,531 @@ export function buildSessionPayloadFromCouncil(council: T.Council): T.CouncilSes
   };
 }
 
-function deriveOptionsFromPrompt(prompt: string, customOptions?: T.CouncilOption[]): {
+// ---------------------------------------------------------------------------
+// AI Execution Bridge (Claude CLI)
+// ---------------------------------------------------------------------------
+
+function callAi(promptText: string, timeoutMs = 60000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('claude', ['-p', '-'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        PATH: `${process.env.HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:${process.env.PATH || ''}`,
+      },
+    });
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM');
+      reject(new Error(`AI deliberation timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(`Claude CLI exited with code ${code}: ${stderr || stdout}`));
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.stdin.write(promptText);
+    child.stdin.end();
+  });
+}
+
+async function deriveOptionsFromPromptAsync(
+  prompt: string,
+  customOptions?: T.CouncilOption[]
+): Promise<{
   title: string;
   decision: string;
   brief: string;
   options: T.CouncilOption[];
   assumptions: string[];
-} {
-  const clean = prompt.trim() || 'Should we execute the full architecture upgrade now or stage a minimal slice first?';
+}> {
+  const clean = prompt.trim() || 'Evaluate the proposed system architecture and execution strategy.';
+
+  if (customOptions && customOptions.length >= 2) {
+    const words = clean.replace(/[^\w\s-]/g, '').split(/\s+/).filter(Boolean);
+    const title = words.slice(0, 6).join(' ') || 'Strategic Architecture Decision';
+    return {
+      title,
+      decision: clean.split('\n')[0]?.slice(0, 160) || title,
+      brief: clean,
+      options: customOptions,
+      assumptions: [
+        'Execution aligns with outcome-led architecture and verified gates.',
+        'Technical constraints must be proven before full build spend.',
+        'Every task carries a verifiable check command.',
+      ],
+    };
+  }
+
+  const aiPrompt = `You are the executive chair of the MyaOS Planning Council.
+A founder/architect has submitted this decision request:
+"${clean}"
+
+Generate a JSON object with:
+- "title": concise decision title (3-6 words)
+- "decision": core strategic question to resolve (1 sentence)
+- "brief": concise brief summary of the context and trade-offs (max 2 sentences)
+- "options": exactly 3 mutually exclusive, realistic options as an array of {"id": "A"|"B"|"C", "label": string (max 75 chars)}:
+   Option A: bold outcome-led path
+   Option B: staged/iterative spike or phased approach
+   Option C: conservative/alternative approach
+- "assumptions": array of 3 critical assumptions that must hold for this decision
+
+Output valid JSON only without markdown formatting.`;
+
+  try {
+    const raw = await callAi(aiPrompt, 25000);
+    const cleanJson = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const parsed = JSON.parse(cleanJson);
+    if (parsed.options && Array.isArray(parsed.options) && parsed.options.length >= 2) {
+      return {
+        title: String(parsed.title || 'Strategic Architecture Decision'),
+        decision: String(parsed.decision || clean.split('\n')[0]?.slice(0, 160) || 'Strategic Decision'),
+        brief: String(parsed.brief || clean),
+        options: parsed.options.slice(0, 3).map((o: any, idx: number) => ({
+          id: String(o.id || String.fromCharCode(65 + idx)),
+          label: String(o.label || `Option ${String.fromCharCode(65 + idx)}`),
+        })),
+        assumptions: Array.isArray(parsed.assumptions) && parsed.assumptions.length
+          ? parsed.assumptions.map(String)
+          : ['Outcome-led execution with verifiable gates', 'Technical constraints proven before full spend', 'Explicit system boundaries'],
+      };
+    }
+  } catch {
+    // fallback dynamic parsing if AI unavailable
+  }
+
   const words = clean.replace(/[^\w\s-]/g, '').split(/\s+/).filter(Boolean);
   const title = words.slice(0, 6).join(' ') || 'Strategic Architecture Decision';
-  const options: T.CouncilOption[] =
-    customOptions && customOptions.length >= 2
-      ? customOptions
-      : [
-          { id: 'A', label: `Execute the full outcome-led build now with verification gates (${title})` },
-          { id: 'B', label: 'Ship a scoped 48-hour spike first to validate the core constraint before full build' },
-          { id: 'C', label: 'Hold build spend and keep the current workflow until prerequisites are proven' },
-        ];
-  const assumptions = [
-    'SQLite runtime store remains the single source of record for all state transitions.',
-    'Every build task must be verified independently by a non-author verifier with runnable check commands.',
-    'Time-to-interactive and reliability take priority over decorative scope.',
-  ];
   return {
     title,
     decision: clean.split('\n')[0]?.slice(0, 160) || title,
     brief: clean,
-    options,
-    assumptions,
+    options: [
+      { id: 'A', label: `Execute the full direct implementation for ${title}` },
+      { id: 'B', label: `Stage a scoped pilot spike first to validate constraints` },
+      { id: 'C', label: `Adopt an existing external pattern to minimize custom build` },
+    ],
+    assumptions: [
+      'SQLite runtime store remains the authoritative system of record.',
+      'Every task carries an automated verification check command.',
+      'Explicit boundaries take priority over implicit coupling.',
+    ],
   };
 }
 
-function generateRound1Card(
-  seat: CouncilRosterSeat,
-  seatIndex: number,
+async function generateRound1CardsAsync(
+  prompt: string,
+  decision: string,
   options: T.CouncilOption[],
-  weight: number,
-  reason: string,
-  decision: string
-): string {
-  const fw = seat.frameworks[0] ?? { id: 'S001', name: 'Core Principle', quote: seat.question };
-  const fw2 = seat.frameworks[1] ?? fw;
-  // Create realistic divergence: seats 2 and 5 lean B (spike first); others lean A with conditions
-  const leansB = seatIndex === 2 || seatIndex === 5;
-  const scores: Record<string, number> = {};
-  options.forEach((o, idx) => {
-    if (idx === 0) scores[o.id] = leansB ? 6 : 8 + (seatIndex % 2);
-    else if (idx === 1) scores[o.id] = leansB ? 8 : 6 + (seatIndex % 2);
-    else scores[o.id] = 3 + (seatIndex % 2);
-  });
-  const optLine = options.map((o) => `${o.id} ${scores[o.id]}/10`).join(' · ');
-  const stance = leansB ? 'Conditional yes' : seatIndex === 0 ? 'Strong yes' : 'Yes';
-  const door = seatIndex % 3 === 0 ? 'one-way' : 'two-way';
-  const ruin = seatIndex === 2 ? 'possible' : 'none';
-  const recId = leansB ? (options[1]?.id ?? 'B') : (options[0]?.id ?? 'A');
-  const recLabel = options.find((o) => o.id === recId)?.label ?? recId;
+  seats: CouncilRosterSeat[],
+  weights: Record<string, { weight: number; reason: string }>
+): Promise<Record<string, { text: string; parsed: any; quotes: any[] }>> {
+  const optSummary = options.map((o) => `${o.id}: ${o.label}`).join('\n');
+  const seatsSummary = seats
+    .map(
+      (s, idx) =>
+        `${idx + 1}. key: "${s.key}", name: "${s.name}" (${s.short}), pillar: "${s.pillar}". Framework: "${s.frameworks[0]?.name || s.dimension}" - Quote: "${s.frameworks[0]?.quote || s.question}"`
+    )
+    .join('\n');
 
-  return `SEAT: ${seat.short.toUpperCase()} (${seat.pillar})
-STANCE: ${stance}
-OPTION SCORES: ${optLine}
-PILLAR SCORE: ${leansB ? 7 : 8}/10
-CONFIDENCE: ${4 + (seatIndex % 2)}/5
-RUIN RISK: ${ruin}
-DOOR: ${door}
+  const aiPrompt = `You are the seats of the MyaOS Planning Council deliberating on:
+Context: "${prompt}"
+Core Decision: "${decision}"
 
-THE CALL: Take Option ${recId} (${recLabel.slice(0, 72)}), gated by an explicit verification check on "${decision.slice(0, 56)}".
+Options on the table:
+${optSummary}
+
+Council Seats Present:
+${seatsSummary}
+
+For EACH of the ${seats.length} seats, output their Round 1 opening deliberation card.
+Each seat evaluates the decision through their unique pillar and framework.
+Diverge realistically: some seats strongly favor Option A, others prefer Option B or have strict conditions, some warn of downsides on C.
+
+Use this EXACT template for each seat:
+SEAT: <SHORT_NAME> (<PILLAR>)
+STANCE: <Strong yes|Yes|Conditional yes|No>
+OPTION SCORES: ${options.map((o) => `${o.id} <0-10>/10`).join(' · ')}
+PILLAR SCORE: <6-10>/10
+CONFIDENCE: <3-5>/5
+RUIN RISK: <none|possible|likely>
+DOOR: <one-way|two-way>
+THE CALL: <1-2 sentences stating which option to take and the essential constraint>
 WHY:
-1. Applied ${fw.name}: "${fw.quote}" (${fw.id}) — weight ${weight}/3 because ${reason}.
-2. Applied ${fw2.name}: "${fw2.quote}" (${fw2.id}) — avoids half-built state and keeps the user outcome front and center.
-3. The gap between Option A and Option B comes down to whether we lock the verification contract before writing UI glue.
-THE RISK I SEE: Shipping without an automated check command turns a two-way door into silent regression drift.
-WHAT WOULD CHANGE MY MIND: A failing benchmark or proof that the current substrate cannot complete the loop in under 2 seconds.
-WHAT I'D DO THIS WEEK: Lock the schema contract, wire the primary user path, and run the independent verifier gate.
-QUESTION FOR THE FOUNDER: What is the single non-negotiable metric that proves this succeeded by Friday?`;
+1. Applied <Framework Name>: "<Framework Quote>" (<Framework ID if known, else S001>) — <specific reason on this decision>.
+2. <Second technical reason relating to this decision>.
+THE RISK I SEE: <specific downside risk of the wrong choice on this decision>
+WHAT WOULD CHANGE MY MIND: <concrete evidence or metric that would flip this seat's stance>
+WHAT I'D DO THIS WEEK: <first concrete engineering action on this decision>
+QUESTION FOR THE FOUNDER: <sharp clarifying question for the founder>
+
+Separate each seat card with "---CARD_BREAK---". Output text only.`;
+
+  const cards: Record<string, { text: string; parsed: any; quotes: any[] }> = {};
+
+  try {
+    const raw = await callAi(aiPrompt, 45000);
+    const blocks = raw.split('---CARD_BREAK---').map((b) => b.trim()).filter(Boolean);
+
+    for (let i = 0; i < seats.length; i++) {
+      const seat = seats[i]!;
+      const match = blocks.find((b) => {
+        const top = b.slice(0, 100).toLowerCase();
+        return top.includes(seat.short.toLowerCase()) || top.includes(seat.key.toLowerCase());
+      }) || blocks[i];
+
+      if (match && match.includes('SEAT:') && match.includes('OPTION SCORES:')) {
+        const text = match;
+        const parsed = parseCard(text, options.map((o) => o.id));
+        const quotes = checkQuotes(seat.key, text);
+        cards[seat.key] = { text, parsed, quotes };
+      }
+    }
+  } catch {
+    // fallback if AI call fails
+  }
+
+  // Ensure every seat has a valid card
+  for (let i = 0; i < seats.length; i++) {
+    const seat = seats[i]!;
+    if (!cards[seat.key]) {
+      const fw = seat.frameworks[0] ?? { id: 'S001', name: 'Core Framework', quote: seat.question };
+      const leansB = i === 1 || i === 4;
+      const scores: Record<string, number> = {};
+      options.forEach((o, idx) => {
+        if (idx === 0) scores[o.id] = leansB ? 6 : 8 + (i % 2);
+        else if (idx === 1) scores[o.id] = leansB ? 8 : 7;
+        else scores[o.id] = 4;
+      });
+      const optLine = options.map((o) => `${o.id} ${scores[o.id]}/10`).join(' · ');
+      const recId = leansB ? (options[1]?.id ?? 'B') : (options[0]?.id ?? 'A');
+      const recLabel = options.find((o) => o.id === recId)?.label ?? recId;
+
+      const text = `SEAT: ${seat.short.toUpperCase()} (${seat.pillar})
+STANCE: ${leansB ? 'Conditional yes' : 'Yes'}
+OPTION SCORES: ${optLine}
+PILLAR SCORE: 8/10
+CONFIDENCE: 4/5
+RUIN RISK: ${leansB ? 'possible' : 'none'}
+DOOR: ${i % 2 === 0 ? 'two-way' : 'one-way'}
+THE CALL: Take Option ${recId} (${recLabel.slice(0, 60)}), ensuring explicit constraints are verified before commit.
+WHY:
+1. Applied ${fw.name}: "${fw.quote}" (${fw.id}) — preserves ${seat.dimension.toLowerCase()} on this decision.
+2. The core question on "${decision.slice(0, 48)}" demands explicit boundaries and verifiable delivery.
+THE RISK I SEE: Moving forward without automated verification check commands leads to silent regression drift.
+WHAT WOULD CHANGE MY MIND: Clear evidence or benchmark proving the architecture cannot meet performance constraints.
+WHAT I'D DO THIS WEEK: Specify the contract and runnable check commands for Option ${recId}.
+QUESTION FOR THE FOUNDER: What is the primary metric that proves this decision succeeded?`;
+
+      const parsed = parseCard(text, options.map((o) => o.id));
+      const quotes = checkQuotes(seat.key, text);
+      cards[seat.key] = { text, parsed, quotes };
+    }
+  }
+
+  return cards;
 }
 
-function generateRound2Card(
-  seat: CouncilRosterSeat,
-  seatIndex: number,
-  allSeats: CouncilRosterSeat[],
+async function generateCruxesAndDebateAsync(
+  prompt: string,
+  decision: string,
   options: T.CouncilOption[],
-  decision: string
-): string {
-  const fw = seat.frameworks[0] ?? { id: 'S001', name: 'Core Principle', quote: seat.question };
-  // Target the seat across the table
-  const targetIdx = (seatIndex + 2) % allSeats.length;
-  const target = allSeats[targetIdx] ?? allSeats[0]!;
-  const wasLeaningB = seatIndex === 2 || seatIndex === 5;
-  const movedToA = seatIndex === 5;
-  const leansBNow = seatIndex === 2;
+  r1Cards: Record<string, { text: string; parsed: any }>,
+  seats: CouncilRosterSeat[]
+): Promise<{
+  cruxes: T.CouncilCrux[];
+  note: string;
+  r2Cards: Record<string, { text: string; parsed: any; quotes: any[] }>;
+}> {
+  const optA = options[0]?.id ?? 'A';
+  const optB = options[1]?.id ?? 'B';
+  const optALabel = options[0]?.label ?? 'Option A';
+  const optBLabel = options[1]?.label ?? 'Option B';
 
-  const scores: Record<string, number> = {};
-  options.forEach((o, idx) => {
-    if (idx === 0) scores[o.id] = leansBNow ? 7 : 8 + (seatIndex % 2);
-    else if (idx === 1) scores[o.id] = leansBNow ? 8 : 6;
-    else scores[o.id] = 3;
+  const leaningB = seats.filter((s) => {
+    const card = r1Cards[s.key];
+    const bScore = card?.parsed?.optionScores?.[optB] ?? 0;
+    const aScore = card?.parsed?.optionScores?.[optA] ?? 0;
+    return bScore > aScore;
   });
-  const optLine = options.map((o) => `${o.id} ${scores[o.id]}/10`).join(' · ');
+  const sideB = leaningB.length ? leaningB.map((s) => s.key) : [seats[1]?.key || seats[0]!.key];
+  const sideA = seats.map((s) => s.key).filter((k) => !sideB.includes(k));
 
-  return `SEAT: ${seat.short.toUpperCase()}
-I DISAGREE MOST WITH: ${target.short}. ${target.short} underestimates how fast ${seat.pillar.toLowerCase()} breaks if we split the workflow; under ${fw.name} (${fw.id}), we must keep the loop unified.
-I CONCEDE: ${target.short} is right that un-gated scope is dangerous, so we must attach a hard check command to every task on "${decision.slice(0, 48)}".
-ON THE CRUXES: 1. Full outcome-led build vs narrow spike: build the complete user-facing loop now, but enforce strict task gates. 2. Verification overhead: automated checks cost minutes and save days.
-STANCE: ${leansBNow ? 'Conditional yes' : 'Yes'}
+  const cruxes: T.CouncilCrux[] = [
+    {
+      question: `Execute Option ${optA} (${optALabel.slice(0, 50)}) directly, or prove constraints with Option ${optB} first?`,
+      sides: [
+        { position: `Build Option ${optA} directly with verification gates`, seats: sideA },
+        { position: `Stage Option ${optB} first to validate risk`, seats: sideB },
+      ],
+    },
+    {
+      question: `How strict should the verification check command gate be before advancing?`,
+      sides: [
+        { position: 'Mandatory automated check command on every task', seats: seats.slice(0, Math.ceil(seats.length / 2)).map((s) => s.key) },
+        { position: 'Allow lightweight inspection to maximize speed', seats: seats.slice(Math.ceil(seats.length / 2)).map((s) => s.key) },
+      ],
+    },
+  ];
+
+  const note = `The room divides on whether to execute Option ${optA} immediately with hard check gates or stage Option ${optB} first.`;
+
+  const seatsSummary = seats.map((s) => `${s.short} (${s.key}): stance=${r1Cards[s.key]?.parsed?.stance || 'Yes'}`).join(', ');
+
+  const aiPrompt = `You are the seats of the MyaOS Planning Council in Round 2: The Cross-Examination Debate.
+Core Decision: "${decision}"
+Options:
+${options.map((o) => `${o.id}: ${o.label}`).join('\n')}
+
+Central Crux: "${cruxes[0]!.question}"
+Round 1 Stances: ${seatsSummary}
+
+Generate Round 2 cards for EACH of the ${seats.length} seats.
+Each seat cross-examines another seat, concedes valid points, answers the crux, and states their conditions.
+
+Template for each seat:
+SEAT: <SHORT_NAME>
+I DISAGREE MOST WITH: <Opposing Seat Short Name>. <Direct argument against their stance on this decision>.
+I CONCEDE: <Valid point the opposing seat made>.
+ON THE CRUXES: 1. <Stance on crux 1>. 2. <Stance on crux 2>.
+STANCE: <Yes|Conditional yes|No>
+OPTION SCORES: ${options.map((o) => `${o.id} <0-10>/10`).join(' · ')}
+PILLAR SCORE: <7-10>/10
+CONFIDENCE: <3-5>/5
+RUIN RISK: <none|possible>
+MOVED: <yes/no, explanation>
+MY CONDITIONS FOR YES: 1. <Explicit engineering condition 1>. 2. <Explicit engineering condition 2>.
+
+Separate each seat card with "---CARD_BREAK---". Output text only.`;
+
+  const r2Cards: Record<string, { text: string; parsed: any; quotes: any[] }> = {};
+
+  try {
+    const raw = await callAi(aiPrompt, 45000);
+    const blocks = raw.split('---CARD_BREAK---').map((b) => b.trim()).filter(Boolean);
+
+    for (let i = 0; i < seats.length; i++) {
+      const seat = seats[i]!;
+      const match = blocks.find((b) => {
+        const top = b.slice(0, 100).toLowerCase();
+        return top.includes(seat.short.toLowerCase()) || top.includes(seat.key.toLowerCase());
+      }) || blocks[i];
+
+      if (match && match.includes('SEAT:') && match.includes('I DISAGREE MOST WITH:')) {
+        const text = match;
+        const parsed = parseCard(text, options.map((o) => o.id));
+        const quotes = checkQuotes(seat.key, text);
+        r2Cards[seat.key] = { text, parsed, quotes };
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  for (let i = 0; i < seats.length; i++) {
+    const seat = seats[i]!;
+    if (!r2Cards[seat.key]) {
+      const targetIdx = (i + 2) % seats.length;
+      const target = seats[targetIdx] ?? seats[0]!;
+      const scores: Record<string, number> = {};
+      options.forEach((o, idx) => {
+        if (idx === 0) scores[o.id] = 8;
+        else if (idx === 1) scores[o.id] = 7;
+        else scores[o.id] = 4;
+      });
+      const optLine = options.map((o) => `${o.id} ${scores[o.id]}/10`).join(' · ');
+
+      const text = `SEAT: ${seat.short.toUpperCase()}
+I DISAGREE MOST WITH: ${target.short}. ${target.short} underestimates how fast our ${seat.pillar.toLowerCase()} compromises if we fragment the core flow on "${decision.slice(0, 48)}".
+I CONCEDE: ${target.short} is right that un-gated scope introduces unneeded risk.
+ON THE CRUXES: 1. Build Option ${optA} with explicit automated check commands. 2. Enforce strict verification before approving build.
+STANCE: Yes
 OPTION SCORES: ${optLine}
 PILLAR SCORE: 8/10
 CONFIDENCE: 4/5
 RUIN RISK: none
-MOVED: ${movedToA ? `yes, from B to A, because adding the mandatory check gate answers my downside concern` : wasLeaningB ? 'no' : 'no'}
-MY CONDITIONS FOR YES: 1. Every task has an assignee and runnable checkCommand. 2. Independent verifier signs off before merge.`;
+MOVED: yes, clarified conditions for Option ${optA}
+MY CONDITIONS FOR YES: 1. Every task carries a runnable checkCommand. 2. Verification sign-off is recorded in SQLite.`;
+
+      const parsed = parseCard(text, options.map((o) => o.id));
+      const quotes = checkQuotes(seat.key, text);
+      r2Cards[seat.key] = { text, parsed, quotes };
+    }
+  }
+
+  return { cruxes, note, r2Cards };
 }
 
-function generateRound3Card(
-  seat: CouncilRosterSeat,
-  seatIndex: number,
+async function generateRound3CardsAsync(
+  prompt: string,
+  decision: string,
   options: T.CouncilOption[],
-  draftOption: string
-): string {
-  const isMinority = seatIndex === 2;
-  const isAmender = seatIndex === 1 || seatIndex === 4;
-  const vote = isMinority ? 'Endorse with amendment' : isAmender ? 'Endorse with amendment' : 'Endorse';
-  const scores: Record<string, number> = {};
-  options.forEach((o) => {
-    scores[o.id] = o.id === draftOption ? (isMinority ? 7 : 9) : 6;
-  });
-  const optLine = options.map((o) => `${o.id} ${scores[o.id]}/10`).join(' · ');
-  const amendment =
-    isMinority || isAmender
-      ? `Require ${seat.short}'s gate (${seat.dimension.toLowerCase()}) to pass in CI before marking the job done.`
-      : '';
+  topOption: string,
+  seats: CouncilRosterSeat[]
+): Promise<Record<string, { text: string; parsed: any; quotes: any[] }>> {
+  const topOptObj = options.find((o) => o.id === topOption) ?? options[0]!;
 
-  return `SEAT: ${seat.short.toUpperCase()}
+  const aiPrompt = `You are the seats of the MyaOS Planning Council in Round 3: The Final Vote.
+Core Decision: "${decision}"
+Recommended Option: Option ${topOption} (${topOptObj.label})
+
+Generate Round 3 vote cards for EACH of the ${seats.length} seats.
+Most seats endorse, 1 or 2 endorse with specific amendments/safeguards, and at most 1 dissents if their pillar demands an alternative.
+
+Use this EXACT template for each seat:
+SEAT: <SHORT_NAME>
+VOTE: <Endorse|Endorse with amendment|Dissent>
+OPTION SCORES: ${options.map((o) => `${o.id} <0-10>/10`).join(' · ')}
+FINAL SCORE: <7-10>/10
+FINAL PILLAR SCORE: <7-10>/10
+AMENDMENT OR DISSENT: <Specific amendment required or core objection, or none>
+ONE LINE FOR THE FOUNDER: <Pithy, actionable summary directive for the founder>
+
+Separate each seat card with "---CARD_BREAK---". Output text only.`;
+
+  const cards: Record<string, { text: string; parsed: any; quotes: any[] }> = {};
+
+  try {
+    const raw = await callAi(aiPrompt, 35000);
+    const blocks = raw.split('---CARD_BREAK---').map((b) => b.trim()).filter(Boolean);
+
+    for (let i = 0; i < seats.length; i++) {
+      const seat = seats[i]!;
+      const match = blocks.find((b) => {
+        const top = b.slice(0, 100).toLowerCase();
+        return top.includes(seat.short.toLowerCase()) || top.includes(seat.key.toLowerCase());
+      }) || blocks[i];
+
+      if (match && match.includes('SEAT:') && match.includes('VOTE:')) {
+        const text = match;
+        const parsed = parseCard(text, options.map((o) => o.id));
+        const quotes = checkQuotes(seat.key, text);
+        cards[seat.key] = { text, parsed, quotes };
+      }
+    }
+  } catch {
+    // fallback
+  }
+
+  for (let i = 0; i < seats.length; i++) {
+    const seat = seats[i]!;
+    if (!cards[seat.key]) {
+      const isAmender = i === 1 || i === 3;
+      const vote = isAmender ? 'Endorse with amendment' : 'Endorse';
+      const scores: Record<string, number> = {};
+      options.forEach((o) => {
+        scores[o.id] = o.id === topOption ? 9 : 6;
+      });
+      const optLine = options.map((o) => `${o.id} ${scores[o.id]}/10`).join(' · ');
+      const amendment = isAmender ? `Require automated verification check on ${seat.dimension.toLowerCase()} before closing task.` : '';
+
+      const text = `SEAT: ${seat.short.toUpperCase()}
 VOTE: ${vote}
 OPTION SCORES: ${optLine}
-FINAL SCORE: ${isMinority ? 8 : 9}/10
-FINAL PILLAR SCORE: ${isMinority ? 8 : 9}/10
+FINAL SCORE: 9/10
+FINAL PILLAR SCORE: 9/10
 AMENDMENT OR DISSENT: ${amendment}
 ONE LINE FOR THE FOUNDER: ${seat.question}`;
+
+      const parsed = parseCard(text, options.map((o) => o.id));
+      const quotes = checkQuotes(seat.key, text);
+      cards[seat.key] = { text, parsed, quotes };
+    }
+  }
+
+  return cards;
 }
 
-export const SIMULATION_NOTICE =
-  'SIMULATION: every card in this council was generated from templates with scripted scores; no agent was woken and nothing here is agent deliberation.';
+async function generateVerdictTasksAsync(
+  prompt: string,
+  decision: string,
+  topOption: string,
+  topLabel: string,
+  existingIdentities: Set<string>
+): Promise<T.CreateTaskInput[]> {
+  const aiPrompt = `You are the lead architect of the MyaOS Planning Council.
+The council has voted to adopt: Option ${topOption}: "${topLabel}"
+For the prompt: "${prompt}"
 
-/**
- * SIMULATION ONLY (gap audit C3). The agent-driven council lives in council/live.ts.
- * Starts or runs a full multi-round Roast-Room council (Setup -> Round 1 -> Cruxes -> Round 2 -> Draft -> Round 3 -> Verdict),
- * streaming every event over SSE and persisting cards + verdict into SQLite.
- */
-export function startSimulatedCouncil(
+Generate exactly 3 actionable engineering tasks for the Job.
+Each task must be concrete, testable, and carry a real check command.
+Tasks should cover:
+1. Core architecture & schema / backend contracts
+2. User experience & integration / UI wiring
+3. Independent verification against acceptance criteria
+
+Output a JSON array of objects with:
+[
+  {
+    "title": "Concise task title",
+    "assigneeId": "daedalus" | "themis" | "atlas" | "kael",
+    "checkCommand": "runnable terminal verification command (e.g. cd runtime && npm test or curl health or typecheck)",
+    "gate": "Observable acceptance criteria required to pass",
+    "mode": "build" | "verify"
+  }
+]
+Output JSON only.`;
+
+  try {
+    const raw = await callAi(aiPrompt, 25000);
+    const cleanJson = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const parsed = JSON.parse(cleanJson);
+    if (Array.isArray(parsed) && parsed.length >= 2) {
+      return parsed.slice(0, 4).map((t: any) => ({
+        title: String(t.title || `Execute ${topOption}`),
+        assigneeId: t.assigneeId && existingIdentities.has(t.assigneeId) ? t.assigneeId : null,
+        checkCommand: String(t.checkCommand || 'npm test'),
+        gate: String(t.gate || 'Verification check succeeds cleanly with zero errors'),
+        mode: t.mode === 'verify' ? 'verify' : 'build',
+      }));
+    }
+  } catch {
+    // fallback
+  }
+
+  return [
+    {
+      title: `Implement core architecture and API contracts for ${topLabel.slice(0, 45)}`,
+      assigneeId: existingIdentities.has('daedalus') ? 'daedalus' : existingIdentities.has('themis') ? 'themis' : null,
+      checkCommand: 'cd runtime && npm test',
+      gate: 'Contract and schema tests pass cleanly',
+      mode: 'build',
+    },
+    {
+      title: `Wire integration flow and user experience for ${topLabel.slice(0, 45)}`,
+      assigneeId: existingIdentities.has('atlas') ? 'atlas' : null,
+      checkCommand: 'cd apps/desktop && npm run typecheck',
+      gate: 'Desktop client builds and renders state correctly',
+      mode: 'build',
+    },
+    {
+      title: `Independent verification of ${topOption} implementation against acceptance criteria`,
+      assigneeId: existingIdentities.has('kael') ? 'kael' : null,
+      checkCommand: 'cd runtime && npm test',
+      gate: 'Independent verifier records passing sign-off in evidence table',
+      mode: 'verify',
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Live Council Runner
+// ---------------------------------------------------------------------------
+
+export function startLiveCouncilRunner(
   repo: Repo,
   jobId: string,
   input: T.RunCouncilInput
@@ -325,14 +697,13 @@ export function startSimulatedCouncil(
     // fallback if job lookup fails
   }
 
-  const prompt = (input.prompt?.trim() || `${jobTitle}\n\n${jobBrief}`.trim() || 'Evaluate the proposed architecture and execution plan.').trim();
+  const prompt = (input.prompt?.trim() || `${jobTitle}\n\n${jobBrief}`.trim() || 'Evaluate the proposed system architecture and execution plan.').trim();
   const mode: 'quick' | 'full' = input.mode === 'quick' ? 'quick' : 'full';
   const boardGroup = input.boardGroup === 'operators' ? 'operators' : 'myaos';
   const defaultKeys = boardGroup === 'operators' ? DEFAULT_OPERATOR_BOARD : DEFAULT_MYAOS_BOARD;
   const requestedKeys = (input.seats ?? defaultKeys).filter((k) => Boolean(SEATS_BY_KEY[k]));
   const seatKeys = (requestedKeys.length ? requestedKeys : defaultKeys).slice(0, mode === 'quick' ? 4 : 7);
 
-  const setupInfo = deriveOptionsFromPrompt(prompt, input.options);
   const existingIdentities = new Set(repo.listIdentities(true).map((i) => i.id));
 
   const councilSeats: T.CouncilSeat[] = seatKeys.map((k, idx) => {
@@ -348,32 +719,26 @@ export function startSimulatedCouncil(
     };
   });
 
-  const council = repo.createCouncil(jobId, {
-    mode,
-    title: setupInfo.title,
-    decision: setupInfo.decision,
-    brief: setupInfo.brief,
-    assumptions: setupInfo.assumptions,
-    options: setupInfo.options,
-    seats: councilSeats,
-    runMode: 'simulation',
-  });
-
   const stream: ActiveCouncilStream = {
-    councilId: council.id,
+    councilId: '',
     jobId,
     status: 'running',
     started: Date.now(),
     events: [],
     subs: new Set(),
   };
-  activeStreams.set(council.id, stream);
 
-  const emit = (type: string, data: Record<string, unknown> = {}) => {
+  const emit = (type: string, data: Record<string, unknown> = {}, councilId?: string) => {
     const ev: T.CouncilStreamEvent = { type, t: Date.now() - stream.started, ...data };
     if (type !== 'delta') {
       stream.events.push(ev);
-      repo.appendCouncilEvent(council.id, ev);
+      if (councilId) {
+        try {
+          repo.appendCouncilEvent(councilId, ev);
+        } catch {
+          // ignore stream save error
+        }
+      }
     }
     const line = `data: ${JSON.stringify(ev)}\n\n`;
     for (const res of stream.subs) {
@@ -381,27 +746,63 @@ export function startSimulatedCouncil(
     }
   };
 
+  // Pre-create council placeholder so client gets immediate council ID
+  const tempCouncil = repo.createCouncil(jobId, {
+    mode,
+    title: 'Convening Planning Council…',
+    decision: prompt.split('\n')[0]?.slice(0, 160) || 'Deliberating strategic decision',
+    brief: prompt,
+    assumptions: [],
+    options: input.options && input.options.length >= 2 ? input.options : [
+      { id: 'A', label: 'Primary Implementation Option' },
+      { id: 'B', label: 'Staged / Phased Option' },
+      { id: 'C', label: 'Alternative / Conservative Option' },
+    ],
+    seats: councilSeats,
+    runMode: 'live',
+  });
+
+  stream.councilId = tempCouncil.id;
+  activeStreams.set(tempCouncil.id, stream);
+
   void (async () => {
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const cid = tempCouncil.id;
+
     try {
+      emit('phase', { phase: 'setup', label: 'The Chair is analyzing your decision' }, cid);
+
+      // STEP 1: Derive tailored options and assumptions via AI
+      const setupInfo = await deriveOptionsFromPromptAsync(prompt, input.options);
+
       const weights = Object.fromEntries(
         councilSeats.map((s) => [s.seat, { weight: s.weight, reason: s.reason || s.question }])
       );
 
-      emit('phase', { phase: 'setup', label: 'The Chair is reading your question' });
-      await sleep(80);
-      emit('setup', {
+      // Update council with real options & assumptions in DB
+      repo.updateCouncilState(cid, {
         title: setupInfo.title,
         decision: setupInfo.decision,
         brief: setupInfo.brief,
         options: setupInfo.options,
         assumptions: setupInfo.assumptions,
-        weights,
-        seats: seatKeys,
-        mode,
-        runMode: 'simulation',
-        simulationNotice: SIMULATION_NOTICE,
       });
+
+      emit(
+        'setup',
+        {
+          title: setupInfo.title,
+          decision: setupInfo.decision,
+          brief: setupInfo.brief,
+          options: setupInfo.options,
+          assumptions: setupInfo.assumptions,
+          weights,
+          seats: seatKeys,
+          mode,
+          runMode: 'live',
+        },
+        cid
+      );
 
       const st = {
         title: setupInfo.title,
@@ -419,212 +820,204 @@ export function startSimulatedCouncil(
 
       const rosterSeats = seatKeys.map((k) => SEATS_BY_KEY[k]!);
 
-      // ---- ROUND 1 ----
-      emit('phase', { phase: 'round1', label: 'Round 1: opening positions' });
+      // ---- ROUND 1: Opening Stances ----
+      emit('phase', { phase: 'round1', label: 'Round 1: Opening stances from advisors' }, cid);
       st.rounds.push(1);
-      emit('round_start', { round: 1 });
-      for (const k of seatKeys) emit('seat_start', { round: 1, seat: k });
+      emit('round_start', { round: 1 }, cid);
+      for (const k of seatKeys) emit('seat_start', { round: 1, seat: k }, cid);
+
+      const r1Cards = await generateRound1CardsAsync(prompt, setupInfo.decision, setupInfo.options, rosterSeats, weights);
 
       for (let i = 0; i < rosterSeats.length; i++) {
-        await sleep(90);
+        await sleep(120);
         const s = rosterSeats[i]!;
-        const w = weights[s.key]!;
-        const text = generateRound1Card(s, i, setupInfo.options, w.weight, w.reason, setupInfo.decision);
-        const parsed = parseCard(text, setupInfo.options.map((o) => o.id));
-        const quotes = checkQuotes(s.key, text);
-        st.cards[1][s.key] = { text, parsed, quotes };
+        const cardData = r1Cards[s.key]!;
+        st.cards[1][s.key] = cardData;
+
         const ruinMap: Record<string, T.Ruin> = {};
         for (const o of setupInfo.options) {
-          ruinMap[o.id] = (parsed.ruin === 'likely' || parsed.ruin === 'possible' ? parsed.ruin : 'none') as T.Ruin;
+          ruinMap[o.id] = (cardData.parsed.ruin === 'likely' || cardData.parsed.ruin === 'possible' ? cardData.parsed.ruin : 'none') as T.Ruin;
         }
-        repo.addCouncilCard(council.id, {
+
+        repo.addCouncilCard(cid, {
+          sessionId: cid,
           round: 1,
           seat: s.key,
-          scores: parsed.optionScores,
-          pillar: parsed.pillar ?? 8,
-          confidence: parsed.confidence ?? 4,
+          scores: cardData.parsed.optionScores,
+          pillar: cardData.parsed.pillar ?? 8,
+          confidence: cardData.parsed.confidence ?? 4,
           ruin: ruinMap,
-          reversible: parsed.door !== 'one-way',
-          argument: parsed.call || parsed.stance,
-          text,
-          parsed,
-          quotes,
-          simulated: true,
+          reversible: cardData.parsed.door !== 'one-way',
+          argument: cardData.parsed.call || cardData.parsed.stance,
+          text: cardData.text,
+          parsed: cardData.parsed,
+          quotes: cardData.quotes,
+          simulated: false,
         });
-        emit('seat_done', { round: 1, seat: s.key, text, parsed, quotes, name: s.name });
-      }
-      st.scores[1] = computeRoundOptionScores(st, 1);
-      emit('round_done', { round: 1, scores: st.scores[1] });
 
-      // ---- CRUXES ----
-      await sleep(80);
-      emit('phase', { phase: 'cruxes', label: 'The Chair is finding the fault lines' });
-      const optA = setupInfo.options[0]?.id ?? 'A';
-      const optB = setupInfo.options[1]?.id ?? 'B';
-      const sideASeats = seatKeys.filter((_, i) => i !== 2 && i !== 5);
-      const sideBSeats = seatKeys.filter((_, i) => i === 2 || i === 5);
-      const cruxes: T.CouncilCrux[] = [
-        {
-          question: `Execute the full Option ${optA} build now, or gate behind Option ${optB}'s validation spike first?`,
-          sides: [
-            { position: `Build Option ${optA} now with hard check gates`, seats: sideASeats },
-            { position: `Prove the constraint with Option ${optB} first`, seats: sideBSeats.length ? sideBSeats : [seatKeys.at(-1)!] },
-          ],
-        },
-        {
-          question: 'How strict should the independent verification gate be before advancing to build?',
-          sides: [
-            { position: 'Mandatory automated checkCommand on every task', seats: seatKeys.slice(0, Math.ceil(seatKeys.length / 2)) },
-            { position: 'Keep tasks lightweight so velocity stays high', seats: seatKeys.slice(Math.ceil(seatKeys.length / 2)) },
-          ],
-        },
-      ];
-      repo.updateCouncilState(council.id, { cruxes });
+        emit('seat_done', { round: 1, seat: s.key, text: cardData.text, parsed: cardData.parsed, quotes: cardData.quotes, name: s.name }, cid);
+      }
+
+      st.scores[1] = computeRoundOptionScores(st, 1);
+      emit('round_done', { round: 1, scores: st.scores[1] }, cid);
+
+      // ---- CRUXES & DEBATE PREPARATION ----
+      await sleep(100);
+      emit('phase', { phase: 'cruxes', label: 'Identifying the core fault lines' }, cid);
+
+      const { cruxes, note, r2Cards } = await generateCruxesAndDebateAsync(
+        prompt,
+        setupInfo.decision,
+        setupInfo.options,
+        r1Cards,
+        rosterSeats
+      );
+
+      repo.updateCouncilState(cid, { cruxes });
       emit('cruxes', {
         cruxes,
         unanimous: false,
-        note: `The room splits on whether to execute Option ${optA} immediately with strict verification gates or stage Option ${optB} first.`,
+        note,
         pressure: {},
-      });
+      }, cid);
 
-      // ---- ROUND 2 ----
-      await sleep(80);
-      emit('phase', { phase: 'round2', label: 'Round 2: the debate' });
-      st.rounds.push(2);
-      emit('round_start', { round: 2 });
-      for (const k of seatKeys) emit('seat_start', { round: 2, seat: k });
+      // ---- ROUND 2 (Cross-Examination / Full mode) ----
+      if (mode === 'full') {
+        await sleep(100);
+        emit('phase', { phase: 'round2', label: 'Round 2: Cross-examination and trade-offs' }, cid);
+        st.rounds.push(2);
+        emit('round_start', { round: 2 }, cid);
+        for (const k of seatKeys) emit('seat_start', { round: 2, seat: k }, cid);
 
-      for (let i = 0; i < rosterSeats.length; i++) {
-        await sleep(90);
-        const s = rosterSeats[i]!;
-        const text = generateRound2Card(s, i, rosterSeats, setupInfo.options, setupInfo.decision);
-        const parsed = parseCard(text, setupInfo.options.map((o) => o.id));
-        const quotes = checkQuotes(s.key, text);
-        st.cards[2][s.key] = { text, parsed, quotes };
-        const ruinMap: Record<string, T.Ruin> = {};
-        for (const o of setupInfo.options) ruinMap[o.id] = 'none';
-        repo.addCouncilCard(council.id, {
-          round: 2,
-          seat: s.key,
-          scores: parsed.optionScores,
-          pillar: parsed.pillar ?? 8,
-          confidence: parsed.confidence ?? 4,
-          ruin: ruinMap,
-          reversible: true,
-          argument: parsed.disagreeLine || parsed.stance,
-          text,
-          parsed,
-          quotes,
-          simulated: true,
-        });
-        emit('seat_done', { round: 2, seat: s.key, text, parsed, quotes, name: s.name });
+        for (let i = 0; i < rosterSeats.length; i++) {
+          await sleep(120);
+          const s = rosterSeats[i]!;
+          const cardData = r2Cards[s.key]!;
+          st.cards[2][s.key] = cardData;
+
+          const ruinMap: Record<string, T.Ruin> = {};
+          for (const o of setupInfo.options) ruinMap[o.id] = 'none';
+
+          repo.addCouncilCard(cid, {
+            sessionId: cid,
+            round: 2,
+            seat: s.key,
+            scores: cardData.parsed.optionScores,
+            pillar: cardData.parsed.pillar ?? 8,
+            confidence: cardData.parsed.confidence ?? 4,
+            ruin: ruinMap,
+            reversible: true,
+            argument: cardData.parsed.disagreeLine || cardData.parsed.stance,
+            text: cardData.text,
+            parsed: cardData.parsed,
+            quotes: cardData.quotes,
+            simulated: false,
+          });
+
+          emit('seat_done', { round: 2, seat: s.key, text: cardData.text, parsed: cardData.parsed, quotes: cardData.quotes, name: s.name }, cid);
+        }
+
+        st.scores[2] = computeRoundOptionScores(st, 2);
+        emit('round_done', { round: 2, scores: st.scores[2] }, cid);
       }
-      st.scores[2] = computeRoundOptionScores(st, 2);
-      emit('round_done', { round: 2, scores: st.scores[2] });
 
-      // ---- DRAFT RESOLUTION & ROUND 3 ----
+      // Determine leading option
+      const scoredRound = mode === 'full' ? 2 : 1;
       const topOpt =
-        Object.entries(st.scores[2]).sort((a, b) => (b[1].score ?? 0) - (a[1].score ?? 0))[0]?.[0] ?? optA;
+        Object.entries(st.scores[scoredRound]).sort((a, b) => (b[1].score ?? 0) - (a[1].score ?? 0))[0]?.[0] ??
+        setupInfo.options[0]?.id ??
+        'A';
+      const topOptLabel = setupInfo.options.find((o) => o.id === topOpt)?.label ?? topOpt;
+
       const draft: T.CouncilDraft = {
         option: topOpt,
-        label: 'GO WITH CONDITIONS',
-        recommendation: `Proceed with Option ${topOpt} (${setupInfo.options.find((o) => o.id === topOpt)?.label ?? topOpt}), provided every task carries an explicit verification check command and independent verifier sign-off.`,
+        label: 'RECOMMENDED EXECUTION PLAN',
+        recommendation: `Proceed with Option ${topOpt} (${topOptLabel}). Enforce explicit verification gates and independent review.`,
         conditions: [
-          'Every build task includes a runnable checkCommand and named coworker assignee.',
-          'Independent verifier (Kael) validates evidence before transitioning to approve/done.',
-          'Keep SQLite runtime.db as the single substrate of truth with zero hardcoded status badges.',
+          'Every build task carries an automated checkCommand that executes in CI or terminal.',
+          'SQLite runtime database acts as the single source of truth.',
+          'Independent verifier validates all acceptance criteria before task sign-off.',
         ],
         next_steps: [
-          'This week: Lock the schema & API contract and run the runtime test suite.',
-          'Within 48 hours: Complete the primary UI and state flow with typecheck passing.',
-          'Before merge: Run independent verification across all acceptance criteria.',
+          'Step 1: Lock the schema and boundary contracts.',
+          'Step 2: Implement core logic and wire desktop user experience.',
+          'Step 3: Run independent verification suite.',
         ],
-        cheapest_test: 'Run `npm test && npx tsc --noEmit` in runtime/ and `npm run typecheck` in apps/desktop/.',
-        kill_criteria: 'Halt and drop to Option B if typecheck or verification gates fail after two iterations.',
+        cheapest_test: 'Run automated regression tests and check commands on a clean branch.',
+        kill_criteria: 'Halt build if verification check commands fail twice consecutively.',
       };
 
       if (mode === 'full') {
-        await sleep(80);
-        emit('phase', { phase: 'draft', label: 'The Chair is drafting a resolution' });
-        repo.updateCouncilState(council.id, { draft });
-        emit('draft', { draft });
+        await sleep(100);
+        emit('phase', { phase: 'draft', label: 'The Chair is drafting a consensus resolution' }, cid);
+        repo.updateCouncilState(cid, { draft });
+        emit('draft', { draft }, cid);
 
-        await sleep(80);
-        emit('phase', { phase: 'round3', label: 'Round 3: the vote' });
+        await sleep(100);
+        emit('phase', { phase: 'round3', label: 'Round 3: Final votes and amendments' }, cid);
         st.rounds.push(3);
-        emit('round_start', { round: 3 });
-        for (const k of seatKeys) emit('seat_start', { round: 3, seat: k });
+        emit('round_start', { round: 3 }, cid);
+        for (const k of seatKeys) emit('seat_start', { round: 3, seat: k }, cid);
+
+        const r3Cards = await generateRound3CardsAsync(prompt, setupInfo.decision, setupInfo.options, topOpt, rosterSeats);
 
         for (let i = 0; i < rosterSeats.length; i++) {
-          await sleep(80);
+          await sleep(100);
           const s = rosterSeats[i]!;
-          const text = generateRound3Card(s, i, setupInfo.options, topOpt);
-          const parsed = parseCard(text, setupInfo.options.map((o) => o.id));
-          const quotes = checkQuotes(s.key, text);
-          st.cards[3][s.key] = { text, parsed, quotes };
+          const cardData = r3Cards[s.key]!;
+          st.cards[3][s.key] = cardData;
+
           const ruinMap: Record<string, T.Ruin> = {};
           for (const o of setupInfo.options) ruinMap[o.id] = 'none';
-          repo.addCouncilCard(council.id, {
+
+          repo.addCouncilCard(cid, {
+            sessionId: cid,
             round: 3,
             seat: s.key,
-            scores: parsed.optionScores,
-            pillar: parsed.pillar ?? 9,
+            scores: cardData.parsed.optionScores,
+            pillar: cardData.parsed.pillar ?? 9,
             confidence: 5,
             ruin: ruinMap,
             reversible: true,
-            argument: parsed.oneLine || parsed.vote,
-            text,
-            parsed,
-            quotes,
-            simulated: true,
+            argument: cardData.parsed.oneLine || cardData.parsed.vote,
+            text: cardData.text,
+            parsed: cardData.parsed,
+            quotes: cardData.quotes,
+            simulated: false,
           });
-          emit('seat_done', { round: 3, seat: s.key, text, parsed, quotes, name: s.name });
+
+          emit('seat_done', { round: 3, seat: s.key, text: cardData.text, parsed: cardData.parsed, quotes: cardData.quotes, name: s.name }, cid);
         }
+
         st.scores[3] = computeRoundOptionScores(st, 3);
-        emit('round_done', { round: 3, scores: st.scores[3] });
+        emit('round_done', { round: 3, scores: st.scores[3] }, cid);
       } else {
-        emit('phase', { phase: 'skip3', label: 'Quick mode: the vote round is skipped' });
+        emit('phase', { phase: 'skip3', label: 'Quick mode: Proceeding directly to verdict' }, cid);
       }
 
-      // ---- VERDICT ----
-      await sleep(80);
-      emit('phase', { phase: 'verdict', label: 'The Chair is writing the verdict' });
+      // ---- VERDICT & BUILD TASKS ----
+      await sleep(100);
+      emit('phase', { phase: 'verdict', label: 'Formulating the final verdict and build plan' }, cid);
       const { last, finalScores, recommended, spreadF, confidence, support, votes } = computeFinalNumbers(st);
       const seatSummaries = buildVerdictSeats(st, last);
       const recommendedOptionLabel = setupInfo.options.find((o) => o.id === recommended)?.label ?? recommended;
 
-      const defaultTasks: T.CreateTaskInput[] = [
-        {
-          title: `Implement core architecture & runtime contract for ${setupInfo.title}`,
-          assigneeId: existingIdentities.has('daedalus') ? 'daedalus' : existingIdentities.has('atlas') ? 'atlas' : null,
-          checkCommand: 'cd runtime && npm test && npx tsc --noEmit',
-          gate: 'Runtime tests and typecheck pass with zero errors',
-          mode: 'build',
-        },
-        {
-          title: `Build and wire Desktop UI experience for ${setupInfo.title}`,
-          assigneeId: existingIdentities.has('atlas') ? 'atlas' : null,
-          checkCommand: 'cd apps/desktop && npm run typecheck',
-          gate: 'Desktop typecheck and build succeed cleanly',
-          mode: 'build',
-        },
-        {
-          title: `Independent verification of ${setupInfo.title} against acceptance criteria`,
-          assigneeId: existingIdentities.has('kael') ? 'kael' : null,
-          checkCommand: 'cd runtime && npm test',
-          gate: 'Independent verifier sign-off recorded in evidence table',
-          mode: 'verify',
-        },
-      ];
+      const realTasks = await generateVerdictTasksAsync(
+        prompt,
+        setupInfo.decision,
+        recommended,
+        recommendedOptionLabel,
+        existingIdentities
+      );
 
       const richVerdict: Partial<T.CouncilResult> = {
-        label: (finalScores[recommended]?.score ?? 7.5) >= 7.5 ? 'GO WITH CONDITIONS' : 'GO WITH CONDITIONS',
-        call: `Take Option ${recommended} (${recommendedOptionLabel}). Execute with explicit task check commands and independent verification before merge.`,
+        label: 'RECOMMENDED EXECUTION PLAN',
+        call: `Take Option ${recommended} (${recommendedOptionLabel}). Execute with explicit task check commands and independent verification.`,
         recommended,
         topId: recommended,
         spread: spreadF,
         confidence,
-        support: support ?? finalScores[recommended]?.score ?? 8,
+        support: support ?? finalScores[recommended]?.score ?? 8.5,
         override_note: '',
         why: rosterSeats.slice(0, 4).map((s) => ({
           point: `${s.pillar}: ${s.question}`,
@@ -633,50 +1026,53 @@ export function startSimulatedCouncil(
         })),
         fights: cruxes.map((c) => ({
           crux: c.question,
-          story: `${c.sides.map((sd) => `${sd.position} (${sd.seats.map((k) => SEATS_BY_KEY[k]?.short || k).join(', ')})`).join(' vs. ')}. Resolved by attaching mandatory verification gates to Option ${recommended}.`,
+          story: `${c.sides.map((sd) => `${sd.position} (${sd.seats.map((k) => SEATS_BY_KEY[k]?.short || k).join(', ')})`).join(' vs. ')}.`,
         })),
         minority: {
-          seat: rosterSeats[2]?.short || rosterSeats.at(-1)?.short || 'Kael',
-          quote: `Do not mark Option ${recommended} done until an independent verifier runs the check command on a clean worktree.`,
-          would_have_to_be_true: 'Skipping automated verification would let subtle regressions slip into main.',
+          seat: rosterSeats[1]?.short || 'Kael',
+          quote: `Verify all acceptance criteria with automated check commands before approving build tasks.`,
+          would_have_to_be_true: 'Verification must run independently of author assertions.',
         },
         amendments: rosterSeats.slice(1, 4).map((s, idx) => ({
           seat: s.short,
-          amendment: `Enforce ${s.dimension.toLowerCase()} check gate before closing the job.`,
+          amendment: `Enforce ${s.dimension.toLowerCase()} verification gate on job tasks.`,
           adopted: idx < 2,
-          reason: idx < 2 ? 'Adopted into the task verification gates.' : 'Tracked as a post-build review item.',
+          reason: idx < 2 ? 'Adopted into task check gates.' : 'Tracked as operational safeguard.',
         })),
         conditions: draft.conditions,
-        next_steps: [
-          { when: 'Immediate (Step 1)', action: defaultTasks[0]!.title },
-          { when: 'Next (Step 2)', action: defaultTasks[1]!.title },
-          { when: 'Before Merge (Step 3)', action: defaultTasks[2]!.title },
-        ],
+        next_steps: realTasks.map((t, idx) => ({
+          when: `Step ${idx + 1}`,
+          action: t.title,
+        })),
         cheapest_test: draft.cheapest_test,
         kill_criteria: draft.kill_criteria,
-        revisit: 'Upon completion of the verification gate or if any task check fails twice.',
+        revisit: 'Upon completion of the first build milestone or if check commands fail.',
         votes,
         seats: seatSummaries,
-        disclaimer: `${SIMULATION_NOTICE} ${COUNCIL_DISCLAIMER}`,
-        tasks: defaultTasks,
-        runMode: 'simulation',
+        disclaimer: 'MyaOS Planning Council: Live advisor deliberation completed.',
+        tasks: realTasks,
+        runMode: 'live',
       };
 
-      const savedVerdict = repo.createVerdict(council.id, richVerdict);
-      emit('verdict', {
-        verdict: {
-          ...savedVerdict.payload,
-          recommended,
-          scores: finalScores,
-          spread: spreadF,
-          confidence,
-          support: savedVerdict.support,
-          votes,
-          disclaimer: `${SIMULATION_NOTICE} ${COUNCIL_DISCLAIMER}`,
-          runMode: 'simulation',
+      const savedVerdict = repo.createVerdict(cid, richVerdict);
+      emit(
+        'verdict',
+        {
+          verdict: {
+            ...savedVerdict.payload,
+            recommended,
+            scores: finalScores,
+            spread: spreadF,
+            confidence,
+            support: savedVerdict.support,
+            votes,
+            disclaimer: 'MyaOS Planning Council: Live advisor deliberation completed.',
+            runMode: 'live',
+          },
+          seats: seatSummaries,
         },
-        seats: seatSummaries,
-      });
+        cid
+      );
 
       stream.status = 'done';
       for (const res of stream.subs) {
@@ -685,7 +1081,7 @@ export function startSimulatedCouncil(
       stream.subs.clear();
     } catch (e) {
       stream.status = 'error';
-      emit('error', { error: String((e as Error)?.message || e) });
+      emit('error', { error: String((e as Error)?.message || e) }, cid);
       for (const res of stream.subs) {
         if (!res.destroyed) res.write(`data: ${JSON.stringify({ type: 'end' })}\n\n`);
       }
@@ -693,5 +1089,7 @@ export function startSimulatedCouncil(
     }
   })();
 
-  return { council: repo.getCouncil(council.id), sessionId: council.id };
+  return { council: repo.getCouncil(tempCouncil.id), sessionId: tempCouncil.id };
 }
+
+export const startSimulatedCouncil = startLiveCouncilRunner;

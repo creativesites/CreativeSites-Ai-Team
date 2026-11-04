@@ -355,8 +355,8 @@ export function loadFolderSession(dir: string, idOverride?: string): T.CouncilSe
   };
 }
 
-export function listFolderSessions(extraDirs: string[] = []): T.CouncilSessionSummary[] {
-  const dirs = [BUNDLED_EXAMPLES_DIR, ...extraDirs].filter((d) => d && fs.existsSync(d));
+export function listFolderSessions(extraDirs: string[] = [], includeExamples = false): T.CouncilSessionSummary[] {
+  const dirs = [(includeExamples ? BUNDLED_EXAMPLES_DIR : ''), ...extraDirs].filter((d) => Boolean(d) && fs.existsSync(d));
   const seen = new Set<string>();
   const out: T.CouncilSessionSummary[] = [];
 

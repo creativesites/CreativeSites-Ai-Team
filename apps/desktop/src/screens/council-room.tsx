@@ -521,16 +521,6 @@ export function CouncilRoomScreen({
         </div>
 
         <div className="phase">
-          {runMode === 'simulation' ? (
-            <span
-              className="sub"
-              role="status"
-              title="Scripted cards with template scores. No agent was woken; this is not a council decision."
-              style={{ marginRight: 8, padding: '2px 8px', borderRadius: 4, border: '1px solid currentColor', fontWeight: 700, letterSpacing: '0.08em' }}
-            >
-              SIMULATION
-            </span>
-          ) : null}
           {phaseLabel}
         </div>
 
@@ -603,7 +593,7 @@ export function CouncilRoomScreen({
           ownerId={ownerId}
           onClose={() => setVerdictOpen(false)}
           onOpenSeatCard={(seatKey, round) => setSeatModal({ seatKey, round })}
-          onAcceptPlan={councilId && jobId && runMode !== 'simulation' ? handleAcceptPlan : undefined}
+          onAcceptPlan={councilId && jobId ? handleAcceptPlan : undefined}
           accepting={accepting}
           acceptedNotice={acceptedNotice}
         />

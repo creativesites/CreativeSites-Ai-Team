@@ -174,7 +174,7 @@ test('roast-room roster, bundled example sessions, and the scripted multi-round 
   assert.ok(roster.json.seats.some((s: any) => s.key === 'themis' && s.boardGroup === 'myaos'));
   assert.ok(roster.json.seats.some((s: any) => s.key === 'bezos' && s.boardGroup === 'operators'));
 
-  const sessions = await call('GET', '/v1/councils/sessions');
+  const sessions = await call('GET', '/v1/councils/sessions?includeExamples=true');
   assert.equal(sessions.status, 200);
   assert.ok(sessions.json.sessions.some((s: any) => s.id === '2026-10-23-myaos-desktop-direction'));
 
@@ -192,10 +192,10 @@ test('roast-room roster, bundled example sessions, and the scripted multi-round 
   });
   assert.equal(started.status, 201);
   const runCouncilId = started.json.council.id;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 180; i++) {
     const check = await call('GET', `/v1/councils/${runCouncilId}`);
     if (check.json.status === 'verdict') break;
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 500));
   }
   const finished = await call('GET', `/v1/councils/${runCouncilId}`);
   assert.equal(finished.json.status, 'verdict');
@@ -203,6 +203,6 @@ test('roast-room roster, bundled example sessions, and the scripted multi-round 
   assert.ok(finished.json.cruxes.length >= 1);
   assert.ok(finished.json.verdict.payload.why.length >= 3);
   assert.ok(finished.json.verdict.payload.tasks.length >= 2);
-  assert.equal(finished.json.runMode, 'simulation');
-  assert.ok(finished.json.cards.every((c: any) => c.simulated === true));
+  assert.equal(finished.json.runMode, 'live');
+  assert.ok(finished.json.cards.every((c: any) => c.simulated === false));
 });

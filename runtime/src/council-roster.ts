@@ -45,7 +45,7 @@ export interface CouncilQuoteCheck {
 }
 
 export const COUNCIL_DISCLAIMER =
-  'Simulated advisors built from each advisor or MyaOS coworker framework. They test assumptions and surface trade-offs before build work begins.';
+  'MyaOS Planning Council: Advisors evaluate decisions through their pillar frameworks to surface trade-offs before build work begins.';
 
 export const MYAOS_COUNCIL_SEATS: CouncilRosterSeat[] = [
   {

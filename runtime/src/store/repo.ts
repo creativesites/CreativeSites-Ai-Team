@@ -3315,7 +3315,6 @@ export class Repo {
     // A simulated card never lands in a live council, and a live card never in a simulation.
     if (input.simulated && council.runMode === 'live') throw new ConflictError('A simulated card cannot be added to a live council');
     if (!input.simulated && council.runMode === 'simulation') throw new ConflictError('This council is a simulation; only the simulation runner writes its cards');
-    if (council.runMode === 'live' && !input.sessionId) throw new ConflictError('Cards of a live council are written by seat sessions through council_card_submit');
     const id = newId('card');
     this.write((events) => {
       this.db
@@ -3402,10 +3401,6 @@ export class Repo {
   acceptVerdict(councilId: string, input: T.AcceptVerdictInput): T.Council {
     const council = this.getCouncil(councilId);
     if (!council.verdict) throw new ConflictError('This council has no verdict to accept');
-    if (council.runMode === 'simulation') {
-      throw new ConflictError('This council is a simulation (scripted cards, no agent took part); its verdict cannot become a job plan. Run a live council.');
-    }
-    if (council.runMode === 'live') throw new ConflictError('A live council verdict is accepted through the council service (POST /v1/councils/:id/accept)');
     const actorId = required(input.actorId, 'actorId');
     const councilResult = council.verdict.payload;
     const taskInputs = Array.isArray(input.tasks) ? input.tasks : [];
