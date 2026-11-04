@@ -118,6 +118,12 @@ interface Route {
   handler: Handler;
 }
 
+/** The acting person for archive/delete/link calls: body.actorId, then ?actorId, then the owner. */
+function actorOf(ctx: { body: Record<string, unknown>; query: URLSearchParams }): string {
+  const fromBody = typeof ctx.body?.actorId === 'string' ? ctx.body.actorId.trim() : '';
+  return fromBody || ctx.query.get('actorId')?.trim() || 'owner';
+}
+
 function route(method: string, pathTemplate: string, handler: Handler, open = false): Route {
   const keys: string[] = [];
   const pattern = new RegExp(
@@ -590,6 +596,7 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('GET', '/v1/projects/:id', (ctx) => ({ status: 200, body: repo.getProject(ctx.params.id!) })),
     route('POST', '/v1/projects/:id', (ctx) => ({ status: 200, body: repo.updateProject(ctx.params.id!, ctx.body as T.UpdateProjectInput) })),
     route('GET', '/v1/projects/:id/status', (ctx) => ({ status: 200, body: projectStatus(ctx.params.id!) })),
+    route('GET', '/v1/projects/:id/health', (ctx) => ({ status: 200, body: repo.projectHealth(ctx.params.id!) })),
 
     // project tasks & sprint management
     route('GET', '/v1/project-tasks', (ctx) => {
@@ -706,6 +713,7 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         projectId: ctx.query.get('projectId') ?? undefined,
         stage: (ctx.query.get('stage') as T.JobStage | null) ?? undefined,
         limit: Number(ctx.query.get('limit') ?? 500),
+        includeArchived: ctx.query.get('includeArchived') === '1',
       }),
     })),
     route('POST', '/v1/jobs', (ctx) => ({ status: 201, body: repo.createJob(ctx.body as unknown as T.CreateJobInput) })),
@@ -791,7 +799,34 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       repo.deleteCriterion(ctx.params.id!);
       return { status: 204 };
     }),
-    route('GET', '/v1/jobs/:id/tasks', (ctx) => ({ status: 200, body: repo.listTasks(ctx.params.id!) })),
+    route('GET', '/v1/jobs/:id/tasks', (ctx) => ({ status: 200, body: repo.listTasks(ctx.params.id!, ctx.query.get('includeArchived') === '1') })),
+    // archive / unarchive / confirmed delete (WP7). Delete needs ?confirm=<id> and an archived item.
+    route('POST', '/v1/jobs/:id/archive', (ctx) => ({ status: 200, body: repo.archiveJob(ctx.params.id!, actorOf(ctx), true) })),
+    route('POST', '/v1/jobs/:id/unarchive', (ctx) => ({ status: 200, body: repo.archiveJob(ctx.params.id!, actorOf(ctx), false) })),
+    route('DELETE', '/v1/jobs/:id', (ctx) => {
+      repo.deleteJob(ctx.params.id!, ctx.query.get('confirm'), actorOf(ctx));
+      return { status: 204 };
+    }),
+    route('POST', '/v1/tasks/:id/archive', (ctx) => ({ status: 200, body: repo.archiveTask(ctx.params.id!, actorOf(ctx), true) })),
+    route('POST', '/v1/tasks/:id/unarchive', (ctx) => ({ status: 200, body: repo.archiveTask(ctx.params.id!, actorOf(ctx), false) })),
+    route('DELETE', '/v1/tasks/:id', (ctx) => {
+      repo.deleteTask(ctx.params.id!, ctx.query.get('confirm'), actorOf(ctx));
+      return { status: 204 };
+    }),
+    // link a job to a key result and milestone; krId null unlinks
+    route('POST', '/v1/jobs/:id/kr-link', (ctx) => {
+      const b = ctx.body as { krId?: string | null; milestoneId?: string | null; weight?: number };
+      if (b.krId === undefined) throw new InputError('krId is required (use null to unlink)');
+      return {
+        status: 200,
+        body: repo.linkJobToKr(ctx.params.id!, {
+          krId: b.krId,
+          milestoneId: b.milestoneId,
+          weight: b.weight,
+          actorId: actorOf(ctx),
+        }),
+      };
+    }),
     route('POST', '/v1/jobs/:id/tasks', (ctx) => ({ status: 201, body: repo.createTask(ctx.params.id!, ctx.body as unknown as T.CreateTaskInput) })),
     route('PATCH', '/v1/tasks/:id', (ctx) => {
       if (ctx.body && 'status' in ctx.body) {
@@ -1341,9 +1376,10 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const input = ctx.body as unknown as T.UpdateOkrProgressInput;
       return {
         status: 200,
-        body: repo.updateOkrProgress(ctx.params.id!, Number(input?.current_value ?? 0)),
+        body: repo.updateOkrProgress(ctx.params.id!, Number(input?.current_value ?? 0), { actorId: input?.actorId, note: input?.note }),
       };
     }),
+    route('GET', '/v1/okrs/key-results/:id/progress', (ctx) => ({ status: 200, body: repo.listOkrProgressEntries(ctx.params.id!) })),
     route('GET', '/v1/okrs/reality-audit', () => ({
       status: 200,
       body: repo.getRealityHealthScore(),

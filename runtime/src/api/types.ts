@@ -260,6 +260,8 @@ export interface JobSummary {
   intakeId?: string | null;
   okrKrId?: string | null;
   milestoneId?: string | null;
+  krWeight?: number;
+  archivedAt?: string | null;
 }
 
 export interface Criterion {
@@ -300,6 +302,7 @@ export interface Task {
   verificationRequired?: boolean;
   legacyProjectTaskId?: string | null;
   lastEventAt?: string | null;
+  archivedAt?: string | null;
 }
 
 export interface Evidence {
@@ -1745,19 +1748,53 @@ export interface AiGenerateResponse {
 
 // ---------------------------------------------------------------- Strategic OKRs
 
-export interface OkrObjective {
+/** Derived fields (WP7). progress is null when UNKNOWN; progress_percent is a deprecated stored mirror. */
+export interface OkrObjectiveStrategy {
+  progress: number | null;
+  computedStatus: 'UNKNOWN' | 'on_track' | 'at_risk' | 'behind' | 'completed';
+  krCount: number;
+  unknownKrCount: number;
+}
+
+export interface OkrKeyResultStrategy {
+  kind: 'manual' | 'evidence' | 'computed';
+  source: string | null;
+  weight: number;
+  progress: number | null;
+  status: 'UNKNOWN' | 'on_track' | 'at_risk' | 'behind' | 'completed';
+  provenance: 'manual' | 'verified' | 'runtime_observed' | 'UNKNOWN';
+  reason: string | null;
+  linkedJobs: number;
+  countedJobs: number;
+}
+
+export interface OkrProgressEntry {
+  id: string;
+  keyResultId: string;
+  value: number | null;
+  progressPercent: number | null;
+  provenance: 'manual' | 'agent_reported' | 'runtime_observed' | 'verified';
+  jobId: string | null;
+  evidenceId: string | null;
+  recordedBy: string;
+  recordedAt: string;
+  note: string | null;
+}
+
+export interface OkrObjective extends OkrObjectiveStrategy {
   id: string;
   title: string;
   description: string | null;
   owner_id: string | null;
   quarter: string;
+  /** Deprecated stored mirror; 0 when UNKNOWN. Use `progress`. */
   progress_percent: number;
   status: 'on_track' | 'at_risk' | 'behind' | 'completed';
   created_at: string;
   updated_at: string;
 }
 
-export interface OkrKeyResult {
+export interface OkrKeyResult extends OkrKeyResultStrategy {
   id: string;
   objective_id: string;
   title: string;
@@ -1765,7 +1802,9 @@ export interface OkrKeyResult {
   current_value: number;
   target_value: number;
   unit: string | null;
+  /** Deprecated stored mirror; 0 when UNKNOWN. Use `progress`. */
   progress_percent: number;
+  /** Stored for reference only. It is never evaluated and is not a measurement. */
   telemetry_query: string | null;
   created_at: string;
   updated_at: string;
@@ -1789,13 +1828,35 @@ export interface SaveOkrKeyResultInput {
   target_value?: number;
   unit?: string;
   telemetry_query?: string;
+  kind?: 'manual' | 'evidence' | 'computed';
+  source?: string;
+  weight?: number;
+  actorId?: string;
 }
 
 export interface UpdateOkrProgressInput {
   current_value: number;
+  actorId?: string;
+  note?: string;
+}
+
+export interface HealthFigure {
+  /** Percent, or null (UNKNOWN) when the denominator is 0. */
+  value: number | null;
+  numerator: number;
+  denominator: number;
+  status: 'UNKNOWN' | 'measured';
+  basis: string;
 }
 
 export interface RealityAuditSummary {
+  /** Separate figures (WP7). Each is null/UNKNOWN when its denominator is 0. */
+  execution: HealthFigure;
+  evidence: HealthFigure;
+  strategy: HealthFigure & { objectives: number; objectivesWithProgress: number; unknownKeyResults: number };
+  /** Deprecated: mean of the measured figures above (0 when none is measured); never from typed-in progress. */
+  healthScoreDeprecated: true;
+  healthScoreUnknown: boolean;
   healthScore: number;
   totalObjectives: number;
   totalKeyResults: number;

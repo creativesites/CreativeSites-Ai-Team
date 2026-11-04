@@ -134,7 +134,7 @@ export function OkrsScreen({
   const [krCurrentValue, setKrCurrentValue] = React.useState<number>(0);
   const [krTargetValue, setKrTargetValue] = React.useState<number>(100);
   const [krUnit, setKrUnit] = React.useState('%');
-  const [krTelemetryQuery, setKrTelemetryQuery] = React.useState('');
+  const [krKind, setKrKind] = React.useState<'manual' | 'evidence' | 'computed'>('manual');
 
   // Data fetching
   const loadOkrs = React.useCallback(async () => {
@@ -229,7 +229,7 @@ export function OkrsScreen({
     setKrCurrentValue(0);
     setKrTargetValue(100);
     setKrUnit('%');
-    setKrTelemetryQuery('');
+    setKrKind('manual');
     setShowKeyResultModal(true);
   };
 
@@ -242,7 +242,7 @@ export function OkrsScreen({
     setKrCurrentValue(kr.current_value);
     setKrTargetValue(kr.target_value);
     setKrUnit(kr.unit || '');
-    setKrTelemetryQuery(kr.telemetry_query || '');
+    setKrKind(kr.kind);
     setShowKeyResultModal(true);
   };
 
@@ -259,7 +259,9 @@ export function OkrsScreen({
         current_value: Number(krCurrentValue),
         target_value: Number(krTargetValue),
         unit: krUnit.trim() || undefined,
-        telemetry_query: krTelemetryQuery.trim() || undefined,
+        kind: krKind,
+        // A typed value only applies to manual key results; the others derive progress.
+        ...(krKind === 'manual' ? {} : { current_value: undefined }),
       });
       setShowKeyResultModal(false);
       await loadOkrs();
@@ -287,7 +289,7 @@ export function OkrsScreen({
         prev.map((k) => {
           if (k.id === krIdToUpdate) {
             const prog = k.target_value > 0 ? Math.round(Math.min(100, Math.max(0, (newVal / k.target_value) * 100))) : 0;
-            return { ...k, current_value: newVal, progress_percent: prog };
+            return { ...k, current_value: newVal, progress_percent: prog, progress: prog, provenance: 'manual' as const, status: 'on_track' as const };
           }
           return k;
         })
@@ -352,10 +354,13 @@ export function OkrsScreen({
 
   const totalAvgProgress =
     objectives.length > 0
-      ? Math.round(objectives.reduce((acc, o) => acc + o.progress_percent, 0) / objectives.length)
-      : 0;
+      ? (() => {
+          const known = objectives.filter((o) => o.progress !== null);
+          return known.length ? Math.round(known.reduce((acc, o) => acc + (o.progress ?? 0), 0) / known.length) : null;
+        })()
+      : null;
 
-  const realityHealthScore = auditSummary?.healthScore ?? 94;
+  const fmtFigure = (f: { value: number | null } | undefined) => (f && f.value !== null ? `${f.value}%` : 'UNKNOWN');
 
   if (loading) {
     return (
@@ -386,7 +391,7 @@ export function OkrsScreen({
               </span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Executive goal cascade, telemetry-linked key results, and un-mocked substrate reality tracking
+              Executive goal cascade, evidence-derived key results; UNKNOWN is shown wherever nothing is measured
             </p>
           </div>
         </div>
@@ -394,26 +399,25 @@ export function OkrsScreen({
         {/* Executive Dials & Actions */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="glass-panel flex items-center gap-3 rounded-xl px-3.5 py-2 border border-border/40">
-            <CircularProgressDial percentage={totalAvgProgress} size={44} strokeWidth={4} />
+            <CircularProgressDial percentage={totalAvgProgress ?? 0} size={44} strokeWidth={4} />
             <div>
               <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-bold">
                 Overall Progress
               </div>
-              <div className="text-xs font-bold text-foreground">{totalAvgProgress}% Complete</div>
+              <div className="text-xs font-bold text-foreground">{totalAvgProgress === null ? 'UNKNOWN' : `${totalAvgProgress}% Complete`}</div>
             </div>
           </div>
 
           <div className="glass-panel flex items-center gap-3 rounded-xl px-3.5 py-2 border border-border/40">
             <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10 font-mono text-xs font-bold text-primary border border-primary/20">
-              {realityHealthScore}%
+              {fmtFigure(auditSummary?.execution)}
             </div>
             <div>
               <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-bold">
                 Reality Health
               </div>
               <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
-                <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Substrate Truth
+                Exec {fmtFigure(auditSummary?.execution)} · Evid {fmtFigure(auditSummary?.evidence)} · Strat {fmtFigure(auditSummary?.strategy)}
               </div>
             </div>
           </div>
@@ -579,11 +583,11 @@ export function OkrsScreen({
                       <div className="h-2 w-24 overflow-hidden rounded-full bg-foreground/10">
                         <div
                           className="h-full rounded-full bg-primary transition-all duration-300"
-                          style={{ width: `${Math.min(100, Math.max(0, obj.progress_percent))}%` }}
+                          style={{ width: `${Math.min(100, Math.max(0, obj.progress ?? 0))}%` }}
                         />
                       </div>
                       <span className="w-8 text-right font-mono text-xs font-bold text-foreground">
-                        {obj.progress_percent}%
+                        {obj.progress === null ? 'UNKNOWN' : `${obj.progress}%`}
                       </span>
                     </div>
 
@@ -680,18 +684,21 @@ export function OkrsScreen({
                                 <div
                                   className={cn(
                                     'h-full rounded-full transition-all duration-300',
-                                    kr.progress_percent >= 80 ? 'bg-emerald-400' : kr.progress_percent >= 40 ? 'bg-amber-400' : 'bg-rose-400'
+                                    kr.progress === null ? 'bg-foreground/20' : kr.progress >= 80 ? 'bg-emerald-400' : kr.progress >= 40 ? 'bg-amber-400' : 'bg-rose-400'
                                   )}
-                                  style={{ width: `${Math.min(100, Math.max(0, kr.progress_percent))}%` }}
+                                  style={{ width: `${Math.min(100, Math.max(0, kr.progress ?? 0))}%` }}
                                 />
                               </div>
                               <div className="flex items-center justify-between font-mono text-[10px] text-muted-foreground">
-                                <span>{kr.telemetry_query ? 'Telemetry Linked' : 'Manual Progress'}</span>
-                                <span className="font-bold text-foreground">{kr.progress_percent}%</span>
+                                <span title={kr.reason ?? undefined}>
+                                  {kr.provenance === 'UNKNOWN' ? `UNKNOWN${kr.reason ? ` (${kr.reason})` : ''}` : kr.provenance === 'manual' ? 'manual (typed in)' : kr.provenance === 'verified' ? `verified (${kr.countedJobs}/${kr.linkedJobs} jobs)` : `observed (${kr.linkedJobs} jobs, none verified)`}
+                                </span>
+                                <span className="font-bold text-foreground">{kr.progress === null ? 'UNKNOWN' : `${kr.progress}%`}</span>
                               </div>
                             </div>
 
                             {/* Live Interactive Progress Slider */}
+                            {kr.kind === 'manual' && (
                             <div className="flex items-center gap-2 border-t border-border/30 pt-2 text-[11px]">
                               <span className="font-mono text-[10px] text-muted-foreground shrink-0">
                                 Adjust Value:
@@ -709,6 +716,7 @@ export function OkrsScreen({
                                 {kr.current_value}
                               </span>
                             </div>
+                            )}
 
                             {/* 1-Click Action */}
                             <button
@@ -949,14 +957,16 @@ export function OkrsScreen({
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="font-semibold text-muted-foreground">Telemetry Query / Check (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="SELECT COUNT(*) FROM evidence WHERE passed = 1"
-                  value={krTelemetryQuery}
-                  onChange={(e) => setKrTelemetryQuery(e.target.value)}
+                <label className="font-semibold text-muted-foreground">Progress comes from</label>
+                <select
+                  value={krKind}
+                  onChange={(e) => setKrKind(e.target.value as 'manual' | 'evidence' | 'computed')}
                   className="rounded-lg border border-border/60 bg-background/80 px-3 py-1.5 font-mono text-[11px] text-foreground focus:border-primary focus:outline-none"
-                />
+                >
+                  <option value="manual">Typed-in value (manual)</option>
+                  <option value="evidence">Linked jobs with verified evidence</option>
+                  <option value="computed">Computed (not available yet: UNKNOWN)</option>
+                </select>
               </div>
 
               <div className="mt-2 flex justify-end gap-2 border-t border-border/40 pt-3">

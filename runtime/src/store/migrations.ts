@@ -1082,6 +1082,39 @@ export const MIGRATIONS: Migration[] = [
     `,
   },
   {
+    version: 19,
+    name: 'strategy linkage: KR kinds, append-only progress history, archive columns (WP7)',
+    // Additive only. okr_progress_entries is append-only (triggers) and carries no foreign keys so a
+    // KR, job or evidence row can be deleted without rewriting history. Legacy project_tasks is untouched.
+    sql: `
+      ALTER TABLE okr_key_results ADD COLUMN kind TEXT NOT NULL DEFAULT 'manual' CHECK (kind IN ('manual','evidence','computed'));
+      ALTER TABLE okr_key_results ADD COLUMN source TEXT;
+      ALTER TABLE okr_key_results ADD COLUMN weight REAL NOT NULL DEFAULT 1;
+      ALTER TABLE jobs ADD COLUMN kr_weight REAL NOT NULL DEFAULT 1;
+      ALTER TABLE jobs ADD COLUMN archived_at TEXT;
+      ALTER TABLE tasks ADD COLUMN archived_at TEXT;
+      CREATE INDEX IF NOT EXISTS idx_jobs_kr ON jobs(okr_kr_id);
+
+      CREATE TABLE IF NOT EXISTS okr_progress_entries (
+        id TEXT PRIMARY KEY,
+        key_result_id TEXT NOT NULL,
+        value REAL,
+        progress_percent REAL,
+        provenance TEXT NOT NULL CHECK (provenance IN ('manual','agent_reported','runtime_observed','verified')),
+        job_id TEXT,
+        evidence_id TEXT,
+        recorded_by TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        note TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_okr_entries_kr ON okr_progress_entries(key_result_id, recorded_at);
+      CREATE TRIGGER okr_progress_entries_no_update BEFORE UPDATE ON okr_progress_entries
+      BEGIN SELECT RAISE(ABORT, 'okr_progress_entries is append-only'); END;
+      CREATE TRIGGER okr_progress_entries_no_delete BEFORE DELETE ON okr_progress_entries
+      BEGIN SELECT RAISE(ABORT, 'okr_progress_entries is append-only'); END;
+    `,
+  },
+  {
     version: 21,
     name: 'usage v2: token breakdown + measurement, model registry, budgets as limit shares, renewal policy (K6/K7, WP10)',
     sql: `

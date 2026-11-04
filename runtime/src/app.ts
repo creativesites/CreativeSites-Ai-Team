@@ -14,6 +14,7 @@ import { readAdapterEnv } from './adapter-env.ts';
 import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
 import { Ledger } from './ledger/ledger.ts';
+import { onStrategyEvent } from './strategy/okrs.ts';
 import { stopSessionUsage } from './usage/session-hooks.ts';
 import { Scheduler } from './scheduler/scheduler.ts';
 import { installRoutines } from './scheduler/routines.ts';
@@ -71,6 +72,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     (e) => {
       broadcast(e);
       bridge?.onEvent(e);
+      onStrategyEvent(db, e);
       if (e.type === 'session.transcript' && (e.payload as { kind?: string } | undefined)?.kind === 'turn_end' && e.subjectId) {
         try {
           ledger.recordTurn(e.subjectId, Number((e.payload as { seq?: number }).seq));
