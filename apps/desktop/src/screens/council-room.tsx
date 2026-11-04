@@ -153,7 +153,7 @@ export function CouncilRoomScreen({
   const [phaseLabel, setPhaseLabel] = React.useState<string>('Choose a question to begin');
   const [busy, setBusy] = React.useState<boolean>(false);
   // 'simulation' = the scripted runner (template cards, no agent woken); never presented as deliberation.
-  const [runMode, setRunMode] = React.useState<string | null>(null);
+  const [_runMode, setRunMode] = React.useState<string | null>(null);
 
   const [sessionId, setSessionId] = React.useState<string | null>(null);
   const [councilId, setCouncilId] = React.useState<string | null>(null);

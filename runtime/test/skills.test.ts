@@ -279,3 +279,100 @@ test('MCP skill_list and skill_read with an agent token', async () => {
   assert.ok(audited.filter((a) => a.tool === 'skill_read').length >= 3);
   assert.ok(audited.some((a) => a.status === 'rejected'));
 });
+
+test('HTTP API: add new skill, update it, upload skill file, and delete it', async () => {
+  // 1. Create new skill
+  const created = await call('POST', '/v1/skills', {
+    id: 'api-security-audit',
+    name: 'API Security Audit',
+    description: 'Guidelines for evaluating API authentication and token permissions',
+    version: '1.0.0',
+    owner: 'Sentinel',
+    triggers: ['security', 'audit', 'api-key'],
+    workflows: ['strategic', 'incident'],
+    roles: ['verifier', 'security'],
+    body: '## Steps\n1. Check bearer token\n2. Inspect endpoints\n',
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.json.id, 'api-security-audit');
+  assert.equal(created.json.version, '1.0.0');
+  assert.deepEqual(created.json.triggers, ['security', 'audit', 'api-key']);
+  assert.match(created.json.body, /Check bearer token/);
+
+  // 2. Fetch created skill
+  const fetched = await call('GET', '/v1/skills/api-security-audit');
+  assert.equal(fetched.status, 200);
+  assert.equal(fetched.json.id, 'api-security-audit');
+
+  // 3. Update skill
+  const updated = await call('PUT', '/v1/skills/api-security-audit', {
+    version: '1.1.0',
+    description: 'Updated guidelines for evaluating API authentication',
+    triggers: ['security', 'audit', 'oauth'],
+    body: '## Updated Steps\n1. Check OAuth scope\n',
+  });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.json.version, '1.1.0');
+  assert.match(updated.json.body, /Check OAuth scope/);
+
+  // 4. Upload raw skill file
+  const uploaded = await call('POST', '/v1/skills/upload', {
+    filename: 'docker-deployment.md',
+    content: `---\nname: docker-deployment\ndescription: Docker containerization best practices\nversion: 1.0.0\nowner: DevOps\ntriggers: [docker, container]\nworkflows: [quick]\nroles: [ops]\n---\n\n# Docker Deployment\nAlways use multi-stage builds.\n`,
+  });
+  assert.equal(uploaded.status, 201);
+  assert.equal(uploaded.json.id, 'docker-deployment');
+  assert.equal(uploaded.json.version, '1.0.0');
+  assert.match(uploaded.json.body, /multi-stage builds/);
+
+  // 5. Delete skill
+  const del = await call('DELETE', '/v1/skills/api-security-audit');
+  assert.equal(del.status, 200);
+  assert.equal(del.json.deleted, true);
+
+  const getDeleted = await call('GET', '/v1/skills/api-security-audit');
+  assert.equal(getDeleted.status, 404);
+});
+
+test('HTTP API: upload knowledge document, list, retrieve, and delete', async () => {
+  // 1. Upload a text/markdown knowledge document
+  const uploaded = await call('POST', '/v1/knowledge/upload', {
+    filename: 'architecture_guidelines.md',
+    title: 'Architecture Guidelines 2026',
+    category: 'architecture',
+    classification: 'internal',
+    content: '# Architecture Guidelines\n\nAll V2 services must use substrate-native event streams.\nDecouple UI from execution.\n',
+  });
+  assert.equal(uploaded.status, 201);
+  assert.equal(uploaded.json.title, 'Architecture Guidelines 2026');
+  assert.equal(uploaded.json.category, 'architecture');
+  assert.equal(uploaded.json.classification, 'internal');
+  assert.ok(uploaded.json.contentHash);
+  assert.match(uploaded.json.extractedText, /All V2 services must use substrate-native/);
+
+  const docId = uploaded.json.id;
+
+  // 2. List documents
+  const list = await call('GET', '/v1/knowledge?category=architecture');
+  assert.equal(list.status, 200);
+  assert.ok(list.json.documents.some((d: { id: string }) => d.id === docId));
+
+  // 3. Search documents
+  const search = await call('GET', '/v1/knowledge?q=substrate-native');
+  assert.equal(search.status, 200);
+  assert.ok(search.json.documents.some((d: { id: string }) => d.id === docId));
+
+  // 4. Retrieve single document
+  const retrieved = await call('GET', `/v1/knowledge/${docId}`);
+  assert.equal(retrieved.status, 200);
+  assert.equal(retrieved.json.id, docId);
+  assert.match(retrieved.json.content, /Decouple UI from execution/);
+
+  // 5. Delete document
+  const del = await call('DELETE', `/v1/knowledge/${docId}`);
+  assert.equal(del.status, 200);
+  assert.equal(del.json.success, true);
+
+  const afterDelete = await call('GET', `/v1/knowledge/${docId}`);
+  assert.equal(afterDelete.status, 404);
+});

@@ -3,6 +3,7 @@ import { Ledger, LedgerError } from '../ledger/ledger.ts';
 import { jobTimeline } from '../ledger/timeline.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { skillServiceFor } from '../skills/service.ts';
+import { KnowledgeService } from '../knowledge.ts';
 import { handleMcp } from '../agent-tools/mcp-server.ts';
 import { submitPlan } from '../planning/plan.ts';
 import { resolveAgentToken } from '../agent-tools/tokens.ts';
@@ -289,6 +290,9 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     if (!svc) throw new HttpError(503, 'skills are not enabled');
     return svc;
   };
+
+  const knowledgeService = new KnowledgeService(repo.sqlite());
+  const knowledgeOf = () => knowledgeService;
   const routes: Route[] = [
     route('GET', '/health', () => ({ status: 200, body: opts.health() }), true),
 
@@ -389,6 +393,42 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const svc = skillsOf();
       return { status: 200, body: { root: svc.root(), skills: svc.list() } };
     }),
+    route('POST', '/v1/skills', (ctx) => {
+      const svc = skillsOf();
+      const body = ctx.body as any;
+      if (!body || typeof body !== 'object') throw new HttpError(400, 'JSON body required');
+      const skill = svc.saveSkill(body);
+      return { status: 201, body: skill };
+    }),
+    route('PUT', '/v1/skills/:id', (ctx) => {
+      const svc = skillsOf();
+      const body = ctx.body as any;
+      if (!body || typeof body !== 'object') throw new HttpError(400, 'JSON body required');
+      const skill = svc.saveSkill({ ...body, id: ctx.params.id! });
+      return { status: 200, body: skill };
+    }),
+    route('PATCH', '/v1/skills/:id', (ctx) => {
+      const svc = skillsOf();
+      const body = ctx.body as any;
+      if (!body || typeof body !== 'object') throw new HttpError(400, 'JSON body required');
+      const skill = svc.saveSkill({ ...body, id: ctx.params.id! });
+      return { status: 200, body: skill };
+    }),
+    route('DELETE', '/v1/skills/:id', (ctx) => {
+      const svc = skillsOf();
+      const res = svc.deleteSkill(ctx.params.id!);
+      return { status: 200, body: res };
+    }),
+    route('POST', '/v1/skills/upload', (ctx) => {
+      const svc = skillsOf();
+      const body = ctx.body as any;
+      if (!body || !body.filename || (!body.content && !body.base64)) {
+        throw new HttpError(400, 'filename and content required');
+      }
+      const content = body.base64 ? Buffer.from(body.base64.replace(/^data:[^;]+;base64,/, ''), 'base64').toString('utf8') : body.content;
+      const skill = svc.uploadSkill(body.filename, content);
+      return { status: 201, body: skill };
+    }),
     route('POST', '/v1/skills/reload', () => ({ status: 200, body: skillsOf().sync() })),
     route('GET', '/v1/skills/:id', (ctx) => {
       const skill = skillsOf().get(ctx.params.id!);
@@ -399,6 +439,44 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       repo.getTask(ctx.params.id!);
       const svc = skillsOf();
       return { status: 200, body: { taskId: ctx.params.id, skills: svc.taskSkills(ctx.params.id!), packet: svc.skillPacket(ctx.params.id!) } };
+    }),
+
+    // Knowledge & Documents Library
+    route('GET', '/v1/knowledge', (ctx) => {
+      const ksvc = knowledgeOf();
+      const category = ctx.query.get('category') ?? undefined;
+      const projectId = ctx.query.get('projectId') ?? undefined;
+      const query = ctx.query.get('q') ?? undefined;
+      return { status: 200, body: { documents: ksvc.list({ category, projectId, query }), root: ksvc.dir() } };
+    }),
+    route('POST', '/v1/knowledge/upload', (ctx) => {
+      const ksvc = knowledgeOf();
+      const body = ctx.body as any;
+      if (!body || !body.filename || (!body.content && !body.base64)) {
+        throw new HttpError(400, 'filename and content (or base64) required');
+      }
+      const doc = ksvc.upload({
+        filename: body.filename,
+        content: body.base64 || body.content,
+        title: body.title,
+        category: body.category,
+        classification: body.classification,
+        projectId: body.projectId,
+        authorId: body.authorId || repo.ownerId(),
+        isBase64: Boolean(body.base64),
+      });
+      return { status: 201, body: doc };
+    }),
+    route('GET', '/v1/knowledge/:id', (ctx) => {
+      const ksvc = knowledgeOf();
+      const doc = ksvc.get(ctx.params.id!);
+      if (!doc) throw new HttpError(404, `no knowledge document ${ctx.params.id}`);
+      return { status: 200, body: doc };
+    }),
+    route('DELETE', '/v1/knowledge/:id', (ctx) => {
+      const ksvc = knowledgeOf();
+      const res = ksvc.delete(ctx.params.id!);
+      return { status: 200, body: res };
     }),
 
     route('GET', '/v1/search', (ctx) => ({
@@ -872,14 +950,13 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const includeExamples = ctx.query.get('includeExamples') === 'true';
       const dbCouncils: T.CouncilSessionSummary[] = repo
         .listAllCouncils(50)
-        .filter((c) => c.runMode !== 'simulation')
         .map((c) => ({
           id: c.id,
           title: c.title || 'Council Session',
           prompt: c.decision || c.brief || '',
           mode: c.mode,
           status: c.status === 'running' ? 'running' : 'done',
-          source: 'runtime',
+          source: c.runMode === 'simulation' ? 'simulation' : 'runtime',
           jobId: c.jobId,
           runMode: c.runMode ?? null,
         }));
@@ -902,7 +979,11 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('POST', '/v1/jobs/:id/council', async (ctx) => {
       const body = ctx.body as unknown as T.StartJobCouncilInput & { boardGroup?: 'myaos' | 'operators'; actorId?: string };
       const mode = body.mode ?? 'live';
-      if (!opts.councils || mode === 'simulation') {
+      if (mode === 'simulation') {
+        const out = startSimulatedCouncil(repo, ctx.params.id!, { prompt: body.prompt, seats: body.seats, options: body.options, boardGroup: body.boardGroup, mode: body.rounds === 1 ? 'quick' : 'full' });
+        return { status: 201, body: { runMode: 'simulation', council: out.council, sessionId: out.sessionId, selection: null } };
+      }
+      if (!opts.councils) {
         const out = startLiveCouncilRunner(repo, ctx.params.id!, { prompt: body.prompt, seats: body.seats, options: body.options, boardGroup: body.boardGroup, mode: body.rounds === 1 ? 'quick' : 'full' });
         return { status: 201, body: { runMode: 'live', council: out.council, sessionId: out.sessionId, selection: null } };
       }
@@ -1193,6 +1274,15 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         String((ctx.body as { actorId?: string } | undefined)?.actorId ?? 'winston')
       ),
     })),
+    route('DELETE', '/v1/design-boards/:id/runs/:sessionId', (ctx) => {
+      designRunner.dismiss(ctx.params.id!, ctx.params.sessionId!);
+      return { status: 200, body: { ok: true } };
+    }),
+    route('DELETE', '/v1/design-boards/:id/runs', (ctx) => {
+      const mode = (ctx.query.get('mode') ?? 'failed') as 'failed' | 'all';
+      designRunner.clearRuns(ctx.params.id!, mode);
+      return { status: 200, body: { ok: true } };
+    }),
     route('POST', '/v1/design-boards/:id/frames', (ctx) => {
       const board = repo.getDesignBoard(ctx.params.id!);
       let baseDir = opts.workspaceRoots[0] ?? process.cwd();

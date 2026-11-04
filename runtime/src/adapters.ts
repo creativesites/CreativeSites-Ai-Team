@@ -82,7 +82,6 @@ function extraPathDirs(): string[] {
   return [
     path.join(home, '.local/bin'),
     path.join(home, '.antigravity/antigravity/bin'),
-    path.join(home, '.antigravity-ide/antigravity-ide/bin'),
     path.join(home, '.cargo/bin'),
     ...nvmBinDirs(),
     path.join(home, '.volta/bin'),
@@ -100,7 +99,9 @@ export function findExecutable(command: string, aliases: string[] = []): string 
   const dirs = [...(process.env.PATH ?? '').split(path.delimiter), ...extraPathDirs()].filter(Boolean);
   for (const dir of dirs) {
     for (const name of names) {
+      if (name.includes('-ide') || name.endsWith('ide')) continue;
       const candidate = path.join(dir, name);
+      if (candidate.includes('antigravity-ide')) continue;
       try {
         fs.accessSync(candidate, fs.constants.X_OK);
         if (fs.statSync(candidate).isFile()) return candidate;

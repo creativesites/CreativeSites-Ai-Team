@@ -90,6 +90,57 @@ export interface SkillList {
   skills: SkillSummary[];
 }
 
+export interface CreateSkillPayload {
+  id: string;
+  name?: string;
+  description?: string;
+  version?: string;
+  owner?: string | null;
+  triggers?: string[];
+  workflows?: string[];
+  roles?: string[];
+  inputs?: string[];
+  outputs?: string[];
+  relatedSkills?: string[];
+  body?: string;
+  rawContent?: string;
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  filename: string;
+  title: string;
+  category: string;
+  classification: string;
+  filePath: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  contentHash: string;
+  authorId: string;
+  projectId: string | null;
+  summary: string | null;
+  extractedText: string | null;
+  createdAt: string;
+  updatedAt: string;
+  content?: string;
+}
+
+export interface KnowledgeList {
+  documents: KnowledgeDocument[];
+  root: string;
+}
+
+export interface UploadKnowledgePayload {
+  filename: string;
+  content?: string;
+  base64?: string;
+  title?: string;
+  category?: string;
+  classification?: string;
+  projectId?: string;
+  authorId?: string;
+}
+
 export interface StandupFacts {
   tasksCompleted: { taskId: string; title: string; status: string; jobId: string | null }[];
   evidence: { id: string; kind: string; class: string; summary: string }[];

@@ -1277,4 +1277,30 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS design_frame_versions_state ON design_frame_versions(state, frame_id);
     `,
   },
+  {
+    version: 24,
+    name: 'knowledge documents and library storage',
+    sql: `
+      CREATE TABLE IF NOT EXISTS knowledge_documents (
+        id TEXT PRIMARY KEY,
+        filename TEXT NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'general',
+        classification TEXT NOT NULL DEFAULT 'internal',
+        file_path TEXT NOT NULL,
+        mime_type TEXT,
+        size_bytes INTEGER NOT NULL,
+        content_hash TEXT NOT NULL,
+        author_id TEXT NOT NULL DEFAULT 'user',
+        project_id TEXT,
+        summary TEXT,
+        extracted_text TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_knowledge_docs_category ON knowledge_documents(category);
+      CREATE INDEX IF NOT EXISTS idx_knowledge_docs_project ON knowledge_documents(project_id);
+      CREATE INDEX IF NOT EXISTS idx_knowledge_docs_hash ON knowledge_documents(content_hash);
+    `,
+  },
 ];

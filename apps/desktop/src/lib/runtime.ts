@@ -1,6 +1,9 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type {
+  CreateSkillPayload,
   Engagement,
+  KnowledgeDocument,
+  KnowledgeList,
   LatestStandup,
   ModelRegistryRow,
   ScheduleRunRow,
@@ -10,6 +13,7 @@ import type {
   TimelineItem,
   TimeSummary,
   Timesheet,
+  UploadKnowledgePayload,
 } from '@/lib/wp11-types';
 import type {
   AccountWeeklyUsage,
@@ -214,7 +218,7 @@ export class RuntimeClient {
     this.connection = connection;
   }
 
-  private async request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
+  private async request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE' | 'PUT', path: string, body?: unknown): Promise<T> {
     const doFetch = async (conn: RuntimeConnection) =>
       fetch(`${conn.url}${path}`, {
         method,
@@ -445,7 +449,24 @@ export class RuntimeClient {
   // WP8 skills, WP6 stand-ups, WP11 timeline and model registry.
   skills = () => this.request<SkillList>('GET', '/v1/skills');
   skill = (id: string) => this.request<SkillDetail>('GET', `/v1/skills/${encodeURIComponent(id)}`);
+  createSkill = (input: CreateSkillPayload) => this.request<SkillDetail>('POST', '/v1/skills', input);
+  updateSkill = (id: string, input: Partial<CreateSkillPayload>) => this.request<SkillDetail>('PATCH', `/v1/skills/${encodeURIComponent(id)}`, input);
+  deleteSkill = (id: string) => this.request<{ success: boolean; deleted: boolean; id: string }>('DELETE', `/v1/skills/${encodeURIComponent(id)}`);
+  uploadSkill = (filename: string, content: string, base64?: string) => this.request<SkillDetail>('POST', '/v1/skills/upload', { filename, content, base64 });
   reloadSkills = () => this.request<{ root: string | null; found: number; added: number; unchanged: number; skipped: { path: string; reason: string }[] }>('POST', '/v1/skills/reload', {});
+
+  // Knowledge & Documents Library
+  knowledgeDocuments = (params?: { category?: string; projectId?: string; q?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.category) q.set('category', params.category);
+    if (params?.projectId) q.set('projectId', params.projectId);
+    if (params?.q) q.set('q', params.q);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return this.request<KnowledgeList>('GET', `/v1/knowledge${qs}`);
+  };
+  knowledgeDocument = (id: string) => this.request<KnowledgeDocument>('GET', `/v1/knowledge/${encodeURIComponent(id)}`);
+  uploadKnowledgeFile = (input: UploadKnowledgePayload) => this.request<KnowledgeDocument>('POST', '/v1/knowledge/upload', input);
+  deleteKnowledgeDocument = (id: string) => this.request<{ success: boolean; id: string }>('DELETE', `/v1/knowledge/${encodeURIComponent(id)}`);
   latestStandup = () => this.request<LatestStandup | null>('GET', '/v1/standups/latest');
   runStandupNow = () => this.request<{ existing: boolean; run: unknown }>('POST', '/v1/standups/run-now', {});
   scheduleRuns = (scheduleId?: string, limit = 50) =>
@@ -816,6 +837,16 @@ export class RuntimeClient {
       'POST',
       `/v1/design-boards/${encodeURIComponent(boardId)}/runs/${encodeURIComponent(sessionId)}/cancel`,
       { actorId }
+    );
+  dismissDesignRun = (boardId: string, sessionId: string) =>
+    this.request<{ ok: boolean }>(
+      'DELETE',
+      `/v1/design-boards/${encodeURIComponent(boardId)}/runs/${encodeURIComponent(sessionId)}`
+    );
+  clearDesignRuns = (boardId: string, mode: 'failed' | 'all' = 'failed') =>
+    this.request<{ ok: boolean }>(
+      'DELETE',
+      `/v1/design-boards/${encodeURIComponent(boardId)}/runs?mode=${encodeURIComponent(mode)}`
     );
   createDesignFrame = (boardId: string, input: Omit<CreateDesignFrameInput, 'boardId'>) =>
     this.request<DesignFrame>('POST', `/v1/design-boards/${encodeURIComponent(boardId)}/frames`, input);

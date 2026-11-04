@@ -1,6 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Repo } from '../store/repo.ts';
-import { discoverSkills, resolveSkillsRoot, type LoadedSkill, type SkillWorkflow } from './loader.ts';
+import { discoverSkills, resolveSkillsRoot, parseSkill, splitFrontmatter, parseFrontmatter, WORKFLOWS, type LoadedSkill, type SkillWorkflow } from './loader.ts';
 
 /**
  * Skill registry, selection and injection (programme plan WP8).
@@ -51,6 +53,22 @@ export interface SyncResult {
   added: number;
   unchanged: number;
   skipped: { path: string; reason: string }[];
+}
+
+export interface SaveSkillInput {
+  id: string;
+  name?: string;
+  description?: string;
+  version?: string;
+  owner?: string | null;
+  triggers?: string[];
+  workflows?: SkillWorkflow[];
+  roles?: string[];
+  inputs?: string[];
+  outputs?: string[];
+  relatedSkills?: string[];
+  body?: string;
+  rawContent?: string;
 }
 
 type Row = Record<string, unknown>;
@@ -157,6 +175,126 @@ export class SkillService {
   /** Forgets a task's pinned skills so the next selection starts again (a task reset). */
   resetTask(taskId: string): void {
     this.db.prepare('DELETE FROM task_skills WHERE task_id = ?').run(taskId);
+  }
+
+  /** Saves or creates a skill on disk, syncs to DB, and returns the loaded skill. */
+  saveSkill(input: SaveSkillInput): SkillSummary & { body: string } {
+    const rawId = (input.id || input.name || '').trim().toLowerCase();
+    const id = rawId.replace(/[^a-z0-9_-]/g, '-').replace(/^-+|-+$/g, '');
+    if (!id) throw new Error('Skill ID is required and must contain alphanumeric characters');
+
+    const root = this.root();
+    if (!root) throw new Error('Skills root directory is not configured or resolved');
+
+    const skillDir = path.join(root, id);
+    fs.mkdirSync(skillDir, { recursive: true });
+    const targetFile = path.join(skillDir, 'SKILL.md');
+
+    let fileContent = '';
+    if (input.rawContent && input.rawContent.trim()) {
+      const parsed = parseSkill(input.rawContent, targetFile, id);
+      if (!parsed) {
+        throw new Error('Raw markdown is missing valid YAML frontmatter (needs at least name and version)');
+      }
+      fileContent = input.rawContent.trim() + '\n';
+    } else {
+      const version = (input.version || '1.0.0').trim();
+      const desc = (input.description || `${id} skill`).trim().replace(/\n/g, ' ');
+      const owner = (input.owner || 'The Orchestrator').trim();
+      const triggers = (input.triggers || []).map((t) => t.trim().toLowerCase()).filter(Boolean);
+      const workflows = (input.workflows || []).filter((w): w is SkillWorkflow => (WORKFLOWS as readonly string[]).includes(w));
+      const roles = (input.roles || []).map((r) => r.trim()).filter(Boolean);
+      const inputs = (input.inputs || []).map((i) => i.trim()).filter(Boolean);
+      const outputs = (input.outputs || []).map((o) => o.trim()).filter(Boolean);
+      const related = (input.relatedSkills || []).map((r) => r.trim()).filter(Boolean);
+      const body = (input.body || `# ${input.name || id}\n\n## Purpose\nDescribe the purpose and steps here.\n`).trim();
+
+      const lines = ['---', `name: ${id}`, `description: ${desc}`, `version: ${version}`];
+      if (owner) lines.push(`owner: ${owner}`);
+      lines.push(`triggers: [${triggers.join(', ')}]`);
+      lines.push(`workflows: [${workflows.join(', ')}]`);
+      lines.push(`roles: [${roles.join(', ')}]`);
+      if (inputs.length) {
+        lines.push('inputs:');
+        for (const inp of inputs) lines.push(`  - ${inp}`);
+      }
+      if (outputs.length) {
+        lines.push('outputs:');
+        for (const out of outputs) lines.push(`  - ${out}`);
+      }
+      if (related.length) {
+        lines.push(`related_skills: [${related.join(', ')}]`);
+      }
+      lines.push('---');
+      lines.push('');
+      lines.push(body);
+      lines.push('');
+      fileContent = lines.join('\n');
+    }
+
+    fs.writeFileSync(targetFile, fileContent, 'utf8');
+    this.sync();
+
+    const created = this.get(id);
+    if (!created) {
+      throw new Error(`Failed to load newly created skill ${id}`);
+    }
+    return created;
+  }
+
+  /** Deletes a skill folder from disk, forgets it from current map and DB. */
+  deleteSkill(id: string): { success: boolean; deleted: boolean; id: string } {
+    const root = this.root();
+    if (!root) throw new Error('Skills root directory is not configured');
+
+    const cleanId = id.trim().toLowerCase();
+    const skillDir = path.join(root, cleanId);
+    if (fs.existsSync(skillDir)) {
+      fs.rmSync(skillDir, { recursive: true, force: true });
+    }
+    this.current.delete(cleanId);
+    this.db.prepare('DELETE FROM skills WHERE id = ?').run(cleanId);
+    this.sync();
+    return { success: true, deleted: true, id: cleanId };
+  }
+
+  /** Accepts an uploaded file (markdown/yaml/text), creates or updates the skill, and syncs. */
+  uploadSkill(filename: string, content: string | Buffer): SkillSummary & { body: string } {
+    const text = typeof content === 'string' ? content : content.toString('utf8');
+    const fallbackId = path.basename(filename, path.extname(filename)).toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+    const { front } = splitFrontmatter(text);
+    let id = fallbackId;
+    let version = '1.0.0';
+    let rawContent = text;
+
+    if (front !== null) {
+      const fm = parseFrontmatter(front);
+      const parsedId = typeof fm.name === 'string' ? fm.name.trim() : '';
+      if (parsedId) id = parsedId.toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+      const parsedVer = typeof fm.version === 'string' ? fm.version.trim() : '';
+      if (parsedVer) version = parsedVer;
+    } else {
+      const lines = [
+        '---',
+        `name: ${id}`,
+        `description: ${id} skill imported from ${filename}`,
+        `version: ${version}`,
+        'owner: user',
+        'triggers: []',
+        'workflows: []',
+        'roles: []',
+        '---',
+        '',
+        text,
+      ];
+      rawContent = lines.join('\n');
+    }
+
+    return this.saveSkill({
+      id,
+      version,
+      rawContent,
+    });
   }
 
   /**
