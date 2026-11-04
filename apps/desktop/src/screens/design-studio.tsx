@@ -26,6 +26,7 @@ import type {
   DesignBoard,
   DesignDeviceKind,
   DesignFrame,
+  DesignFrameStatus,
   DesignRun,
   Identity,
   JobSummary,
@@ -62,6 +63,24 @@ function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLText
     />
   );
 }
+
+
+const STATUS_LABEL: Record<DesignFrameStatus, string> = {
+  draft: 'Draft',
+  iterating: 'Iterating',
+  review: 'Review',
+  approved: 'Approved',
+  superseded: 'Superseded',
+  archived: 'Archived',
+};
+const STATUS_CHIP: Record<DesignFrameStatus, string> = {
+  draft: 'bg-white/10 text-white/70',
+  iterating: 'bg-amber-500/20 text-amber-300',
+  review: 'bg-sky-500/20 text-sky-300',
+  approved: 'bg-emerald-500/20 text-emerald-300',
+  superseded: 'bg-white/10 text-white/50 line-through',
+  archived: 'bg-white/5 text-white/40',
+};
 
 export function DesignStudioScreen({
   initialBoardId,
@@ -135,6 +154,11 @@ export function DesignStudioScreen({
   const [extractPaths, setExtractPaths] = React.useState<string>('');
   const [extractDevice, setExtractDevice] = React.useState<DesignDeviceKind>('desktop');
   const [extractPrompt, setExtractPrompt] = React.useState<string>('');
+
+  const [showRequestModal, setShowRequestModal] = React.useState(false);
+  const [requestBrief, setRequestBrief] = React.useState('');
+  const [requestProjectId, setRequestProjectId] = React.useState<string>('');
+  const [requestDevices, setRequestDevices] = React.useState<DesignDeviceKind[]>(['phone']);
 
   const [approvingFrame, setApprovingFrame] = React.useState<DesignFrame | null>(null);
   const [approveNote, setApproveNote] = React.useState('');
@@ -403,6 +427,45 @@ export function DesignStudioScreen({
     }
   };
 
+  const handleTransition = async (frame: DesignFrame, to: DesignFrameStatus, label: string) => {
+    if (!client) return;
+    setBusy(true);
+    try {
+      await client.transitionDesignFrame(frame.id, to, ownerId, label);
+      await refreshActiveBoard();
+      notify.success(`"${frame.title}": ${label}`);
+    } catch (err) {
+      notify.error((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRequestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!client || !requestBrief.trim()) return;
+    setBusy(true);
+    try {
+      const res = await client.createDesignRequest({
+        brief: requestBrief.trim(),
+        projectId: requestProjectId || undefined,
+        deviceTargets: requestDevices,
+        requestedBy: ownerId,
+      });
+      setShowRequestModal(false);
+      setRequestBrief('');
+      await loadBoards(res.boardId);
+      window.location.hash = href({ name: 'design-studio', boardId: res.boardId });
+      notify.success(
+        res.assigneeId ? `Design task assigned to ${nameOf(res.assigneeId)}` : `Design task created without an assignee. ${res.assignmentReason}`
+      );
+    } catch (err) {
+      notify.error((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleApproveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!client || !approvingFrame) return;
@@ -506,6 +569,15 @@ export function DesignStudioScreen({
 
           <Button size="sm" variant="glass" onClick={() => setShowNewBoardModal(true)}>
             <Plus className="size-3.5" /> New board
+          </Button>
+
+          <Button
+            size="sm"
+            variant="glass"
+            onClick={() => setShowRequestModal(true)}
+            title="Create a job and a linked design task for a design agent"
+          >
+            <Sparkles className="size-3.5 text-amber-400" /> New design request
           </Button>
 
           <Button
@@ -716,9 +788,12 @@ export function DesignStudioScreen({
                 }}
                 className={cn(
                   'absolute flex flex-col rounded-2xl border bg-[#11141d] shadow-2xl transition-shadow',
+                  frame.status === 'superseded' && 'opacity-60 grayscale',
                   frame.status === 'approved'
                     ? 'border-emerald-400/70 ring-2 ring-emerald-400/30'
-                    : isSelected
+                    : frame.status === 'review'
+                      ? 'border-sky-400/70 ring-2 ring-sky-400/30'
+                      : isSelected
                       ? 'border-amber-400 ring-2 ring-amber-400/40'
                       : 'border-white/15 hover:border-white/30'
                 )}
@@ -791,11 +866,16 @@ export function DesignStudioScreen({
                       {frame.device} · {frame.width}×{frame.height}
                     </span>
 
-                    {frame.status === 'approved' && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                        <CheckCircle2 className="size-3" /> Approved
-                      </span>
-                    )}
+                    <span
+                      data-testid={`frame-status-${frame.id}`}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                        STATUS_CHIP[frame.status]
+                      )}
+                    >
+                      {frame.status === 'approved' && <CheckCircle2 className="size-3" />}
+                      {STATUS_LABEL[frame.status]}
+                    </span>
 
                     <button
                       type="button"
@@ -923,23 +1003,62 @@ export function DesignStudioScreen({
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setApprovingFrame(frame);
-                      setApproveTargetFiles(frame.sourceFiles.join(', '));
-                      setApproveNote('');
-                    }}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer',
-                      frame.status === 'approved'
-                        ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/40'
-                        : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                  <div className="flex items-center gap-1.5">
+                    {(frame.status === 'draft' || frame.status === 'iterating') && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleTransition(frame, 'review', 'sent to review')}
+                        className="inline-flex items-center gap-1 rounded-lg border border-sky-400/40 bg-sky-500/15 px-2.5 py-1 text-xs font-semibold text-sky-200 hover:bg-sky-500/25"
+                      >
+                        Send to review
+                      </button>
                     )}
-                  >
-                    <CheckCircle2 className="size-3.5" />
-                    {frame.status === 'approved' ? 'Approved · Hand Off Again' : 'Approve & Build'}
-                  </button>
+                    {frame.status === 'review' && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleTransition(frame, 'iterating', 'changes requested')}
+                        className="inline-flex items-center gap-1 rounded-lg border border-amber-400/40 bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/25"
+                      >
+                        Request changes
+                      </button>
+                    )}
+                    {frame.status === 'superseded' && frame.supersededBy && frameMap.get(frame.supersededBy) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const next = frameMap.get(frame.supersededBy!)!;
+                          setSelectedFrameIds([next.id]);
+                          setPan({ x: 24 - next.x * zoom, y: 24 - next.y * zoom });
+                        }}
+                        className="max-w-[11rem] truncate rounded-lg border border-white/20 px-2 py-1 text-xs font-medium text-white/80 hover:bg-white/10"
+                        title="Go to the approved frame that replaced this one"
+                      >
+                        Superseded by {frameMap.get(frame.supersededBy)!.title} →
+                      </button>
+                    )}
+                    {frame.status !== 'superseded' && frame.status !== 'archived' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setApprovingFrame(frame);
+                          setApproveTargetFiles(frame.sourceFiles.join(', '));
+                          setApproveNote('');
+                        }}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-semibold transition-all cursor-pointer',
+                          frame.status === 'approved'
+                            ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/40'
+                            : 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                        )}
+                      >
+                        <CheckCircle2 className="size-3.5" />
+                        {frame.status === 'approved' ? 'Approved · Hand Off Again' : frame.status === 'review' ? 'Approve' : 'Approve & Build'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -1376,6 +1495,74 @@ export function DesignStudioScreen({
               </Button>
               <Button type="submit" disabled={busy || !activeBoard?.projectId || !designerId}>
                 <FolderGit2 className="size-3.5" /> {busy ? 'Starting…' : 'Recreate on this board'}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: New design request (job + linked design task + board) */}
+      {showRequestModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleRequestSubmit}
+            className="glass-panel flex w-full max-w-lg flex-col gap-4 rounded-2xl border border-border bg-popover p-6 shadow-2xl"
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">New design request</h2>
+              <button type="button" onClick={() => setShowRequestModal(false)} className="text-sm text-muted-foreground hover:text-foreground">
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Creates a job and a linked design task for a design agent, plus a board for the result. Approved designs are handed to the engineers on the same job.
+            </p>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium">Brief</label>
+              <textarea
+                value={requestBrief}
+                onChange={(e) => setRequestBrief(e.target.value)}
+                rows={4}
+                placeholder="What should be designed, for whom, and any constraints"
+                className="rounded-lg border border-border bg-background/80 px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium">Project (optional)</label>
+              <select
+                value={requestProjectId}
+                onChange={(e) => setRequestProjectId(e.target.value)}
+                className="rounded-lg border border-border bg-background/80 px-2.5 py-1.5 text-xs"
+              >
+                <option value="">No project</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium">Devices</label>
+              <div className="flex gap-3 text-xs">
+                {(['phone', 'tablet', 'desktop'] as DesignDeviceKind[]).map((d) => (
+                  <label key={d} className="inline-flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={requestDevices.includes(d)}
+                      onChange={(e) => setRequestDevices((prev) => (e.target.checked ? [...prev, d] : prev.filter((x) => x !== d)))}
+                    />
+                    {d}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setShowRequestModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy || !requestBrief.trim()}>
+                {busy ? 'Creating…' : 'Create request'}
               </Button>
             </div>
           </form>

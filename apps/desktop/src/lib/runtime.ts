@@ -51,6 +51,7 @@ import type {
   CreateCriterionInput,
   CreateDesignBoardInput,
   CreateDesignFrameInput,
+  CreateDesignRequestInput,
   CreateEvidenceInput,
   CreateIdentityInput,
   CreateIntakeInput,
@@ -70,6 +71,8 @@ import type {
   DecideApprovalInput,
   DesignBoard,
   DesignFrame,
+  DesignFrameStatus,
+  DesignRequestResult,
   DirectoryListing,
   Evidence,
   DesignRun,
@@ -820,6 +823,11 @@ export class RuntimeClient {
     this.request<DesignFrame>('PATCH', `/v1/design-frames/${encodeURIComponent(frameId)}`, input);
   deleteDesignFrame = (frameId: string) =>
     this.request<unknown>('DELETE', `/v1/design-frames/${encodeURIComponent(frameId)}`);
+  /** Lifecycle move: draft|iterating -> review, review -> iterating (changes requested) or approved. */
+  transitionDesignFrame = (frameId: string, to: DesignFrameStatus, actorId: string, reason?: string | null) =>
+    this.request<DesignFrame>('POST', `/v1/design-frames/${encodeURIComponent(frameId)}/transition`, { to, actorId, reason: reason ?? null });
+  /** A design request: a job, a linked design task and a board. */
+  createDesignRequest = (input: CreateDesignRequestInput) => this.request<DesignRequestResult>('POST', '/v1/design/requests', input);
   approveDesignFrame = (frameId: string, input: ApproveDesignFrameInput) =>
     this.request<ApproveDesignFrameResult>('POST', `/v1/design-frames/${encodeURIComponent(frameId)}/approve`, input);
 
