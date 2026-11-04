@@ -280,7 +280,7 @@ async function main() {
       console.log('\n🧪 Running MyaOS Verification Test Suite & Recording Provenance...\n');
       const TestVerificationRecorder = require('../src/testRecorder');
       const recorder = new TestVerificationRecorder(baseDir);
-      const testCmd = args[0] || 'node --test tests/*.test.js';
+      const testCmd = args[0] || 'node --test tests/*.test.js tests/knowledge/*.test.js';
       const record = recorder.runAndRecord(testCmd);
       console.log(`Commit SHA:     ${record.commit_sha}`);
       console.log(`Working Tree:   ${record.git_working_tree_clean ? 'CLEAN' : `${record.git_uncommitted_changes_count} modified/untracked files`}`);
@@ -449,6 +449,24 @@ async function main() {
       break;
     }
 
+    case 'knowledge': {
+      // Knowledge & Intelligence layer: myaos knowledge <health|worker|rebuild-index|weekly-review|search> [...]
+      const { createKnowledgeSystem } = require('../src/knowledge');
+      const { hostPrincipal } = require('../src/knowledge/rpc');
+      const ki = createKnowledgeSystem({ baseDir });
+      const me = hostPrincipal();
+      try {
+        const sub = args[0];
+        if (sub === 'health') console.log(JSON.stringify(ki.health(me), null, 2));
+        else if (sub === 'worker') { const r = await ki.worker.drain(1000); console.log(`[KI] processed ${r.length} job(s); failed: ${r.filter((x) => !x.ok).length}`); }
+        else if (sub === 'rebuild-index') console.log(JSON.stringify(await ki.rebuildIndex()));
+        else if (sub === 'weekly-review') { const { Briefings } = require('../src/knowledge/work/briefings'); console.log(Briefings.toMarkdown(ki.briefings.weeklyReview(me, { persist: false }))); }
+        else if (sub === 'search') { const r = await ki.search.search(me, { query: args.slice(1).join(' ') }); console.log(JSON.stringify(r.results.map((x) => ({ kind: x.kind, title: x.title, score: x.score, excerpt: x.excerpt })), null, 2)); }
+        else console.log('Usage: myaos knowledge <health|worker|rebuild-index|weekly-review|search <query>>');
+      } finally { ki.close(); }
+      break;
+    }
+
     default: {
       printHeader();
       console.log('\nUsage: myaos <command> [options]');
@@ -463,6 +481,7 @@ async function main() {
       console.log('  sleep <agent>                  Put an agent to sleep (SLEEPING state)');
       console.log('  worker --agent <name> [--task] Run a real OS process worker');
       console.log('  verify <taskId>                Run independent verification on task artifacts');
+      console.log('  knowledge <sub>                Knowledge & Intelligence layer (health|worker|rebuild-index|weekly-review|search)');
       console.log('  orchestrator                   Run an autonomous coordination cycle\n');
     }
   }

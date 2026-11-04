@@ -13,6 +13,7 @@ import { QualityView } from './views/QualityView';
 import { TeamOrgChartView } from './views/TeamOrgChartView';
 import { ProjectBoardView } from './views/ProjectBoardView';
 import { OKRIntelligenceView } from './views/OKRIntelligenceView';
+import { KnowledgeIntelligenceView } from './views/KnowledgeIntelligenceView';
 import { DesignStudioView } from './views/DesignStudioView';
 import { AgentWorkspaceView } from './views/AgentWorkspaceView';
 import { SettingsView } from './views/SettingsView';
@@ -765,6 +766,7 @@ export function App() {
                   currentWorkspace={currentWorkspace}
                 />
               )}
+              {devView === 'knowledge' && <KnowledgeIntelligenceView />}
               {devView === 'design' && <DesignStudioView />}
               {devView === 'quality' && <QualityView />}
               {devView === 'automation' && (

@@ -9,6 +9,8 @@
   "type": "commonjs",
   "scripts": {
     "test": "node bin/myaos.js test",
+    "test:knowledge": "node --test tests/knowledge/*.test.js",
+    "ki:weekly-review": "node scripts/ki-weekly-review.js",
     "doctor": "node bin/myaos.js doctor",
     "status": "node bin/myaos.js status",
     "orchestrator": "node bin/myaos.js orchestrator",

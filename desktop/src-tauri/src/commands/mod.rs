@@ -2052,3 +2052,72 @@ mod tests {
         assert!(created_task.title.contains("Fleet Intelligence Overview"));
     }
 }
+
+/// Knowledge & Intelligence bridge.
+///
+/// Runs `node bin/ki-rpc.js` with one JSON request on stdin and returns the parsed `{ok, result|error}` envelope.
+/// Node remains the single implementation of every KI rule (permissions, authority, evidence gates); the desktop
+/// never re-implements them. The acting principal is configured by the host environment (KI_USER / KI_ROLE / KI_ORG),
+/// not by the request, so the webview cannot choose its own privileges.
+#[tauri::command]
+pub async fn myaos_knowledge_call(
+    method: String,
+    params: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        let root = std::env::var("MYAOS_WORKSPACE_ROOT")
+            .unwrap_or_else(|_| resolve_agent_working_directory("atlas", None));
+        let script = std::path::Path::new(&root).join("bin").join("ki-rpc.js");
+        if !script.exists() {
+            return Err(format!("KI bridge not found at {}", script.display()));
+        }
+
+        let request = serde_json::json!({ "method": method, "params": params.unwrap_or(serde_json::json!({})) });
+        let mut child = Command::new("node")
+            .arg(&script)
+            .current_dir(&root)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to start node for the KI bridge: {}", e))?;
+
+        child
+            .stdin
+            .take()
+            .ok_or_else(|| "KI bridge stdin unavailable".to_string())?
+            .write_all(request.to_string().as_bytes())
+            .map_err(|e| format!("Failed to send request to the KI bridge: {}", e))?;
+
+        let output = child
+            .wait_with_output()
+            .map_err(|e| format!("KI bridge failed: {}", e))?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let envelope: serde_json::Value = serde_json::from_str(stdout.trim()).map_err(|e| {
+            format!(
+                "KI bridge returned invalid JSON ({}): {}",
+                e,
+                String::from_utf8_lossy(&output.stderr)
+            )
+        })?;
+
+        if envelope.get("ok").and_then(|v| v.as_bool()) == Some(true) {
+            Ok(envelope.get("result").cloned().unwrap_or(serde_json::Value::Null))
+        } else {
+            let msg = envelope
+                .pointer("/error/message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown KI error");
+            let code = envelope
+                .pointer("/error/code")
+                .and_then(|v| v.as_str())
+                .unwrap_or("ERROR");
+            Err(format!("{}: {}", code, msg))
+        }
+    })
+    .await
+    .map_err(|e| format!("KI bridge task failed: {}", e))?
+}
