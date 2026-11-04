@@ -1,4 +1,7 @@
 import { createIntake } from './intake/intake.ts';
+import { nextCronSlot } from './scheduler/cron.ts';
+import type { Scheduler } from './scheduler/scheduler.ts';
+import { parseStandupDirective, submitReply } from './standup/replies.ts';
 import type * as T from './api/types.ts';
 import { ADAPTER_PRESETS, findExecutable } from './adapters.ts';
 import type { SessionManager } from './acp/session-manager.ts';
@@ -21,56 +24,14 @@ export function parseDurationSeconds(spec: string): number | null {
 
 /**
  * Computes the next execution Date for a standard 5-field cron expression
- * (`min hour dom month dow`) after `fromDate`.
+ * (`min hour dom month dow`) after `fromDate`, evaluated in `timeZone` (IANA, default UTC).
  */
-export function nextCronDate(cronExpr: string, fromDate = new Date()): Date {
-  const parts = cronExpr.trim().split(/\s+/);
-  if (parts.length !== 5) {
-    throw new InputError(`Invalid cron expression "${cronExpr}" (expected 5 fields: min hour dom month dow)`);
+export function nextCronDate(cronExpr: string, fromDate = new Date(), timeZone = 'UTC'): Date {
+  try {
+    return nextCronSlot(cronExpr, fromDate, timeZone) ?? new Date(fromDate.getTime() + 3600_000);
+  } catch (e) {
+    throw new InputError((e as Error).message);
   }
-  const [minSpec, hourSpec, domSpec, monSpec, dowSpec] = parts as [string, string, string, string, string];
-
-  const matchesField = (spec: string, value: number): boolean => {
-    if (spec === '*') return true;
-    for (const token of spec.split(',')) {
-      if (token.startsWith('*/')) {
-        const step = Number(token.slice(2));
-        if (step > 0 && value % step === 0) return true;
-        continue;
-      }
-      if (token.includes('-')) {
-        const [a, b] = token.split('-').map(Number);
-        if (a !== undefined && b !== undefined && value >= a && value <= b) return true;
-        continue;
-      }
-      if (Number(token) === value) return true;
-    }
-    return false;
-  };
-
-  const candidate = new Date(fromDate.getTime());
-  candidate.setUTCSeconds(0, 0);
-  candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
-
-  // Search up to 366 days ahead in 1-minute increments (bounded to 527040 checks max, usually < 60)
-  for (let i = 0; i < 60 * 24 * 366; i++) {
-    const min = candidate.getUTCMinutes();
-    const hour = candidate.getUTCHours();
-    const dom = candidate.getUTCDate();
-    const mon = candidate.getUTCMonth() + 1;
-    const dow = candidate.getUTCDay();
-    if (
-      matchesField(minSpec, min) &&
-      matchesField(hourSpec, hour) &&
-      matchesField(domSpec, dom) &&
-      matchesField(monSpec, mon) &&
-      matchesField(dowSpec, dow)
-    ) {
-      return candidate;
-    }
-    candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
-  }
-  return new Date(fromDate.getTime() + 3600_000);
 }
 
 export class Orchestrator {
@@ -79,6 +40,7 @@ export class Orchestrator {
   private readonly checker: Checker;
   private readonly dispatcher: Dispatcher;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private scheduler: Scheduler | null = null;
 
   constructor(opts: { repo: Repo; sessions: SessionManager; checker: Checker }) {
     this.repo = opts.repo;
@@ -90,6 +52,21 @@ export class Orchestrator {
       onTurnComplete: (info) => this.handleTurnComplete(info),
       onRateLimit: (info) => this.handleRateLimit(info),
     });
+  }
+
+  /** Central scheduler for named recurring routines (WP6). Optional; ticks only call it when set. */
+  setScheduler(scheduler: Scheduler): void {
+    this.scheduler = scheduler;
+  }
+
+  /** Named recurring routines and the stand-up reply phase, on the scheduler's own clock. */
+  private async tickNamedSchedules(asOfIso: string): Promise<void> {
+    if (!this.scheduler) return;
+    try {
+      await this.scheduler.runDue(asOfIso);
+    } catch (e) {
+      console.error('[orchestrator] named schedules failed:', e);
+    }
   }
 
   start(): void {
@@ -287,7 +264,7 @@ export class Orchestrator {
 
     if (cronExpr) {
       kind = 'cron';
-      nextRunAt = nextCronDate(cronExpr).toISOString();
+      nextRunAt = nextCronDate(cronExpr, new Date(), input.timezone).toISOString();
     } else if (intervalSeconds && intervalSeconds > 0) {
       kind = input.kind === 'timer' ? 'timer' : 'interval';
       nextRunAt = nextRunAt ?? new Date(Date.now() + intervalSeconds * 1000).toISOString();
@@ -313,6 +290,7 @@ export class Orchestrator {
       prompt,
       reason: input.reason ?? null,
       maxRuns: input.maxRuns ?? (kind === 'timer' ? 1 : null),
+      timezone: input.timezone,
     });
   }
 
@@ -332,6 +310,7 @@ export class Orchestrator {
     } catch (e) {
       console.error('[orchestrator] dispatch failed:', e);
     }
+    await this.tickNamedSchedules(asOfIso);
     const due = this.repo.listDueSchedules(asOfIso);
     const firedSchedules: string[] = [];
 
@@ -343,7 +322,7 @@ export class Orchestrator {
 
       if (!reachedMax) {
         if (sched.kind === 'cron' && sched.cronExpr) {
-          nextRunAt = nextCronDate(sched.cronExpr, new Date(asOfIso)).toISOString();
+          nextRunAt = nextCronDate(sched.cronExpr, new Date(asOfIso), sched.timezone).toISOString();
         } else if (sched.intervalSeconds && sched.intervalSeconds > 0) {
           nextRunAt = new Date(Date.parse(asOfIso) + sched.intervalSeconds * 1000).toISOString();
         } else {
@@ -600,6 +579,17 @@ export class Orchestrator {
 
     for (const rawLine of ctx.text.split('\n')) {
       const line = rawLine.trim();
+
+      // 0. [STANDUP: done=... | next=... | blockers=a; b] answers the open stand-up (fallback to the standup_submit tool)
+      const standupReply = parseStandupDirective(line);
+      if (standupReply) {
+        try {
+          submitReply(this.repo, ctx.actorId, standupReply, new Date().toISOString(), 'directive');
+        } catch {
+          /* no stand-up collecting, or the agent was not asked: ignore like other invalid directives */
+        }
+        continue;
+      }
 
       // 1. [WAKE: <agentId>] <prompt>
       const wakeMatch = line.match(/^\[WAKE:\s*([a-z0-9_-]+)\]\s*(.+)$/i);

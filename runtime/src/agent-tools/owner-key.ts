@@ -26,6 +26,7 @@ const RESERVED: { method: string; pattern: RegExp; when?: (body: Record<string, 
   { method: 'POST', pattern: /^\/v1\/settings$/ },
   { method: 'POST', pattern: /^\/v1\/adapters\/env$/ },
   { method: 'POST', pattern: /^\/v1\/timesheets\/[^/]+\/approve$/ },
+  { method: 'POST', pattern: /^\/v1\/standups\/run-now$/ },
 ];
 
 export function isReserved(method: string, pathname: string, body: Record<string, unknown>): boolean {

@@ -15,6 +15,9 @@ import { openStore, schemaVersion } from './store/db.ts';
 import { Repo } from './store/repo.ts';
 import { Ledger } from './ledger/ledger.ts';
 import { stopSessionUsage } from './usage/session-hooks.ts';
+import { Scheduler } from './scheduler/scheduler.ts';
+import { installRoutines } from './scheduler/routines.ts';
+import { StandupService } from './standup/pipeline.ts';
 import { gitAvailable } from './workspaces.ts';
 import { syncCommunity } from './community-sync.ts';
 import { attachSkillService } from './skills/service.ts';
@@ -88,6 +91,24 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   const checker = new Checker({ repo, workspaceRoots: wsRoots, worktreeRoot: wtRoot, artifactsDir: artDir });
   const sessions = new SessionManager({ repo, checker, env: readAdapterEnv(cfg) });
   const orchestrator = new Orchestrator({ repo, sessions, checker });
+  // Recurring routines and daily stand-ups (WP6): one central scheduler, driven by the orchestrator tick.
+  const scheduler = new Scheduler({ repo, db });
+  const standups = new StandupService({
+    repo,
+    db,
+    wake: (agentId, prompt) =>
+      orchestrator.wakeAgent(agentId, { fromActorId: 'runtime:standup', fromActorKind: 'system', prompt, reason: 'Daily stand-up report', allowFallbackAdapter: true }),
+    adapterBlocked: (agent) => {
+      if (agent.rateLimitResetAt && Date.parse(agent.rateLimitResetAt) > Date.now()) return `rate limited until ${agent.rateLimitResetAt}`;
+      if (agent.adapterId) {
+        const info = probeAdapters(false).find((a) => a.id === agent.adapterId);
+        if (info && !info.installed) return `adapter ${agent.adapterId} is not installed`;
+      }
+      return null;
+    },
+  });
+  installRoutines({ repo, scheduler, standups, probe: probeAdapters }, new Date().toISOString());
+  orchestrator.setScheduler(scheduler);
   orchestrator.start();
   const terminals = new TerminalManager();
   bridge = new Bridge({ repo, teamRepo });
@@ -142,6 +163,8 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     sessions,
     bridge,
     orchestrator,
+    scheduler,
+    standups,
     terminals,
   });
   broadcast = api.broadcast;
