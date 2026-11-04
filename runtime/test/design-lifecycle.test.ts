@@ -291,3 +291,17 @@ test('an approved design reaches job_get, the dispatch prompt, and conformance r
   assert.equal((await tool(token, 'design_conformance_report', { frameId: foreign.id, result: 'matches' })).isError, true);
   assert.equal((await tool(token, 'design_conformance_report', { frameId: frame.id, result: 'maybe' })).isError, true);
 });
+
+test('an approved frame can be handed off again without recording a second approval', async () => {
+  const board = await newBoard();
+  const frame = await newFrame(board.id, '<p>handoff</p>');
+  const first = await call('POST', `/v1/design-frames/${frame.id}/approve`, { actorId: 'winston' });
+  assert.equal(first.status, 200, JSON.stringify(first.json));
+  const approvals = () => (rt.repo.listEvidence({ jobId: board.jobId ?? undefined, limit: 500 }).filter((e) => (e.payload as any)?.type === 'design_reference' && (e.payload as any)?.frameId === frame.id)).length;
+  const before = approvals();
+  const again = await call('POST', `/v1/design-frames/${frame.id}/approve`, { actorId: 'winston', note: 'build it again' });
+  assert.equal(again.status, 200, 'handing off again is not a 409');
+  assert.equal(again.json.frame.status, 'approved');
+  assert.equal(again.json.evidence.id, first.json.evidence.id, 'the original approval evidence is reused');
+  assert.equal(approvals(), before, 'no second approval recorded');
+});

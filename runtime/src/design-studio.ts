@@ -188,7 +188,9 @@ export async function approveFrameAndHandoff(
   const frame = repo.getDesignFrame(frameId);
   const board = repo.getDesignBoard(frame.boardId);
   const actorId = input.actorId?.trim() || 'winston';
-  if (!DESIGN_FRAME_TRANSITIONS[frame.status].includes('approved')) {
+  // An approved frame can be handed off again (another build task) without being re-approved.
+  const handOffAgain = frame.status === 'approved';
+  if (!handOffAgain && !DESIGN_FRAME_TRANSITIONS[frame.status].includes('approved')) {
     throw new ConflictError(`design frame ${frame.id} cannot move from ${frame.status} to approved`);
   }
 
@@ -202,7 +204,8 @@ export async function approveFrameAndHandoff(
 
   // 1. Record what was approved: the runtime observed this exact frame version.
   // An approval is the owner's decision, not a re-run check, so it is never Verified.
-  const evidence = repo.appendEvidence({
+  // A repeat hand-off reuses the approval's evidence instead of recording a second approval.
+  const evidence = handOffAgain && frame.evidenceId ? repo.getEvidence(frame.evidenceId) : repo.appendEvidence({
     jobId: board.jobId ?? undefined,
     kind: 'artifact',
     class: 'OBSERVED',
@@ -228,13 +231,15 @@ export async function approveFrameAndHandoff(
   });
 
   // 2. Mark the frame approved in SQLite
-  const approvedFrame = repo.transitionFrame(frame.id, 'approved', actorId, input.note ?? null, {
-    evidenceId: evidence.id,
-    artifactPath,
-    contentSha,
-    sourceFiles: input.targetFiles ?? frame.sourceFiles,
-    notes: input.note ? `${frame.notes ? `${frame.notes} · ` : ''}Approved: ${input.note}` : frame.notes,
-  });
+  const approvedFrame = handOffAgain
+    ? frame
+    : repo.transitionFrame(frame.id, 'approved', actorId, input.note ?? null, {
+        evidenceId: evidence.id,
+        artifactPath,
+        contentSha,
+        sourceFiles: input.targetFiles ?? frame.sourceFiles,
+        notes: input.note ? `${frame.notes ? `${frame.notes} · ` : ''}Approved: ${input.note}` : frame.notes,
+      });
 
   // 3. Optionally create & dispatch a Build Task to an engineering agent
   let createdTask: T.Task | null = null;
