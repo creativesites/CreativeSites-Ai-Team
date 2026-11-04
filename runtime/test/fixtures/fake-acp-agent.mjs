@@ -93,6 +93,53 @@ async function handlePrompt(message) {
       respond(message.id, { stopReason: 'end_turn' });
       return;
     }
+    // Planning Council scenarios (WP3). A seat looks for its own line in the brief:
+    //   fake-card <identityId> r<round|*>: A=9 B=3 vote=dissent
+    // and submits exactly those scores through council_card_submit. No line: it submits nothing.
+    if (/myaos-council-seat|myaos-council-synthesise/.test(promptText)) {
+      const server = mcpServers.find((m) => m.type === 'http' && m.name === 'myaos');
+      if (!server) {
+        agentText('no myaos MCP server offered');
+        respond(message.id, { stopReason: 'end_turn' });
+        return;
+      }
+      const headers = Object.fromEntries((server.headers ?? []).map((h) => [h.name, h.value]));
+      const rpc = async (method, params) => {
+        const res = await fetch(server.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }) });
+        return res.json();
+      };
+      if (/myaos-council-synthesise/.test(promptText)) {
+        const out = await rpc('tools/call', {
+          name: 'plan_submit',
+          arguments: { summary: 'Fake synthesised plan from the council verdict', risk: 'medium', criteria: ['Synthesised criterion'], tasks: [{ key: 'k1', title: 'Fake synthesised task', criteriaRefs: [0] }] },
+        });
+        agentText(`plan_submit isError=${out.result?.isError} ${JSON.stringify(out.result?.content ?? out.error ?? null).slice(0, 400)}`);
+        respond(message.id, { stopReason: 'end_turn' });
+        return;
+      }
+      const me = promptText.match(/Seat identity: (\S+)/)?.[1];
+      const round = Number(promptText.match(/Council round: (\d+)/)?.[1] ?? 1);
+      const lines = [...promptText.matchAll(/fake-card (\S+) r(\d+|\*): ([^\n]+)/g)].filter((m) => m[1] === me && (m[2] === '*' || Number(m[2]) === round));
+      const line = lines.find((m) => m[2] !== '*') ?? lines[0];
+      if (!line) {
+        agentText(`seat ${me}: no fake card for round ${round}; submitting nothing`);
+        respond(message.id, { stopReason: 'end_turn' });
+        return;
+      }
+      const scores = {};
+      let vote = 'endorse';
+      for (const [, k, v] of line[3].matchAll(/(\w+)=(\S+)/g)) {
+        if (k === 'vote') vote = v;
+        else scores[k] = Number(v);
+      }
+      const out = await rpc('tools/call', {
+        name: 'council_card_submit',
+        arguments: { round, scores, vote, rationale: `fake ${me} round ${round} rationale`, wouldHaveToBeTrue: `fake ${me}: evidence that the other option is cheaper` },
+      });
+      agentText(`council_card_submit isError=${out.result?.isError} ${JSON.stringify(out.result?.content ?? out.error ?? null).slice(0, 400)}`);
+      respond(message.id, { stopReason: 'end_turn' });
+      return;
+    }
     if (/use myaos tools/i.test(promptText)) {
       // Behave like an MCP client: list the runtime's tools, then report through them.
       const server = mcpServers.find((m) => m.type === 'http' && m.name === 'myaos');

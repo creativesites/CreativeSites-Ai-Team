@@ -48,9 +48,10 @@ import type { Scheduler } from '../scheduler/scheduler.ts';
 import type { StandupService } from '../standup/pipeline.ts';
 import {
   buildSessionPayloadFromCouncil,
-  startLiveCouncil,
+  startSimulatedCouncil,
   subscribeCouncilStream,
 } from '../council-runner.ts';
+import type { CouncilService } from '../council/live.ts';
 
 export interface ServerOptions {
   repo: Repo;
@@ -73,6 +74,8 @@ export interface ServerOptions {
   scheduler: Scheduler;
   standups: StandupService;
   terminals: TerminalManager;
+  /** Agent-driven Planning Council (WP3). */
+  councils?: CouncilService;
 }
 
 export interface RuntimeServer {
@@ -835,8 +838,9 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         prompt: c.decision || c.brief || '',
         mode: c.mode,
         status: c.status === 'running' ? 'running' : 'done',
-        source: 'runtime',
+        source: c.runMode === 'simulation' ? 'simulation' : 'runtime',
         jobId: c.jobId,
+        runMode: c.runMode ?? null,
       }));
       const folders = listFolderSessions();
       return { status: 200, body: { liveId: dbCouncils.find((c) => c.status === 'running')?.id ?? null, sessions: [...dbCouncils, ...folders] } };
@@ -848,14 +852,32 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const council = repo.getCouncil(id);
       return { status: 200, body: buildSessionPayloadFromCouncil(council) };
     }),
-    route('GET', '/v1/jobs/:id/councils', (ctx) => ({ status: 200, body: repo.listCouncils(ctx.params.id!) })),
+    route('GET', '/v1/jobs/:id/councils', (ctx) => {
+      const runMode = ctx.query.get('runMode');
+      if (runMode && !['live', 'simulation', 'manual'].includes(runMode)) throw new HttpError(400, 'runMode must be live, simulation or manual');
+      return { status: 200, body: repo.listCouncils(ctx.params.id!, { runMode: (runMode as 'live' | 'simulation' | 'manual' | null) ?? undefined }) };
+    }),
+    // WP3: convene the Planning Council for a job (owner). 'live' wakes real agent seats; 'simulation' is the scripted demo, labelled as such.
+    route('POST', '/v1/jobs/:id/council', async (ctx) => {
+      const body = ctx.body as unknown as T.StartJobCouncilInput & { boardGroup?: 'myaos' | 'operators'; actorId?: string };
+      const mode = body.mode ?? 'live';
+      if (mode === 'simulation') {
+        const out = startSimulatedCouncil(repo, ctx.params.id!, { prompt: body.prompt, seats: body.seats, options: body.options, boardGroup: body.boardGroup, mode: body.rounds === 1 ? 'quick' : 'full' });
+        return { status: 201, body: { runMode: 'simulation', council: out.council, sessionId: out.sessionId, selection: null } };
+      }
+      if (mode !== 'live') throw new HttpError(400, "mode must be 'live' or 'simulation'");
+      if (!opts.councils) throw new HttpError(503, 'the live council is not enabled');
+      const out = await opts.councils.start(ctx.params.id!, body, typeof body.actorId === 'string' && body.actorId ? body.actorId : repo.ownerId());
+      return { status: out.council ? 201 : 200, body: { runMode: 'live', council: out.council, selection: out.selection, skipped: out.selection.skipped } };
+    }),
     route('POST', '/v1/jobs/:id/councils', (ctx) => ({
       status: 201,
       body: repo.createCouncil(ctx.params.id!, ctx.body as unknown as T.CreateCouncilInput),
     })),
     route('POST', '/v1/jobs/:id/councils/run', (ctx) => ({
       status: 201,
-      body: startLiveCouncil(repo, ctx.params.id!, ctx.body as unknown as T.RunCouncilInput),
+      // The scripted runner: always a simulation (gap audit C3); POST /v1/jobs/:id/council runs the live council.
+      body: startSimulatedCouncil(repo, ctx.params.id!, ctx.body as unknown as T.RunCouncilInput),
     })),
     route('GET', '/v1/councils/:id', (ctx) => ({ status: 200, body: repo.getCouncil(ctx.params.id!) })),
     route('GET', '/v1/councils/:id/stream', (ctx) => {
@@ -890,10 +912,15 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const verdict = repo.getVerdict(ctx.params.id!);
       return { status: 200, body: { ...verdict, ...verdict.payload } };
     }),
-    route('POST', '/v1/councils/:id/accept', (ctx) => ({
-      status: 200,
-      body: repo.acceptVerdict(ctx.params.id!, ctx.body as unknown as T.AcceptVerdictInput),
-    })),
+    route('POST', '/v1/councils/:id/accept', async (ctx) => {
+      const council = repo.getCouncil(ctx.params.id!);
+      if (council.runMode === 'live') {
+        if (!opts.councils) throw new HttpError(503, 'the live council is not enabled');
+        const out = await opts.councils.accept(council.id, ctx.body as unknown as T.AcceptVerdictInput);
+        return { status: 200, body: { ...out.council, plan: out.plan } };
+      }
+      return { status: 200, body: repo.acceptVerdict(ctx.params.id!, ctx.body as unknown as T.AcceptVerdictInput) };
+    }),
     route('POST', '/v1/jobs/:id/usage', (ctx) => ({
       status: 201,
       body: repo.recordUsage({ ...(ctx.body as T.RecordUsageInput), jobId: ctx.params.id }),

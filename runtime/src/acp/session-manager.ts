@@ -445,7 +445,12 @@ export class SessionManager {
     const base = tools?.url();
     if (!tools || !base) return [];
     revokeSessionTokens(tools.db, sessionId);
-    const role = agent.approvalLevel === 'lead' || agent.approvalLevel === 'owner' ? 'lead' : /plan/i.test(agent.role ?? '') ? 'planner' : 'member';
+    const role =
+      agent.approvalLevel === 'lead' || agent.approvalLevel === 'owner'
+        ? 'lead'
+        : /plan|orchestrat/i.test(agent.role ?? '') || agent.departmentId === 'planning-strategy'
+          ? 'planner'
+          : 'member';
     const { token } = issueAgentToken(tools.db, { identityId: agent.id, sessionId, jobId, taskId, role });
     return [{ type: 'http', name: 'myaos', url: `${base}/mcp`, headers: [{ name: 'Authorization', value: `Bearer ${token}` }] }];
   }
