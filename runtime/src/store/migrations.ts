@@ -1,7 +1,7 @@
 // Ordered schema migrations. Never edit one that has shipped; add the next version.
 
 import { AGENT_TOOLS_SQL } from '../agent-tools/schema.ts';
-import { LEDGER_SQL } from '../ledger/schema.ts';
+import { LEDGER_SQL, TIMESHEETS_SQL } from '../ledger/schema.ts';
 
 export interface Migration {
   version: number;
@@ -1074,5 +1074,10 @@ export const MIGRATIONS: Migration[] = [
       );
       CREATE INDEX IF NOT EXISTS idx_task_skills_task ON task_skills(task_id);
     `,
+  },
+  {
+    version: 22,
+    name: 'timesheets with reconciliation hash (WP9 9.6)',
+    sql: TIMESHEETS_SQL,
   },
 ];

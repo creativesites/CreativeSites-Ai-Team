@@ -218,6 +218,99 @@ export class Ledger {
     return out;
   }
 
+  // ------------------------------------------------------------ timesheets (9.6)
+
+  /** The billable human rows for an engagement week, with adjustments, in a stable order. */
+  private timesheetRows(engagementId: string, from: string, to: string): Row[] {
+    return this.list({ from, to, actorKind: 'human' }).filter(
+      (r) => r.engagement_id === engagementId && (r.ended_at || r.source === 'adjustment')
+    );
+  }
+
+  /** CSV of the rows; the export hash is the SHA-256 of exactly this text. */
+  timesheetCsv(rows: Row[]): string {
+    const head = 'interval_id,date,started_at,ended_at,hours,category,billable,source,adjusts,note';
+    const esc = (v: unknown) => {
+      const t = v == null ? '' : String(v);
+      return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const lines = rows.map((r) =>
+      [r.id, String(r.started_at).slice(0, 10), r.started_at, r.ended_at ?? '', (Number(r.duration_ms ?? 0) / 3_600_000).toFixed(2), r.category, r.billable_status, r.source, r.adjusts_interval_id ?? '', r.note ?? '']
+        .map(esc)
+        .join(',')
+    );
+    return [head, ...lines].join('\n') + '\n';
+  }
+
+  /** Creates (or re-creates, if the current one is still a draft) the timesheet for a week. */
+  draftTimesheet(engagementId: string, periodStart: string, by: string): Row {
+    const start = new Date(periodStart);
+    if (Number.isNaN(start.getTime())) throw new LedgerError('periodStart must be an ISO date');
+    const from = start.toISOString();
+    const to = new Date(start.getTime() + 7 * 86_400_000).toISOString();
+    if (!this.db.prepare('SELECT id FROM engagements WHERE id = ?').get(engagementId)) throw new LedgerError(`engagement ${engagementId} not found`);
+    const latest = this.db
+      .prepare('SELECT * FROM timesheets WHERE engagement_id = ? AND period_start = ? ORDER BY revision DESC LIMIT 1')
+      .get(engagementId, from) as Row | undefined;
+    if (latest && latest.state === 'submitted') throw new LedgerError('This timesheet is submitted; approve it or start a new revision after approval');
+    const rows = this.timesheetRows(engagementId, from, to);
+    const csv = this.timesheetCsv(rows);
+    const totals = this.summary(from, to, engagementId);
+    const hash = crypto.createHash('sha256').update(csv).digest('hex');
+    const t = this.now().toISOString();
+    if (latest && latest.state === 'draft') {
+      this.db
+        .prepare('UPDATE timesheets SET totals = ?, interval_ids = ?, export_hash = ?, created_by = ?, created_at = ? WHERE id = ?')
+        .run(JSON.stringify(totals), JSON.stringify(rows.map((r) => r.id)), hash, by, t, String(latest.id));
+      return this.getTimesheet(String(latest.id));
+    }
+    const revision = latest ? Number(latest.revision) + 1 : 1;
+    if (latest) this.db.prepare("UPDATE timesheets SET state = 'superseded' WHERE id = ?").run(String(latest.id));
+    const tid = id('ts');
+    this.db
+      .prepare(
+        `INSERT INTO timesheets (id, engagement_id, period_start, period_end, revision, state, totals, interval_ids, export_hash, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?)`
+      )
+      .run(tid, engagementId, from, to, revision, JSON.stringify(totals), JSON.stringify(rows.map((r) => r.id)), hash, by, t);
+    return this.getTimesheet(tid);
+  }
+
+  setTimesheetState(timesheetId: string, to: 'submitted' | 'approved', by: string): Row {
+    const ts = this.getTimesheet(timesheetId);
+    const allowed = to === 'submitted' ? ts.state === 'draft' : ts.state === 'submitted';
+    if (!allowed) throw new LedgerError(`A ${String(ts.state)} timesheet cannot become ${to}`);
+    if (to === 'approved') this.db.prepare("UPDATE timesheets SET state = 'approved', approved_by = ?, approved_at = ? WHERE id = ?").run(by, this.now().toISOString(), timesheetId);
+    else this.db.prepare("UPDATE timesheets SET state = 'submitted' WHERE id = ?").run(timesheetId);
+    return this.getTimesheet(timesheetId);
+  }
+
+  /**
+   * Re-renders the CSV from the intervals the timesheet captured and checks it against the stored
+   * hash, so an export always reconciles with the records (vision §18.3).
+   */
+  exportTimesheet(timesheetId: string): { csv: string; hash: string; reconciles: boolean } {
+    const ts = this.getTimesheet(timesheetId);
+    const ids = ts.interval_ids as string[];
+    const rows = ids.map((i) => this.get(i));
+    const csv = this.timesheetCsv(rows);
+    const hash = crypto.createHash('sha256').update(csv).digest('hex');
+    return { csv, hash, reconciles: hash === ts.export_hash };
+  }
+
+  getTimesheet(timesheetId: string): Row {
+    const r = this.db.prepare('SELECT * FROM timesheets WHERE id = ?').get(timesheetId) as Row | undefined;
+    if (!r) throw new LedgerError(`timesheet ${timesheetId} not found`);
+    return { ...r, totals: JSON.parse(String(r.totals)), interval_ids: JSON.parse(String(r.interval_ids)) };
+  }
+
+  listTimesheets(engagementId?: string): Row[] {
+    const rows = (engagementId
+      ? this.db.prepare('SELECT id FROM timesheets WHERE engagement_id = ? ORDER BY period_start DESC, revision DESC').all(engagementId)
+      : this.db.prepare('SELECT id FROM timesheets ORDER BY period_start DESC, revision DESC').all()) as Row[];
+    return rows.map((r) => this.getTimesheet(String(r.id)));
+  }
+
   // ------------------------------------------------------------ engagements (local file only)
 
   /**

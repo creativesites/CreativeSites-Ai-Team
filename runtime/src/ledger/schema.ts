@@ -49,3 +49,23 @@ export const LEDGER_SQL = `
     updated_at TEXT NOT NULL
   );
 `;
+
+/** Timesheets (WP9 9.6): a snapshot of an engagement week, approved by the owner, exported with a reconciliation hash. */
+export const TIMESHEETS_SQL = `
+  CREATE TABLE IF NOT EXISTS timesheets (
+    id TEXT PRIMARY KEY,
+    engagement_id TEXT NOT NULL,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    state TEXT NOT NULL DEFAULT 'draft' CHECK (state IN ('draft','submitted','approved','superseded')),
+    totals TEXT NOT NULL,
+    interval_ids TEXT NOT NULL,
+    export_hash TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    approved_by TEXT,
+    approved_at TEXT,
+    UNIQUE (engagement_id, period_start, revision)
+  );
+`;

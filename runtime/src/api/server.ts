@@ -338,6 +338,14 @@ export function createServer(opts: ServerOptions): RuntimeServer {
           status: 200,
           body: L().summary(asString(ctx.query.get('from'), 'from'), asString(ctx.query.get('to'), 'to'), ctx.query.get('engagementId') ?? undefined),
         })),
+        route('GET', '/v1/timesheets', (ctx) => ({ status: 200, body: L().listTimesheets(ctx.query.get('engagementId') ?? undefined) })),
+        route('POST', '/v1/timesheets', (ctx) => ({
+          status: 201,
+          body: wrap(() => L().draftTimesheet(asString(ctx.body.engagementId, 'engagementId'), asString(ctx.body.periodStart, 'periodStart'), owner())),
+        })),
+        route('POST', '/v1/timesheets/:id/submit', (ctx) => ({ status: 200, body: wrap(() => L().setTimesheetState(ctx.params.id!, 'submitted', owner())) })),
+        route('POST', '/v1/timesheets/:id/approve', (ctx) => ({ status: 200, body: wrap(() => L().setTimesheetState(ctx.params.id!, 'approved', owner())) })),
+        route('GET', '/v1/timesheets/:id/export', (ctx) => ({ status: 200, body: wrap(() => L().exportTimesheet(ctx.params.id!)) })),
         route('GET', '/v1/engagements', () => ({ status: 200, body: opts.db ? opts.db.prepare('SELECT * FROM engagements ORDER BY id').all() : [] })),
         route('GET', '/v1/jobs/:id/timeline', (ctx) => {
           if (!opts.db) throw new HttpError(503, 'timeline needs the store');

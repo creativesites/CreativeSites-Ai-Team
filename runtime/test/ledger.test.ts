@@ -123,3 +123,37 @@ test('time API and job timeline', async () => {
   const sum = (await call('GET', '/v1/time/summary?from=2000-01-01T00:00:00Z&to=2100-01-01T00:00:00Z')).json;
   assert.equal(sum.measurement, 'actual');
 });
+
+test('timesheets: draft → submit → approve; export reconciles; changes after approval need a new revision (9.6, 18.3)', () => {
+  const db = openStore(path.join(dir, 'ts.db'));
+  let clock = new Date('2026-11-05T12:00:00Z');
+  const L = new Ledger(db, () => clock);
+  const file = path.join(dir, 'eng-ts.json');
+  fs.writeFileSync(file, JSON.stringify({ engagements: [{ id: 'client-b', client: 'Client B', min_weekly_hours: 20, max_weekly_hours: 40 }] }));
+  L.loadEngagements(file);
+  L.addManual({ identityId: 'owner', engagementId: 'client-b', startedAt: '2026-11-03T08:00:00Z', endedAt: '2026-11-03T12:00:00Z' });
+  L.addManual({ identityId: 'owner', engagementId: 'other', startedAt: '2026-11-03T13:00:00Z', endedAt: '2026-11-03T14:00:00Z' });
+
+  const d1 = L.draftTimesheet('client-b', '2026-11-02T00:00:00Z', 'owner');
+  assert.equal((d1.totals as any).billableHumanHours, 4, 'only this engagement');
+  assert.equal((d1.interval_ids as string[]).length, 1);
+  const ex = L.exportTimesheet(String(d1.id));
+  assert.equal(ex.reconciles, true);
+  assert.match(ex.csv, /^interval_id,date/);
+
+  L.setTimesheetState(String(d1.id), 'submitted', 'owner');
+  assert.throws(() => L.draftTimesheet('client-b', '2026-11-02T00:00:00Z', 'owner'), /submitted/);
+  const ap = L.setTimesheetState(String(d1.id), 'approved', 'owner');
+  assert.equal(ap.state, 'approved');
+  assert.throws(() => L.setTimesheetState(String(d1.id), 'approved', 'owner'));
+
+  // A correction after approval: the approved sheet stays as it was; a new revision captures it.
+  clock = new Date('2026-11-10T09:00:00Z');
+  L.adjust(String((d1.interval_ids as string[])[0]), { deltaMs: -3_600_000, note: 'Lunch not deducted', by: 'owner' });
+  assert.equal(L.exportTimesheet(String(d1.id)).reconciles, true, 'approved export still reconciles with what was approved');
+  const d2 = L.draftTimesheet('client-b', '2026-11-02T00:00:00Z', 'owner');
+  assert.equal(d2.revision, 2);
+  assert.equal((d2.totals as any).billableHumanHours, 3);
+  assert.equal(L.getTimesheet(String(d1.id)).state, 'superseded');
+  db.close();
+});
