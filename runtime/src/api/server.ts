@@ -37,6 +37,7 @@ import {
   writeFrameFileToDisk,
 } from '../design-studio.ts';
 import { DesignRunner } from '../design-agent.ts';
+import { createDesignRequest } from '../design-lifecycle.ts';
 import { createIntake } from '../intake/intake.ts';
 import type { Bridge } from '../bridge.ts';
 import type { Orchestrator } from '../orchestrator.ts';
@@ -1208,9 +1209,32 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const htmlPath = writeFrameFileToDisk(baseDir, board.id, created.id, created.htmlContent);
       return { status: 201, body: repo.updateDesignFrame(created.id, { htmlPath, bumpVersion: false }) };
     }),
+    // A design request: a job (via intake, source 'design'), a linked design task and a board.
+    route('POST', '/v1/design/requests', (ctx) => ({
+      status: 201,
+      body: createDesignRequest(repo, opts.sessions, ctx.body as unknown as T.CreateDesignRequestInput),
+    })),
+    // Lifecycle move (send to review, request changes, approve, archive). Approval goes through the
+    // approve flow so the OBSERVED evidence and the approved snapshot are written.
+    route('POST', '/v1/design-frames/:id/transition', async (ctx) => {
+      const body = ctx.body as { to?: T.DesignFrameStatus; actorId?: string; reason?: string | null };
+      const actor = String(body.actorId ?? 'winston');
+      if (body.to === 'approved') {
+        const res = await approveFrameAndHandoff(repo, opts.orchestrator, ctx.params.id!, { actorId: actor, note: body.reason ?? undefined });
+        return { status: 200, body: res.frame };
+      }
+      return { status: 200, body: repo.transitionFrame(ctx.params.id!, body.to as T.DesignFrameStatus, actor, body.reason ?? null) };
+    }),
     route('PATCH', '/v1/design-frames/:id', (ctx) => {
       const existing = repo.getDesignFrame(ctx.params.id!);
       const input = ctx.body as unknown as T.UpdateDesignFrameInput;
+      if (input.status !== undefined && input.status !== existing.status) {
+        // Status never changes through a plain edit: lifecycle moves are validated transitions.
+        const { status, ...rest } = input;
+        if (status === 'approved') throw new InputError('use POST /v1/design-frames/:id/approve or /transition to approve');
+        repo.transitionFrame(existing.id, status, String((ctx.body as { actorId?: string }).actorId ?? 'winston'), null);
+        return { status: 200, body: Object.keys(rest).length ? repo.updateDesignFrame(existing.id, { ...rest, htmlPath: existing.htmlPath }) : repo.getDesignFrame(existing.id) };
+      }
       let htmlPath = existing.htmlPath;
       if (input.htmlContent !== undefined && existing.htmlPath) {
         try {

@@ -109,6 +109,33 @@ const STAGE_TRANSITIONS: Record<T.JobStage, T.JobStage[]> = {
 };
 const RISKS: T.Risk[] = ['low', 'medium', 'high', 'critical'];
 const RISK_RANK: Record<T.Risk, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+const DESIGN_FRAME_STATUSES: T.DesignFrameStatus[] = ['draft', 'iterating', 'review', 'approved', 'superseded', 'archived'];
+
+/**
+ * Design frame lifecycle (vision section 12): Draft -> Review -> Approved -> Superseded.
+ * draft|iterating -> approved is kept only so the pre-review approve API keeps working.
+ */
+export const DESIGN_FRAME_TRANSITIONS: Record<T.DesignFrameStatus, T.DesignFrameStatus[]> = {
+  draft: ['review', 'approved', 'archived'],
+  iterating: ['review', 'approved', 'archived'],
+  review: ['approved', 'iterating', 'archived'],
+  approved: ['superseded', 'iterating', 'archived'],
+  superseded: ['archived'],
+  archived: [],
+};
+
+export interface DesignTransitionExtra {
+  actorKind?: T.ActorKind;
+  /** approved: the OBSERVED evidence row and the immutable snapshot of what was approved. */
+  evidenceId?: string | null;
+  artifactPath?: string | null;
+  contentSha?: string | null;
+  sourceFiles?: string[];
+  notes?: string | null;
+  /** superseded: the frame that replaced this one. */
+  supersededBy?: string | null;
+}
+
 const TASK_MODES: NonNullable<T.Task['mode']>[] = ['build', 'verify', 'review', 'ops', 'design'];
 const JOB_KINDS: T.JobKind[] = ['code', 'research', 'ops', 'design', 'decision'];
 const SHIP_STATUSES: T.ShipStatus[] = ['none', 'ready', 'merged', 'pr_opened', 'cherry_picked', 'branch_pushed'];
@@ -3924,14 +3951,15 @@ export class Repo {
       this.db
         .prepare(
           `INSERT INTO design_boards
-            (id, project_id, job_id, room_id, title, description, mode, viewport_x, viewport_y, viewport_zoom, design_tokens_json, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0.85, ?, ?, ?, ?)`
+            (id, project_id, job_id, room_id, task_id, title, description, mode, viewport_x, viewport_y, viewport_zoom, design_tokens_json, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0.85, ?, ?, ?, ?)`
         )
         .run(
           id,
           input.projectId ?? null,
           input.jobId ?? null,
           input.roomId ?? null,
+          input.taskId ?? null,
           title,
           optionalString(input.description, 'description'),
           mode,
@@ -4083,7 +4111,10 @@ export class Repo {
       if (input.height !== undefined) fields.push(['height', Math.max(240, Number(input.height))]);
       if (input.x !== undefined) fields.push(['x', Number(input.x)]);
       if (input.y !== undefined) fields.push(['y', Number(input.y)]);
-      if (input.status !== undefined) fields.push(['status', oneOf(input.status, ['draft', 'iterating', 'approved', 'archived'] as const, 'status')]);
+      let nextStatus = input.status;
+      // Editing an approved or in-review frame starts a new version that is being iterated again.
+      if (nextStatus === undefined && contentChanged && input.bumpVersion !== false && (existing.status === 'approved' || existing.status === 'review')) nextStatus = 'iterating';
+      if (nextStatus !== undefined) fields.push(['status', oneOf(nextStatus, DESIGN_FRAME_STATUSES, 'status')]);
       if (input.sourceFiles !== undefined) fields.push(['source_files_json', jsonText(input.sourceFiles)]);
       if (input.htmlPath !== undefined) fields.push(['html_path', input.htmlPath]);
       if (input.htmlContent !== undefined) {
@@ -4120,11 +4151,94 @@ export class Repo {
       this.recordEvent(events, {
         type: 'design.frame_updated',
         subjectId: id,
-        payload: { boardId: existing.boardId, version: nextVersion, status: input.status ?? existing.status },
+        payload: { boardId: existing.boardId, version: nextVersion, status: nextStatus ?? existing.status },
         subjectType: 'design_frame',
       });
     });
     return this.getDesignFrame(id);
+  }
+
+  /**
+   * The one place a design frame changes lifecycle state. Table-driven (DESIGN_FRAME_TRANSITIONS);
+   * an illegal move is a ConflictError. Approving a version supersedes the earlier approved
+   * version of the same frame and any approved ancestor frame, in the same transaction.
+   */
+  transitionFrame(id: string, to: T.DesignFrameStatus, actor: string, reason?: string | null, extra: DesignTransitionExtra = {}): T.DesignFrame {
+    const frame = this.getDesignFrame(id);
+    if (!DESIGN_FRAME_STATUSES.includes(to)) throw new InputError(`unknown design status ${String(to)}`);
+    if (!DESIGN_FRAME_TRANSITIONS[frame.status].includes(to)) {
+      throw new ConflictError(`design frame ${id} cannot move from ${frame.status} to ${to}`);
+    }
+    const board = this.getDesignBoard(frame.boardId);
+    const t = now();
+    const actorKind: T.ActorKind = extra.actorKind ?? 'human';
+    const emit = (events: T.RuntimeEvent[], type: string, subjectId: string, payload: Record<string, unknown>) =>
+      this.recordEvent(events, { type, subjectId, subjectType: 'design_frame', payload: { boardId: board.id, ...payload }, actorId: actor, actorKind, jobId: board.jobId ?? null });
+    this.write((events) => {
+      const fields: [string, SQLInputValue][] = [['status', to], ['updated_at', t]];
+      if (to === 'approved') {
+        fields.push(['approved_by', actor], ['approved_at', t], ['evidence_id', extra.evidenceId ?? null], ['superseded_by', null]);
+        if (extra.sourceFiles) fields.push(['source_files_json', jsonText(extra.sourceFiles)]);
+        if (extra.notes !== undefined) fields.push(['notes', extra.notes]);
+      }
+      if (to === 'superseded') fields.push(['superseded_by', extra.supersededBy ?? null]);
+      this.db.prepare(`UPDATE design_frames SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
+
+      if (to === 'approved') {
+        const current = this.one('SELECT id FROM design_frame_versions WHERE frame_id = ? AND version = ?', id, frame.version);
+        const currentId = current ? String(current.id) : null;
+        if (currentId) {
+          this.db
+            .prepare("UPDATE design_frame_versions SET state = 'approved', approved_by = ?, approved_at = ?, evidence_id = ?, artifact_path = ?, content_sha = ?, superseded_by = NULL WHERE id = ?")
+            .run(actor, t, extra.evidenceId ?? null, extra.artifactPath ?? null, extra.contentSha ?? null, currentId);
+        }
+        // An earlier approved version of this same frame is replaced by this one.
+        const earlier = this.all("SELECT id, version FROM design_frame_versions WHERE frame_id = ? AND state = 'approved' AND id != ?", id, currentId ?? '');
+        for (const e of earlier) {
+          this.db.prepare("UPDATE design_frame_versions SET state = 'superseded', superseded_by = ? WHERE id = ?").run(currentId, String(e.id));
+          emit(events, 'design.version_superseded', id, { version: num(e.version), supersededByVersion: frame.version });
+        }
+        // An approved ancestor frame (this one was forked/iterated from it) is replaced too.
+        const seen = new Set<string>([id]);
+        let parentId = frame.parentFrameId;
+        while (parentId && !seen.has(parentId)) {
+          seen.add(parentId);
+          const parent = this.one('SELECT id, status, parent_frame_id FROM design_frames WHERE id = ?', parentId);
+          if (!parent) break;
+          if (str(parent.status) === 'approved') {
+            this.db.prepare("UPDATE design_frames SET status = 'superseded', superseded_by = ?, updated_at = ? WHERE id = ?").run(id, t, parentId);
+            this.db.prepare("UPDATE design_frame_versions SET state = 'superseded', superseded_by = ? WHERE frame_id = ? AND state = 'approved'").run(id, parentId);
+            emit(events, 'design.frame_superseded', parentId, { supersededBy: id, from: 'approved', reason: 'newer approved frame' });
+          }
+          parentId = str(parent.parent_frame_id);
+        }
+      }
+      this.db.prepare('UPDATE design_boards SET updated_at = ? WHERE id = ?').run(t, board.id);
+      emit(events, `design.frame_${to}`, id, { from: frame.status, to, version: frame.version, reason: reason ?? null });
+    });
+    return this.getDesignFrame(id);
+  }
+
+  /** Approved frame versions of a job's boards: what implementation work must follow (newest approved version per frame). */
+  listApprovedDesigns(jobId: string): T.ApprovedDesignRef[] {
+    const rows = this.all(
+      `SELECT f.id AS frame_id, f.device, f.html_path, v.title, v.version, v.artifact_path
+         FROM design_frame_versions v
+         JOIN design_frames f ON f.id = v.frame_id
+         JOIN design_boards b ON b.id = f.board_id
+        WHERE b.job_id = ? AND v.state = 'approved' AND f.status != 'archived'
+        ORDER BY f.created_at ASC, v.version DESC`,
+      jobId
+    );
+    const seen = new Set<string>();
+    const out: T.ApprovedDesignRef[] = [];
+    for (const r of rows) {
+      const frameId = String(r.frame_id);
+      if (seen.has(frameId)) continue;
+      seen.add(frameId);
+      out.push({ frameId, title: String(r.title), version: num(r.version), device: (str(r.device) ?? 'phone') as T.DesignDeviceKind, path: str(r.artifact_path) ?? str(r.html_path) });
+    }
+    return out;
   }
 
   deleteDesignFrame(id: string): void {
@@ -5668,6 +5782,13 @@ const toDesignFrameVersion = (r: Row): T.DesignFrameVersion => ({
   notes: str(r.notes),
   authorId: String(r.author_id ?? 'atlas'),
   createdAt: String(r.created_at),
+  state: (str(r.state) as 'approved' | 'superseded' | null) ?? null,
+  approvedBy: str(r.approved_by),
+  approvedAt: str(r.approved_at),
+  evidenceId: str(r.evidence_id),
+  artifactPath: str(r.artifact_path),
+  contentSha: str(r.content_sha),
+  supersededBy: str(r.superseded_by),
 });
 
 const toDesignFrame = (r: Row, versions?: T.DesignFrameVersion[]): T.DesignFrame => ({
@@ -5690,6 +5811,7 @@ const toDesignFrame = (r: Row, versions?: T.DesignFrameVersion[]): T.DesignFrame
   approvedBy: str(r.approved_by),
   approvedAt: str(r.approved_at),
   evidenceId: str(r.evidence_id),
+  supersededBy: str(r.superseded_by),
   createdAt: String(r.created_at),
   updatedAt: String(r.updated_at),
   versions,
@@ -5700,6 +5822,7 @@ const toDesignBoard = (r: Row, frames?: T.DesignFrame[]): T.DesignBoard => ({
   projectId: str(r.project_id),
   jobId: str(r.job_id),
   roomId: str(r.room_id),
+  taskId: str(r.task_id),
   title: String(r.title),
   description: str(r.description),
   mode: (str(r.mode) ?? 'greenfield') as T.DesignBoardMode,

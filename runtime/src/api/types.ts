@@ -1530,7 +1530,7 @@ export interface SessionRotationResult {
 
 export type DesignBoardMode = 'greenfield' | 'extracted' | 'hybrid';
 export type DesignDeviceKind = 'phone' | 'tablet' | 'desktop' | 'custom';
-export type DesignFrameStatus = 'draft' | 'iterating' | 'approved' | 'archived';
+export type DesignFrameStatus = 'draft' | 'iterating' | 'review' | 'approved' | 'superseded' | 'archived';
 
 export interface DesignTokens {
   brandName?: string;
@@ -1549,6 +1549,16 @@ export interface DesignFrameVersion {
   notes: string | null;
   authorId: string;
   createdAt: string;
+  /** 'approved' / 'superseded' once this exact version was approved; null while it never was. */
+  state: 'approved' | 'superseded' | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  evidenceId: string | null;
+  /** Snapshot of the approved HTML (immutable reference for implementers). */
+  artifactPath: string | null;
+  contentSha: string | null;
+  /** The version id (same frame) or frame id (a successor frame) that replaced this approval. */
+  supersededBy: string | null;
 }
 
 export interface DesignFrame {
@@ -1571,6 +1581,8 @@ export interface DesignFrame {
   approvedBy: string | null;
   approvedAt: string | null;
   evidenceId: string | null;
+  /** Frame id whose approval replaced this one (set with status 'superseded'). */
+  supersededBy: string | null;
   createdAt: string;
   updatedAt: string;
   versions?: DesignFrameVersion[];
@@ -1581,6 +1593,8 @@ export interface DesignBoard {
   projectId: string | null;
   jobId: string | null;
   roomId: string | null;
+  /** The linked design task, when the board came from a design request. */
+  taskId: string | null;
   title: string;
   description: string | null;
   mode: DesignBoardMode;
@@ -1600,6 +1614,7 @@ export interface CreateDesignBoardInput {
   projectId?: string | null;
   jobId?: string | null;
   roomId?: string | null;
+  taskId?: string | null;
   title: string;
   description?: string | null;
   mode?: DesignBoardMode;
@@ -1641,6 +1656,33 @@ export interface UpdateDesignFrameInput {
   htmlContent?: string;
   notes?: string | null;
   authorId?: string;
+}
+
+/** An approved frame version that implementation work should follow. */
+export interface ApprovedDesignRef {
+  frameId: string;
+  title: string;
+  version: number;
+  device: DesignDeviceKind;
+  path: string | null;
+}
+
+export interface CreateDesignRequestInput {
+  jobId?: string;
+  projectId?: string;
+  brief: string;
+  deviceTargets?: DesignDeviceKind[];
+  requestedBy?: string;
+}
+
+export interface DesignRequestResult {
+  jobId: string;
+  boardId: string;
+  taskId: string;
+  assigneeId: string | null;
+  /** Why the task was assigned to this agent, or why it was left unassigned. */
+  assignmentReason: string;
+  duplicateJob: boolean;
 }
 
 export interface GenerateDesignInput {

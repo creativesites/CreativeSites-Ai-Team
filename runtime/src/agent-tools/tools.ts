@@ -75,6 +75,7 @@ export const TOOLS: ToolDef[] = [
         plan: job.plan ?? null,
         criteria: job.criteria.map((c) => ({ id: c.id, text: c.text, evidence: c.evidenceClass ?? null })),
         tasks: job.tasks.map((t) => ({ id: t.id, title: t.title, status: t.status, assigneeId: t.assigneeId, checkCommand: t.checkCommand })),
+        approvedDesigns: ctx.repo.listApprovedDesigns(job.id),
       };
     },
   },
@@ -140,6 +141,51 @@ export const TOOLS: ToolDef[] = [
         recordedByKind: 'agent',
       });
       return { evidenceId: ev.id, class: ev.class };
+    },
+  },
+  {
+    name: 'design_conformance_report',
+    description: 'Report whether the implementation matches an approved design frame of your job. Stored as DECLARED review evidence; only an independent verifier can later VERIFY it.',
+    inputSchema: {
+      type: 'object',
+      required: ['frameId', 'result'],
+      properties: {
+        frameId: s('The approved design frame (see approvedDesigns in job_get)'),
+        result: s('Does the implementation match the approved design?', { enum: ['matches', 'deviates'] }),
+        notes: s('What you compared, and any deviation', { maxLength: 4000 }),
+        criterionId: s('Acceptance criterion this supports'),
+        taskId: s('Defaults to your session task'),
+        idempotencyKey: IDEM,
+      },
+      additionalProperties: false,
+    },
+    handler: (ctx, args) => {
+      const jobId = jobOf(ctx, args);
+      const taskId = taskOf(ctx, args, jobId);
+      let frame;
+      try {
+        frame = ctx.repo.getDesignFrame(String(args.frameId));
+      } catch {
+        throw new ToolRejected(`Design frame ${String(args.frameId)} does not exist`);
+      }
+      if (ctx.repo.getDesignBoard(frame.boardId).jobId !== jobId) throw new ToolRejected('That design frame belongs to a different job');
+      const approved = frame.versions?.find((v) => v.state === 'approved');
+      if (!approved) throw new ToolRejected('That design frame has no approved version to check against');
+      const result = String(args.result);
+      const notes = typeof args.notes === 'string' ? args.notes : null;
+      const ev = ctx.repo.appendEvidence({
+        jobId,
+        taskId,
+        sessionId: ctx.principal.sessionId,
+        criterionId: typeof args.criterionId === 'string' ? args.criterionId : null,
+        kind: 'review',
+        class: 'DECLARED',
+        summary: `Design conformance: ${frame.title} v${approved.version} ${result}`,
+        payload: { type: 'design_conformance', frameId: frame.id, version: approved.version, result, notes, artifactPath: approved.artifactPath },
+        recordedBy: ctx.principal.identityId,
+        recordedByKind: 'agent',
+      });
+      return { evidenceId: ev.id, class: ev.class, version: approved.version };
     },
   },
   {

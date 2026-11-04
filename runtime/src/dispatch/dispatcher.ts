@@ -120,7 +120,7 @@ export class Dispatcher {
       if (task.status === 'pending') {
         this.repo.transitionTask(task.id, 'assigned', { actorId: DISPATCHER_ACTOR, actorKind: 'system', assigneeId: agent.id, reason });
       }
-      const session = await this.sessions.start({ agentId: agent.id, jobId, taskId: task.id, prompt: dispatchPrompt(task, jobNumber) });
+      const session = await this.sessions.start({ agentId: agent.id, jobId, taskId: task.id, prompt: dispatchPrompt(task, jobNumber, this.repo.listApprovedDesigns(jobId)) });
       this.repo.emitEvent({
         type: 'dispatch.started',
         subjectId: task.id,
@@ -175,13 +175,7 @@ export class Dispatcher {
   ): { agent: T.Identity; reason: string } | { blocked: string } {
     const unavailable = (agent: T.Identity): string | null => {
       if ((perAgent.get(agent.id) ?? 0) >= settings.maxSessionsPerAgent) return `${agent.id} is at its session limit (${settings.maxSessionsPerAgent})`;
-      if (agent.rateLimitResetAt && Date.parse(agent.rateLimitResetAt) > nowMs) return `${agent.id} is rate-limited until ${agent.rateLimitResetAt}`;
-      if (agent.statusState === 'rate_limited') return `${agent.id} is rate-limited`;
-      const adapterId = (agent.adapterId ?? '').toLowerCase();
-      const row = adapterId ? this.repo.listAdapterOverrides().find((a) => String(a.id) === adapterId) : undefined;
-      if (row?.rate_limit_reset_at && Date.parse(String(row.rate_limit_reset_at)) > nowMs) return `adapter ${adapterId} is rate-limited until ${String(row.rate_limit_reset_at)}`;
-      const blocked = this.sessions.adapterBlockedReason(agent);
-      return blocked ? `${agent.id}: ${blocked}` : null;
+      return agentUnavailableReason(this.repo, this.sessions, agent, nowMs);
     };
 
     if (task.assigneeId) {
@@ -227,14 +221,31 @@ export class Dispatcher {
   }
 }
 
+/** Why an agent cannot take work right now (rate limit, blocked adapter), or null. Shared with the design-request flow. */
+export function agentUnavailableReason(repo: Repo, sessions: Pick<SessionManager, 'adapterBlockedReason'>, agent: T.Identity, nowMs: number): string | null {
+  if (agent.rateLimitResetAt && Date.parse(agent.rateLimitResetAt) > nowMs) return `${agent.id} is rate-limited until ${agent.rateLimitResetAt}`;
+  if (agent.statusState === 'rate_limited') return `${agent.id} is rate-limited`;
+  const adapterId = (agent.adapterId ?? '').toLowerCase();
+  const row = adapterId ? repo.listAdapterOverrides().find((a) => String(a.id) === adapterId) : undefined;
+  if (row?.rate_limit_reset_at && Date.parse(String(row.rate_limit_reset_at)) > nowMs) return `adapter ${adapterId} is rate-limited until ${String(row.rate_limit_reset_at)}`;
+  const blocked = sessions.adapterBlockedReason(agent);
+  return blocked ? `${agent.id}: ${blocked}` : null;
+}
+
 /** The first message of a dispatched session: claim, work, report. */
-export function dispatchPrompt(task: T.Task, jobNumber: number): string {
+export function dispatchPrompt(task: T.Task, jobNumber: number, approvedDesigns: T.ApprovedDesignRef[] = []): string {
   return [
     `MyaOS dispatch: you are assigned task "${task.title}" (id ${task.id}) on job #${jobNumber}.`,
     `1. Call the myaos tool task_claim with taskId ${task.id} to acknowledge the task before anything else.`,
     '2. Do the work in your current working directory. It is a worktree and branch dedicated to this task; other tasks have their own.',
     '3. When finished, call task_report with a short summary of what changed. The runtime commits your work, runs the check and merges the branch into the job branch.',
     task.checkCommand ? `Check command the runtime will run: ${task.checkCommand}` : '',
+    approvedDesigns.length && task.mode !== 'design'
+      ? [
+          'Approved designs for this job (implement these faithfully; report any deviation with design_conformance_report):',
+          ...approvedDesigns.map((d) => `- ${d.title} (frame ${d.frameId}, v${d.version}, ${d.device})${d.path ? `: ${d.path}` : ''}`),
+        ].join('\n')
+      : '',
   ]
     .filter(Boolean)
     .join('\n');

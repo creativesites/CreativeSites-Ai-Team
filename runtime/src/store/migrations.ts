@@ -1223,4 +1223,58 @@ export const MIGRATIONS: Migration[] = [
     name: 'timesheets with reconciliation hash (WP9 9.6)',
     sql: TIMESHEETS_SQL,
   },
+  {
+    version: 23,
+    name: '023_design_lifecycle',
+    // Vision §12. design_frames.status carries a CHECK SQLite cannot widen (adds review and
+    // superseded), and design_frame_versions references design_frames(id), so the table is
+    // rebuilt with foreign keys off exactly like v10: every row, column, index and foreign
+    // key is kept; superseded_by is the one new column. Versions gain approval/lineage
+    // columns and boards gain the linked design task. Additive otherwise.
+    foreignKeysOff: true,
+    sql: `
+      CREATE TABLE design_frames_v23 (
+        id TEXT PRIMARY KEY,
+        board_id TEXT NOT NULL REFERENCES design_boards(id) ON DELETE CASCADE,
+        parent_frame_id TEXT,
+        title TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        device TEXT NOT NULL DEFAULT 'phone' CHECK (device IN ('phone','tablet','desktop','custom')),
+        width INTEGER NOT NULL DEFAULT 393,
+        height INTEGER NOT NULL DEFAULT 852,
+        x REAL NOT NULL DEFAULT 80,
+        y REAL NOT NULL DEFAULT 80,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','iterating','review','approved','superseded','archived')),
+        source_files_json TEXT NOT NULL DEFAULT '[]',
+        html_path TEXT,
+        html_content TEXT NOT NULL DEFAULT '',
+        notes TEXT,
+        author_id TEXT NOT NULL DEFAULT 'atlas',
+        approved_by TEXT,
+        approved_at TEXT,
+        evidence_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        superseded_by TEXT
+      );
+      INSERT INTO design_frames_v23 (id, board_id, parent_frame_id, title, version, device, width, height, x, y, status,
+        source_files_json, html_path, html_content, notes, author_id, approved_by, approved_at, evidence_id, created_at, updated_at)
+      SELECT id, board_id, parent_frame_id, title, version, device, width, height, x, y, status,
+        source_files_json, html_path, html_content, notes, author_id, approved_by, approved_at, evidence_id, created_at, updated_at
+      FROM design_frames;
+      DROP TABLE design_frames;
+      ALTER TABLE design_frames_v23 RENAME TO design_frames;
+      CREATE INDEX design_frames_board ON design_frames(board_id, created_at ASC);
+
+      ALTER TABLE design_frame_versions ADD COLUMN state TEXT CHECK (state IS NULL OR state IN ('approved','superseded'));
+      ALTER TABLE design_frame_versions ADD COLUMN approved_by TEXT;
+      ALTER TABLE design_frame_versions ADD COLUMN approved_at TEXT;
+      ALTER TABLE design_frame_versions ADD COLUMN evidence_id TEXT;
+      ALTER TABLE design_frame_versions ADD COLUMN artifact_path TEXT;
+      ALTER TABLE design_frame_versions ADD COLUMN content_sha TEXT;
+      ALTER TABLE design_frame_versions ADD COLUMN superseded_by TEXT;
+      ALTER TABLE design_boards ADD COLUMN task_id TEXT;
+      CREATE INDEX IF NOT EXISTS design_frame_versions_state ON design_frame_versions(state, frame_id);
+    `,
+  },
 ];
