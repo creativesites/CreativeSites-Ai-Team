@@ -131,6 +131,8 @@ export class AcpClient {
   }
 
   spawnProcess(): void {
+    // A client that has been closed must never start a process (shutdown racing a session that had not spawned yet).
+    if (this.closing) throw new AcpError(-32001, 'client closed before the agent process started');
     this.child = spawn(this.opts.command, this.opts.args, {
       cwd: this.opts.cwd,
       env: agentEnv(process.env, (this.opts.env ?? {}) as Record<string, string>),
@@ -233,6 +235,16 @@ export class AcpClient {
 
   async close(graceMs = 4000): Promise<void> {
     this.closing = true;
+    try {
+      await this.stopProcess(graceMs);
+    } finally {
+      // Whatever the process did (even if its exit event never arrives), nothing may stay waiting on it:
+      // a prompt left pending would keep the session run, and runtime shutdown, waiting forever.
+      this.rejectPending(new AcpError(-32001, 'client closed'));
+    }
+  }
+
+  private async stopProcess(graceMs: number): Promise<void> {
     for (const state of this.terminals.values()) {
       if (!state.exit) {
         try {

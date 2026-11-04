@@ -834,7 +834,8 @@ export class SessionManager {
       live.cancelled = true;
       await live.client.close().catch(() => {});
     }
-    await Promise.allSettled([...this.runs.values()]);
+    // Runs settle once their client is closed; never let a stuck one block shutdown.
+    await Promise.race([Promise.allSettled([...this.runs.values()]), new Promise((r) => setTimeout(r, 10_000).unref())]);
     this.live.clear();
   }
 
@@ -878,6 +879,7 @@ export class SessionManager {
           /* non-git or clean worktree */
         }
       }
+      if (live.closed) return; // shut down while preparing: do not start an agent process
       client.spawnProcess();
       this.repo.updateSession(live.sessionId, { state: 'starting', pid: client.pid });
       const init = await client.initialize();
