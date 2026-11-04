@@ -22,6 +22,7 @@ import { StandupService } from './standup/pipeline.ts';
 import { gitAvailable } from './workspaces.ts';
 import { syncCommunity } from './community-sync.ts';
 import { attachSkillService } from './skills/service.ts';
+import { attachCouncilService, CouncilService } from './council/live.ts';
 
 export const VERSION = '0.2.0';
 
@@ -39,6 +40,8 @@ export interface StartOptions {
   teamRepo?: string | null;
   /** Overrides the skills root (default: setting skillsRoot, env MYAOS_SKILLS_ROOT, then community/skills). */
   skillsRoot?: string | null;
+  /** How often the live council closes due rounds (default 5000 ms). */
+  councilTickMs?: number;
 }
 
 export interface RunningRuntime {
@@ -46,6 +49,7 @@ export interface RunningRuntime {
   port: number;
   token: string;
   repo: Repo;
+  councils: CouncilService;
   close: () => Promise<void>;
 }
 
@@ -93,6 +97,13 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
   const checker = new Checker({ repo, workspaceRoots: wsRoots, worktreeRoot: wtRoot, artifactsDir: artDir });
   const sessions = new SessionManager({ repo, checker, env: readAdapterEnv(cfg) });
   const orchestrator = new Orchestrator({ repo, sessions, checker });
+  // Agent-driven Planning Council (WP3): its own tick, so the orchestrator loop is untouched.
+  const councils = new CouncilService({ repo, sessions });
+  attachCouncilService(repo, councils);
+  const councilTick = setInterval(() => {
+    void councils.tick().catch((e) => console.warn('[council] tick:', (e as Error).message));
+  }, opts.councilTickMs ?? 5000);
+  councilTick.unref();
   // Recurring routines and daily stand-ups (WP6): one central scheduler, driven by the orchestrator tick.
   const scheduler = new Scheduler({ repo, db });
   const standups = new StandupService({
@@ -168,6 +179,7 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     scheduler,
     standups,
     terminals,
+    councils,
   });
   broadcast = api.broadcast;
 
@@ -208,9 +220,11 @@ export async function startRuntime(opts: StartOptions): Promise<RunningRuntime> 
     port,
     token,
     repo,
+    councils,
     close: () =>
       new Promise<void>((resolve) => {
         clearInterval(sweep);
+        clearInterval(councilTick);
         clearInterval(commSyncTimer);
         orchestrator.dispose();
         terminals.closeAll();

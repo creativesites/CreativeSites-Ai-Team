@@ -5,6 +5,7 @@ import { submitPlan } from '../planning/plan.ts';
 import { submitReply } from '../standup/replies.ts';
 import type { AgentPrincipal } from './tokens.ts';
 import { skillServiceFor } from '../skills/service.ts';
+import { councilServiceFor } from '../council/live.ts';
 import { validate, type JsonSchema } from './validate.ts';
 
 /**
@@ -244,7 +245,46 @@ export const TOOLS: ToolDef[] = [
     handler: (ctx, args) => {
       const jobId = jobOf(ctx, args);
       const { jobId: _j, idempotencyKey: _i, ...packet } = args;
-      return submitPlan(ctx.repo, jobId, packet, { id: ctx.principal.identityId, kind: 'agent' });
+      // WP3 3.3: the synthesiser seat of an accepted live council submits the council's plan.
+      const councils = councilServiceFor(ctx.repo);
+      const councilId = councils?.councilForSynthesiser(ctx.principal) ?? null;
+      const result = submitPlan(ctx.repo, jobId, packet, { id: ctx.principal.identityId, kind: 'agent' }, { councilId });
+      if (councilId) councils!.planSubmitted(councilId, ctx.principal, result);
+      return councilId ? { ...result, councilId } : result;
+    },
+  },
+  {
+    name: 'council_card_submit',
+    description:
+      'Submit your card for the open round of the Planning Council you hold a seat on: a 0-10 score for EVERY option, your vote (endorse, amend or dissent), your rationale and what would have to be true for you to change your mind. One card per seat per round; the round must be open. Your card is stored with your session id and scored by the runtime; dissent is recorded in the verdict.',
+    inputSchema: {
+      type: 'object',
+      required: ['round', 'scores', 'vote', 'rationale'],
+      properties: {
+        round: { type: 'integer', minimum: 1, maximum: 10 },
+        scores: { type: 'object', description: 'Option id -> score from 0 to 10, for every option' },
+        vote: s('Your vote', { enum: ['endorse', 'amend', 'dissent'] }),
+        rationale: s('Your argument', { minLength: 3, maxLength: 4000 }),
+        wouldHaveToBeTrue: s('What would have to be true for you to change your mind', { maxLength: 2000 }),
+        confidence: { type: 'number', minimum: 0, maximum: 10 },
+        reversible: { type: 'boolean' },
+        jobId: s('Defaults to your session job'),
+      },
+      additionalProperties: false,
+    },
+    handler: (ctx, args) => {
+      const jobId = jobOf(ctx, args);
+      const councils = councilServiceFor(ctx.repo);
+      if (!councils) throw new ToolRejected('The live council is not enabled in this runtime');
+      return councils.submitCard(ctx.principal, jobId, {
+        round: Number(args.round),
+        scores: args.scores as Record<string, number>,
+        vote: args.vote as 'endorse' | 'amend' | 'dissent',
+        rationale: String(args.rationale),
+        wouldHaveToBeTrue: typeof args.wouldHaveToBeTrue === 'string' ? args.wouldHaveToBeTrue : undefined,
+        confidence: typeof args.confidence === 'number' ? args.confidence : undefined,
+        reversible: typeof args.reversible === 'boolean' ? args.reversible : undefined,
+      });
     },
   },
   {

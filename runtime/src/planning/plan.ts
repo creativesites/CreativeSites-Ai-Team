@@ -127,8 +127,10 @@ export function budgetExceeded(repo: Repo, jobId: string): boolean {
   return b.configured && b.limitCents != null && b.spentCents >= b.limitCents;
 }
 
-export function submitPlan(repo: Repo, jobId: string, rawPacket: unknown, actor: PlanActor): SubmitPlanResult {
+export function submitPlan(repo: Repo, jobId: string, rawPacket: unknown, actor: PlanActor, opts: { councilId?: string | null } = {}): SubmitPlanResult {
   const packet = validatePacket(repo, rawPacket);
+  // WP3 3.3: a plan that carries out a council verdict records the council (set by the runtime, never by the caller).
+  if (opts.councilId) packet.councilId = opts.councilId;
   repo.getJob(jobId); // 404 before 409
   const { taskKeys, replaced } = repo.materialisePlan(jobId, packet, actor);
 

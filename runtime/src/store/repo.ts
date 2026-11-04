@@ -3086,15 +3086,16 @@ export class Repo {
     const decision = input.decision?.trim() || job.title;
     const brief = input.brief?.trim() || job.brief;
     const assumptions = Array.isArray(input.assumptions) ? input.assumptions : [];
+    const runMode = input.runMode == null ? null : oneOf(input.runMode, ['live', 'simulation'] as const, 'runMode');
     this.write((events) => {
       this.db
         .prepare(
-          `INSERT INTO councils (id, job_id, mode, status, created_at, seat_config, started_at, title, decision, brief, assumptions)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO councils (id, job_id, mode, status, created_at, seat_config, started_at, title, decision, brief, assumptions, run_mode, selection)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(id, jobId, mode, 'running', now(), jsonText({ options, seats }), now(), title, decision, brief, jsonText(assumptions));
+        .run(id, jobId, mode, 'running', now(), jsonText({ options, seats }), now(), title, decision, brief, jsonText(assumptions), runMode, jsonText(input.selection ?? {}));
       this.refreshJobUpdated(jobId);
-      this.recordEvent(events, { type: 'council.created', subjectId: jobId, payload: { councilId: id, mode, title }, subjectType: 'job' });
+      this.recordEvent(events, { type: 'council.created', subjectId: jobId, payload: { councilId: id, mode, title, runMode }, subjectType: 'job' });
     });
     return this.getCouncil(id);
   }
@@ -3106,6 +3107,8 @@ export class Repo {
     const cards = this.all('SELECT * FROM council_cards WHERE council_id = ? ORDER BY round, rowid', councilId).map(toCouncilCard);
     const verdictRow = this.one('SELECT * FROM verdicts WHERE council_id = ?', councilId);
     const draftObj = parseJson<Record<string, unknown>>(row.draft, {});
+    const selection = parseJson<Record<string, unknown>>(row.selection, {});
+    const liveState = parseJson<Record<string, unknown>>(row.live_state, {});
     return {
       id: String(row.id),
       jobId: String(row.job_id),
@@ -3124,12 +3127,59 @@ export class Repo {
       cards,
       verdict: verdictRow ? toVerdict(verdictRow) : null,
       createdAt: String(row.created_at),
+      runMode: (str(row.run_mode) as T.CouncilRunMode | null) ?? null,
+      selection: Object.keys(selection).length ? (selection as unknown as T.CouncilSelection) : null,
+      liveState: Object.keys(liveState).length ? (liveState as unknown as T.CouncilLiveState) : null,
+      absentSeats: parseJson<T.CouncilAbsentSeat[]>(row.absent_seats, []),
     };
   }
 
-  listCouncils(jobId: string): T.Council[] {
+  /**
+   * Councils of a job. `runMode: 'live'` returns only agent-driven councils: simulation runs
+   * and hand-filled councils are never mixed into live results.
+   */
+  listCouncils(jobId: string, filter: { runMode?: T.CouncilRunMode | 'manual' } = {}): T.Council[] {
     this.getJob(jobId);
-    return this.all('SELECT id FROM councils WHERE job_id = ? ORDER BY created_at DESC', jobId).map((r) => this.getCouncil(String(r.id)));
+    const where =
+      filter.runMode === 'live' ? " AND run_mode = 'live'" : filter.runMode === 'simulation' ? " AND run_mode = 'simulation'" : filter.runMode === 'manual' ? ' AND run_mode IS NULL' : '';
+    return this.all(`SELECT id FROM councils WHERE job_id = ?${where} ORDER BY created_at DESC`, jobId).map((r) => this.getCouncil(String(r.id)));
+  }
+
+  /** Running agent-driven councils (the live council service ticks these). */
+  listRunningLiveCouncils(jobId?: string): T.Council[] {
+    const rows = jobId
+      ? this.all("SELECT id FROM councils WHERE run_mode = 'live' AND status = 'running' AND job_id = ? ORDER BY created_at", jobId)
+      : this.all("SELECT id FROM councils WHERE run_mode = 'live' AND status = 'running' ORDER BY created_at");
+    return rows.map((r) => this.getCouncil(String(r.id)));
+  }
+
+  /** Live councils whose verdict waits for a synthesiser plan. */
+  listLiveCouncilsAwaitingPlan(): T.Council[] {
+    return this.all("SELECT id FROM councils WHERE run_mode = 'live' AND status = 'verdict' ORDER BY created_at").map((r) => this.getCouncil(String(r.id)));
+  }
+
+  /** Writes the live round state, absent seats and (optionally) the status of a live council. */
+  updateCouncilLive(
+    councilId: string,
+    patch: { liveState?: T.CouncilLiveState; absentSeats?: T.CouncilAbsentSeat[]; status?: T.Council['status']; event?: { type: string; payload: Record<string, unknown> } }
+  ): T.Council {
+    const council = this.getCouncil(councilId);
+    const sets: [string, SQLInputValue][] = [];
+    if (patch.liveState !== undefined) sets.push(['live_state', jsonText(patch.liveState)]);
+    if (patch.absentSeats !== undefined) sets.push(['absent_seats', jsonText(patch.absentSeats)]);
+    if (patch.status !== undefined) {
+      sets.push(['status', patch.status]);
+      if (patch.status !== 'running') sets.push(['ended_at', now()]);
+    }
+    this.write((events) => {
+      if (sets.length) {
+        this.db.prepare(`UPDATE councils SET ${sets.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...sets.map(([, v]) => v), councilId);
+      }
+      if (patch.event) {
+        this.recordEvent(events, { type: patch.event.type, subjectId: council.jobId, payload: { councilId, ...patch.event.payload }, subjectType: 'job' });
+      }
+    });
+    return this.getCouncil(councilId);
   }
 
   listAllCouncils(limit = 50): T.Council[] {
@@ -3231,27 +3281,40 @@ export class Repo {
       text: input.text ?? input.argument ?? null,
       parsed: input.parsed ?? null,
       quotes: input.quotes ?? [],
+      ...(input.vote ? { vote: oneOf(input.vote, ['endorse', 'amend', 'dissent'] as const, 'vote') } : {}),
+      ...(input.wouldHaveToBeTrue ? { wouldHaveToBeTrue: String(input.wouldHaveToBeTrue) } : {}),
+      ...(input.simulated ? { simulated: true } : {}),
     };
+    // A simulated card never lands in a live council, and a live card never in a simulation.
+    if (input.simulated && council.runMode === 'live') throw new ConflictError('A simulated card cannot be added to a live council');
+    if (!input.simulated && council.runMode === 'simulation') throw new ConflictError('This council is a simulation; only the simulation runner writes its cards');
+    if (council.runMode === 'live' && !input.sessionId) throw new ConflictError('Cards of a live council are written by seat sessions through council_card_submit');
     const id = newId('card');
     this.write((events) => {
       this.db
-        .prepare('INSERT INTO council_cards (id, council_id, round, seat, identity_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(id, councilId, round, seat.seat, result.identityId, jsonText(result), now());
-      this.recordEvent(events, { type: 'council.card_added', subjectId: council.jobId, payload: { councilId, seat: seat.seat, round }, subjectType: 'job' });
+        .prepare('INSERT INTO council_cards (id, council_id, round, seat, identity_id, payload, created_at, session_id, simulated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, councilId, round, seat.seat, result.identityId, jsonText(result), now(), input.sessionId ?? null, input.simulated ? 1 : 0);
+      this.recordEvent(events, { type: 'council.card_added', subjectId: council.jobId, payload: { councilId, seat: seat.seat, round, sessionId: input.sessionId ?? null, simulated: Boolean(input.simulated) }, subjectType: 'job' });
     });
     return toCouncilCard(this.one('SELECT * FROM council_cards WHERE id = ?', id)!);
   }
 
-  createVerdict(councilId: string, richOverride?: Partial<T.CouncilResult>): T.CouncilVerdict {
+  /**
+   * `presentOnly` (live councils): weigh only the seats that submitted a card in the scored
+   * round, so an absent seat neither counts as a zero score nor is filled in.
+   */
+  createVerdict(councilId: string, richOverride?: Partial<T.CouncilResult>, opts: { presentOnly?: boolean } = {}): T.CouncilVerdict {
     const council = this.getCouncil(councilId);
     if (council.status !== 'running') throw new ConflictError(`This council is ${council.status}; it cannot produce another verdict`);
     if (!council.cards.length) throw new ConflictError('No cards have been submitted');
     // Score using the latest round's cards (or all cards if only 1 round)
     const maxRound = Math.max(...council.cards.map((c) => c.round || 1));
     const roundCards = council.cards.filter((c) => (c.round || 1) === maxRound).map((c) => c.result);
+    const present = new Set(roundCards.map((c) => c.seat));
+    const seats = opts.presentOnly ? council.seats.filter((s) => present.has(s.seat)) : council.seats;
     let computed: T.CouncilResult;
     try {
-      computed = computeCouncil(council.options, council.seats, roundCards.length ? roundCards : council.cards.map((c) => c.result));
+      computed = computeCouncil(council.options, seats, roundCards.length ? roundCards : council.cards.map((c) => c.result));
     } catch (e) {
       throw new ConflictError((e as Error).message);
     }
@@ -3284,6 +3347,25 @@ export class Repo {
     return toVerdict(this.one('SELECT * FROM verdicts WHERE id = ?', id)!);
   }
 
+  /** Live councils: records the plan that carried the verdict out and marks the council accepted. */
+  markLiveCouncilAccepted(councilId: string, plan: Record<string, unknown>, actor: { id: string; kind: T.ActorKind }): T.Council {
+    const council = this.getCouncil(councilId);
+    if (council.status === 'accepted') return council;
+    this.write((events) => {
+      this.db.prepare('UPDATE verdicts SET plan = ? WHERE council_id = ?').run(jsonText(plan), councilId);
+      this.db.prepare("UPDATE councils SET status = 'accepted', ended_at = ? WHERE id = ?").run(now(), councilId);
+      this.recordEvent(events, {
+        type: 'council.accepted',
+        subjectId: council.jobId,
+        payload: { councilId, ...plan },
+        actorId: actor.id,
+        actorKind: actor.kind,
+        subjectType: 'job',
+      });
+    });
+    return this.getCouncil(councilId);
+  }
+
   getVerdict(councilId: string): T.CouncilVerdict {
     const row = this.one('SELECT * FROM verdicts WHERE council_id = ?', councilId);
     if (!row) throw new NotFoundError(`council ${councilId} has no verdict`);
@@ -3293,6 +3375,10 @@ export class Repo {
   acceptVerdict(councilId: string, input: T.AcceptVerdictInput): T.Council {
     const council = this.getCouncil(councilId);
     if (!council.verdict) throw new ConflictError('This council has no verdict to accept');
+    if (council.runMode === 'simulation') {
+      throw new ConflictError('This council is a simulation (scripted cards, no agent took part); its verdict cannot become a job plan. Run a live council.');
+    }
+    if (council.runMode === 'live') throw new ConflictError('A live council verdict is accepted through the council service (POST /v1/councils/:id/accept)');
     const actorId = required(input.actorId, 'actorId');
     const councilResult = council.verdict.payload;
     const taskInputs = Array.isArray(input.tasks) ? input.tasks : [];
@@ -5491,6 +5577,8 @@ const toCouncilCard = (r: Row): T.CouncilCard => ({
   result: parseJson<T.CouncilCardResult>(r.payload, {
     seat: String(r.seat), identityId: null, scores: {}, pillar: 0, confidence: null, ruin: {}, reversible: null, argument: null,
   }),
+  sessionId: str(r.session_id),
+  simulated: Number(r.simulated ?? 0) === 1,
   createdAt: String(r.created_at),
 });
 

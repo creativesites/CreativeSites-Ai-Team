@@ -415,6 +415,8 @@ export interface PlanPacket {
   estimates?: { agentHours?: number; notes?: string };
   criteria?: string[];
   tasks: PlanTaskInput[];
+  /** The council whose verdict this plan carries out (WP3 3.3). */
+  councilId?: string | null;
 }
 
 export interface JobStageHistory {
@@ -665,6 +667,11 @@ export interface CouncilCardResult {
   text?: string | null;
   parsed?: CouncilCardParsed | null;
   quotes?: CouncilQuoteCheck[];
+  /** Live councils: the seat's vote and what would have to be true for it to change its mind. */
+  vote?: 'endorse' | 'amend' | 'dissent' | null;
+  wouldHaveToBeTrue?: string | null;
+  /** Written by the scripted simulation runner, never by an agent. */
+  simulated?: boolean;
 }
 
 export interface CouncilCard {
@@ -674,6 +681,9 @@ export interface CouncilCard {
   seat: string;
   identityId: string | null;
   result: CouncilCardResult;
+  /** The agent session that wrote this card (live councils). */
+  sessionId?: string | null;
+  simulated?: boolean;
   createdAt: string;
 }
 
@@ -744,6 +754,60 @@ export interface CouncilResult {
   seats?: CouncilVerdictSeatSummary[];
   disclaimer?: string;
   tasks?: CreateTaskInput[];
+  // WP3 live council synthesis (3.4)
+  runMode?: CouncilRunMode | null;
+  scoredRound?: number;
+  dissents?: { seat: string; quote: string; would_have_to_be_true: string; round: number }[];
+  rejectedOptions?: CouncilScore[];
+  absent?: CouncilAbsentSeat[];
+}
+
+export type CouncilRunMode = 'live' | 'simulation';
+
+export interface CouncilAbsentSeat {
+  seat: string;
+  identityId: string | null;
+  round: number;
+  reason: string;
+}
+
+export interface CouncilSeatSelection {
+  identityId: string;
+  weight: number;
+  score: number;
+  reasons: string[];
+}
+
+export interface CouncilSelection {
+  skipped: string | null;
+  keywords: string[];
+  seats: CouncilSeatSelection[];
+  excluded: { identityId: string; reason: string }[];
+  override: boolean;
+  selectedAt: string;
+}
+
+export interface CouncilLiveState {
+  rounds: number;
+  round: number;
+  timeoutMinutes: number;
+  roundOpenedAt: string | null;
+  deadlineAt: string | null;
+  closedRounds: number[];
+  /** seat -> round -> session id that was invited to write that card. */
+  sessions: Record<string, Record<string, string | null>>;
+  outcome?: string | null;
+  /** seat -> round -> why its session could not start. */
+  startErrors?: Record<string, Record<string, string>>;
+  synthesiser?: {
+    identityId: string;
+    reason: string;
+    sessionId: string | null;
+    requestedBy: string;
+    requestedAt: string;
+    status: 'requested' | 'running' | 'submitted' | 'failed';
+    error?: string | null;
+  } | null;
 }
 
 export interface CouncilStreamEvent {
@@ -770,6 +834,11 @@ export interface Council {
   cards: CouncilCard[];
   verdict: CouncilVerdict | null;
   createdAt: string;
+  /** null for councils filled by hand through the cards API. */
+  runMode?: CouncilRunMode | null;
+  selection?: CouncilSelection | null;
+  liveState?: CouncilLiveState | null;
+  absentSeats?: CouncilAbsentSeat[];
 }
 
 export interface CouncilVerdict {
@@ -793,6 +862,8 @@ export interface CreateCouncilInput {
   assumptions?: string[];
   options: CouncilOption[];
   seats: CouncilSeat[];
+  runMode?: CouncilRunMode | null;
+  selection?: CouncilSelection | null;
 }
 
 export interface CreateCouncilCardInput {
@@ -808,6 +879,19 @@ export interface CreateCouncilCardInput {
   text?: string;
   parsed?: CouncilCardParsed;
   quotes?: CouncilQuoteCheck[];
+  sessionId?: string | null;
+  simulated?: boolean;
+  vote?: 'endorse' | 'amend' | 'dissent' | null;
+  wouldHaveToBeTrue?: string | null;
+}
+
+export interface StartJobCouncilInput {
+  mode?: CouncilRunMode;
+  /** Identity ids that replace the automatic selection. */
+  seats?: string[];
+  options?: CouncilOption[];
+  prompt?: string;
+  rounds?: 1 | 2;
 }
 
 export interface RunCouncilInput {
@@ -826,6 +910,7 @@ export interface CouncilSessionSummary {
   status: string;
   source?: string;
   jobId?: string | null;
+  runMode?: CouncilRunMode | null;
 }
 
 export interface CouncilSessionPayload {
@@ -835,12 +920,16 @@ export interface CouncilSessionPayload {
   mode: 'quick' | 'full';
   status: string;
   jobId?: string | null;
+  runMode?: CouncilRunMode | null;
   events: CouncilStreamEvent[];
 }
 
 export interface AcceptVerdictInput {
   actorId: string;
   tasks?: CreateTaskInput[];
+  /** Live councils: ask the synthesiser seat to submit the plan instead of supplying tasks. */
+  synthesise?: boolean;
+  risk?: 'low' | 'medium' | 'high';
 }
 
 export interface BridgeStatus {
