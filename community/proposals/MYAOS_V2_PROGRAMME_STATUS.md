@@ -6,7 +6,7 @@ Kept current by the lead session. If a new session takes over, read this first, 
 **Branch / PR:** `ccr-9ef3b891-fjv3er` → PR #3 (draft) into `main`.
 **CI:** `.github/workflows/v2-ci.yml` exists but cannot run: the GitHub account is billing-locked. The owner has ruled this is not a blocker, so every step records its local evidence instead.
 
-## Done (verified locally; runtime suite **203/203**, `tsc` clean in `runtime/` and `apps/desktop/`)
+## Done (verified locally; runtime suite **223/223**, `tsc` clean in `runtime/` and `apps/desktop/`)
 
 | Package | What exists | Evidence |
 |---|---|---|
@@ -20,13 +20,17 @@ Kept current by the lead session. If a new session takes over, read this first, 
 | WP8 | Runtime-loaded versioned skills, 16-skill catalog (v18) | merge `c9ebbb6` |
 | WP9 | Time ledger, engagements from a local file, timesheets with reconciliation hash, job timeline (v16, v22) | `367b46d`, `9ecbf6c` |
 | WP10 | Subscription usage tracking, 70% weekly-pace alert, K9 isolation enforced at session start (v13); model-aware renewal, budgets, usage mapper (v21); no prices, no shipped context windows | merge `1303cb4`, WP10 merge, `e9b1ea9` |
+| WP3 | Agent-driven Planning Council (live sessions per seat, absent seats never filled, dissent kept); the scripted one is labelled simulation (v20) | merge `86f5aea` |
+| WP6 6.6 | LaunchAgent generator and install script (launchctl itself not run here) | `220ec28` |
+| WP11 | 15-item navigation; Time, AI Resources, Skills, Stand-ups, QA, Health screens; job timeline; Executive Home cards | merge `545f922` |
+| Design | Design Studio lifecycle (draft/iterating/review/approved/superseded), design requests with linked task, approved-design references to engineers, conformance reports (v23) | merge `b5673a9` |
+| Recovery | Restart mid-task recovery test; shutdown no longer hangs or leaks agent processes | `1edd3a7` |
 | S1 | End-to-end slice test (intake → shipped, verified, accounted, on the timeline) | `9d1d819` |
 | Security | Owner key in the macOS Keychain (Rust command compiled standalone; Tauri build and real Keychain not verified here) | `dd0249e` |
 
 ## In progress
 
-- **WP3:** agent-driven Planning Council (Opus worker, migration v20).
-- **WP11:** desktop navigation and screens: Time, AI Resources, Skills, Stand-ups, QA, Runtime & Health, job timeline, Executive Home cards (Sonnet worker).
+Nothing. All packages in the plan have a first implementation; see Not done for what only the owner's Mac can prove.
 
 ## Not done
 
