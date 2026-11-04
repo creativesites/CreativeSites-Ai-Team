@@ -1082,6 +1082,24 @@ export const MIGRATIONS: Migration[] = [
     `,
   },
   {
+    version: 20,
+    name: 'agent-driven planning council: selection, live round state, card session ids, simulation label (WP3)',
+    // Additive only. Councils produced by the old scripted runner (the only writer of stream
+    // events before v20) are labelled 'simulation' so they never read as live deliberation.
+    sql: `
+      ALTER TABLE councils ADD COLUMN run_mode TEXT CHECK (run_mode IS NULL OR run_mode IN ('live','simulation'));
+      ALTER TABLE councils ADD COLUMN selection TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE councils ADD COLUMN live_state TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE councils ADD COLUMN absent_seats TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE council_cards ADD COLUMN session_id TEXT;
+      ALTER TABLE council_cards ADD COLUMN simulated INTEGER NOT NULL DEFAULT 0;
+      CREATE INDEX IF NOT EXISTS idx_councils_job_mode ON councils(job_id, run_mode, status);
+      CREATE INDEX IF NOT EXISTS idx_council_cards_session ON council_cards(session_id) WHERE session_id IS NOT NULL;
+      UPDATE councils SET run_mode = 'simulation' WHERE run_mode IS NULL AND events IS NOT NULL AND events != '[]';
+      UPDATE council_cards SET simulated = 1 WHERE council_id IN (SELECT id FROM councils WHERE run_mode = 'simulation');
+    `,
+  },
+  {
     version: 22,
     name: 'timesheets with reconciliation hash (WP9 9.6)',
     sql: TIMESHEETS_SQL,

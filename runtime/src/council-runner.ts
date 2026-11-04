@@ -75,6 +75,7 @@ export function buildSessionPayloadFromCouncil(council: T.Council): T.CouncilSes
       weights,
       seats: council.seats.map((s) => s.seat),
       mode: council.mode,
+      runMode: council.runMode ?? null,
     });
     const rounds = [...new Set(council.cards.map((c) => c.round || 1))].sort((a, b) => a - b);
     for (const r of rounds) {
@@ -111,6 +112,8 @@ export function buildSessionPayloadFromCouncil(council: T.Council): T.CouncilSes
     }
     if (council.verdict) {
       const vp = council.verdict.payload;
+      // A live verdict shows only what the seats wrote: no placeholder text fills the gaps.
+      const live = council.runMode === 'live';
       const scoreMap = Object.fromEntries(vp.scores.map((s) => [s.id, { score: s.score, math: s.formula }]));
       events.push({
         type: 'verdict',
@@ -121,18 +124,18 @@ export function buildSessionPayloadFromCouncil(council: T.Council): T.CouncilSes
           scores: scoreMap,
           why: vp.why ?? [],
           fights: vp.fights ?? [],
-          minority: vp.minority ?? {
+          minority: vp.minority ?? (live ? null : {
             seat: vp.objection?.by || '',
             quote: vp.objection?.text || '',
             would_have_to_be_true: 'The primary assumption fails under load.',
-          },
+          }),
           amendments: vp.amendments ?? [],
           conditions: vp.conditions ?? [],
           next_steps: vp.next_steps ?? [],
-          cheapest_test: vp.cheapest_test ?? 'Run the verification check command on a clean worktree.',
-          kill_criteria: vp.kill_criteria ?? 'Revert immediately if any regression check fails.',
-          revisit: vp.revisit ?? 'After the first verified build completes.',
-          disclaimer: vp.disclaimer ?? COUNCIL_DISCLAIMER,
+          cheapest_test: vp.cheapest_test ?? (live ? '' : 'Run the verification check command on a clean worktree.'),
+          kill_criteria: vp.kill_criteria ?? (live ? '' : 'Revert immediately if any regression check fails.'),
+          revisit: vp.revisit ?? (live ? '' : 'After the first verified build completes.'),
+          disclaimer: vp.disclaimer ?? (live ? 'Live council: every card was written by a seat agent session.' : COUNCIL_DISCLAIMER),
         },
         seats:
           vp.seats ??
@@ -154,6 +157,7 @@ export function buildSessionPayloadFromCouncil(council: T.Council): T.CouncilSes
     mode: council.mode,
     status: council.status === 'running' ? 'running' : 'done',
     jobId: council.jobId,
+    runMode: council.runMode ?? null,
     events,
   };
 }
@@ -298,11 +302,15 @@ AMENDMENT OR DISSENT: ${amendment}
 ONE LINE FOR THE FOUNDER: ${seat.question}`;
 }
 
+export const SIMULATION_NOTICE =
+  'SIMULATION: every card in this council was generated from templates with scripted scores; no agent was woken and nothing here is agent deliberation.';
+
 /**
+ * SIMULATION ONLY (gap audit C3). The agent-driven council lives in council/live.ts.
  * Starts or runs a full multi-round Roast-Room council (Setup -> Round 1 -> Cruxes -> Round 2 -> Draft -> Round 3 -> Verdict),
  * streaming every event over SSE and persisting cards + verdict into SQLite.
  */
-export function startLiveCouncil(
+export function startSimulatedCouncil(
   repo: Repo,
   jobId: string,
   input: T.RunCouncilInput
@@ -348,6 +356,7 @@ export function startLiveCouncil(
     assumptions: setupInfo.assumptions,
     options: setupInfo.options,
     seats: councilSeats,
+    runMode: 'simulation',
   });
 
   const stream: ActiveCouncilStream = {
@@ -390,6 +399,8 @@ export function startLiveCouncil(
         weights,
         seats: seatKeys,
         mode,
+        runMode: 'simulation',
+        simulationNotice: SIMULATION_NOTICE,
       });
 
       const st = {
@@ -438,6 +449,7 @@ export function startLiveCouncil(
           text,
           parsed,
           quotes,
+          simulated: true,
         });
         emit('seat_done', { round: 1, seat: s.key, text, parsed, quotes, name: s.name });
       }
@@ -503,6 +515,7 @@ export function startLiveCouncil(
           text,
           parsed,
           quotes,
+          simulated: true,
         });
         emit('seat_done', { round: 2, seat: s.key, text, parsed, quotes, name: s.name });
       }
@@ -563,6 +576,7 @@ export function startLiveCouncil(
             text,
             parsed,
             quotes,
+            simulated: true,
           });
           emit('seat_done', { round: 3, seat: s.key, text, parsed, quotes, name: s.name });
         }
@@ -643,8 +657,9 @@ export function startLiveCouncil(
         revisit: 'Upon completion of the verification gate or if any task check fails twice.',
         votes,
         seats: seatSummaries,
-        disclaimer: COUNCIL_DISCLAIMER,
+        disclaimer: `${SIMULATION_NOTICE} ${COUNCIL_DISCLAIMER}`,
         tasks: defaultTasks,
+        runMode: 'simulation',
       };
 
       const savedVerdict = repo.createVerdict(council.id, richVerdict);
@@ -657,7 +672,8 @@ export function startLiveCouncil(
           confidence,
           support: savedVerdict.support,
           votes,
-          disclaimer: COUNCIL_DISCLAIMER,
+          disclaimer: `${SIMULATION_NOTICE} ${COUNCIL_DISCLAIMER}`,
+          runMode: 'simulation',
         },
         seats: seatSummaries,
       });

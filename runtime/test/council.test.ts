@@ -167,7 +167,7 @@ test('the pure scorer is deterministic and sorted', () => {
   assert.equal(result.objection?.text, 'B is safer');
 });
 
-test('roast-room roster, bundled example sessions, and live multi-round council runner work end-to-end', async () => {
+test('roast-room roster, bundled example sessions, and the scripted multi-round runner (labelled simulation) work end-to-end', async () => {
   const roster = await call('GET', '/v1/councils/roster');
   assert.equal(roster.status, 200);
   assert.ok(roster.json.seats.length >= 21);
@@ -184,7 +184,7 @@ test('roast-room roster, bundled example sessions, and live multi-round council 
   assert.ok(exampleSession.json.events.some((e: any) => e.type === 'cruxes'));
   assert.ok(exampleSession.json.events.some((e: any) => e.type === 'verdict'));
 
-  // Run a live multi-round council on the job and wait for completion
+  // The scripted runner is a simulation (gap audit C3): template cards, no agent woken.
   const started = await call('POST', `/v1/jobs/${jobId}/councils/run`, {
     prompt: 'Should we ship the Roast-Room council stage with 4-frame talking heads now?',
     mode: 'full',
@@ -203,4 +203,6 @@ test('roast-room roster, bundled example sessions, and live multi-round council 
   assert.ok(finished.json.cruxes.length >= 1);
   assert.ok(finished.json.verdict.payload.why.length >= 3);
   assert.ok(finished.json.verdict.payload.tasks.length >= 2);
+  assert.equal(finished.json.runMode, 'simulation');
+  assert.ok(finished.json.cards.every((c: any) => c.simulated === true));
 });
