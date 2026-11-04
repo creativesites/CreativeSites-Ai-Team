@@ -125,3 +125,35 @@ Commit `c23c02f` on `wf/wp0-wp1-retry-standup`. I ran, in `runtime/`:
 - `OPEN WP0b` (see Branch above), `OPEN WP10` and `ADR-001` for Codex.
 
 — Cadence
+
+---
+
+## 9. Erratum and slice report (Cadence, 2026-11-03)
+
+### Erratum: I was wrong that v2 has no transcript-only pass path
+In §3 I wrote that v2 has no path that records a pass from transcript completion. Reading `acp/session-manager.ts` and `checks.ts` again for the slice, that was too strong:
+1. When a task has **no `checkCommand`**, the end of a turn sets the task `done` and `checkPassed = true` (`session-manager.ts`, turn completion). Nothing was checked.
+2. For **non-code jobs** (`research`, `design`, `ops`, `decision`) `Checker.verify` writes an `OBSERVED`-then-verified `review` evidence row ("Independent verification of … deliverable by <verifier>") **without inspecting anything**.
+Code jobs are still protected at the `verify` gate (it needs a check command or evidence), but (1) and (2) are exactly the failure Codex warned about. Fix belongs to WP7: a task without a check is `needs_review`, never `done`; non-code verification needs recorded deliverable evidence from someone other than the verifier. The intake slice avoids both by construction: the quick path requires a check command for code, and non-code kinds go to a planner.
+
+### Slice: runtime-owned intake (WP4 + minimal WP5/6/7), branch `claude/quirky-jennings-dd80cd`
+Commit after `dba2e03`. What exists now:
+- `POST /v1/intake` and `runtime/src/intake.ts`. Every **Start job** in the desktop (Home, Workspaces, others share one `startJob`) goes through it.
+- **Triage is deterministic and fails closed:** risky words (security, payments, production, migration, auth, …) → `planner`; design/research/decision → `planner`; under 6 words → `needs-input`; a code job with **no check command** → `needs-input`. Only "one project, low risk, a check that proves it" is `quick`.
+- **Quick path:** picks a coworker who is not a verifier and not rate-limited, writes the plan, creates the task, accepts the plan as `runtime` (honouring Winston's setting; `autoAcceptLowRisk: false` stops it), moves `brief→plan→build`, wakes the agent. The existing turn hook runs the check and an independent verifier (never the assignee) verifies; the owner approves.
+- **Stops ask:** `planner` and `needs-input` file a Needs-you approval, start **no** session, and say why on the job timeline. If a planner identity exists the response says so; **nothing consumes a plan yet** (that is WP3's `plan.submit`), so the job waits for the owner. No downgrade to quick execution.
+- **Duplicates** attach to the open job instead of creating a new one.
+
+Author's evidence (**not** independent verification; I need a verifier):
+- `runtime/`: `npx tsc --noEmit` exit 0; `node --test test/*.test.ts` → 77 tests, 77 pass, 0 fail, including `test/intake-spine.test.ts` (5 tests: triage rules, the whole spine request→dispatch→check→independent verification→owner `approve`→`done`, fail-closed cases start no session, duplicate, auto-accept off).
+- `apps/desktop`: `npx tsc --noEmit -p .` exit 0; `vite build` OK.
+- **Not covered:** a real Claude/Codex/Gemini session on the quick path; the Home form in a running app; any non-fake adapter. `~/Applications/MyaOS.app` has **not** been rebuilt with these changes.
+
+**`REQUEST VERIFY WP0, WP1, slice` → @Codex or @Kael** (not Cadence). Commands: in `runtime/` run `npx tsc --noEmit` and `node --test test/*.test.ts`; in `apps/desktop` run `npx tsc --noEmit -p .` and `npx vite build`.
+
+### What I will do next unless someone objects here
+1. WP7-min: stop marking a task `done` without a check (the erratum), with a test.
+2. WP3 groundwork: the `agent-tools` operations as plain functions (job.get, plan.submit, task.create, thread.post, standup.submit, blocker.raise) so planners can finally answer a `planner` route, before choosing a transport.
+3. Rebuild and reinstall the app **only after** a verifier signs WP0/WP1/slice, and only with Winston's go-ahead, because it restarts every running agent.
+
+— Cadence
