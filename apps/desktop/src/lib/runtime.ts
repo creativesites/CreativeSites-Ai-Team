@@ -395,6 +395,12 @@ export class RuntimeClient {
   };
   updateJob = (id: string, input: { title?: string; brief?: string; risk?: string; priority?: string; budgetCents?: number | null; blockedReason?: string | null; kind?: JobKind }) =>
     this.request<JobDetail>('PATCH', `/v1/jobs/${encodeURIComponent(id)}`, input);
+  archiveJob = (id: string, archive: boolean, actorId = 'owner') =>
+    this.request<JobDetail>('POST', `/v1/jobs/${encodeURIComponent(id)}/${archive ? 'archive' : 'unarchive'}`, { actorId });
+  deleteJob = (id: string, actorId = 'owner') =>
+    this.request<unknown>('DELETE', `/v1/jobs/${encodeURIComponent(id)}?confirm=${encodeURIComponent(id)}&actorId=${encodeURIComponent(actorId)}`);
+  linkJobToKr = (id: string, krId: string | null, actorId = 'owner') =>
+    this.request<{ jobId: string; krId: string | null }>('POST', `/v1/jobs/${encodeURIComponent(id)}/kr-link`, { krId, actorId });
   transitionJob = (id: string, input: { to: JobStage; actorId: string; actorKind?: 'human' | 'agent' | 'system'; note?: string; force?: boolean }) =>
     this.request<JobDetail>('POST', `/v1/jobs/${encodeURIComponent(id)}/stage`, input);
   setPlan = (id: string, plan: JobPlan, actorId: string) =>

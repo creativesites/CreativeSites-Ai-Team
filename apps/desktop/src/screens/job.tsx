@@ -59,6 +59,7 @@ export function JobScreen({
   const ownerId = (settings.status === 'ready' && String(settings.data.ownerId ?? '')) || 'winston';
   const who = (id: string) => identities.find((i) => i.id === id);
 
+  const keyResults = useRuntimeData((c) => c.okrs(), []);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -218,6 +219,35 @@ export function JobScreen({
               </select>
             </label>
           )}
+          {client && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Key result
+              <select
+                value={job.okrKrId ?? ''}
+                onChange={(e) => void act('kr', () => client.linkJobToKr(job.id, e.target.value || null))}
+                aria-label="Key result"
+                className="glass-panel h-8 max-w-48 rounded-md px-2 text-xs text-foreground"
+              >
+                <option value="">Not linked</option>
+                {keyResults.status === 'ready' &&
+                  keyResults.data.keyResults.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.title}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+          {client && (
+            <button
+              type="button"
+              className={buttonVariants({ variant: 'glass' })}
+              onClick={() => void act('archive', () => client.archiveJob(job.id, !job.archivedAt))}
+            >
+              {job.archivedAt ? 'Unarchive' : 'Archive'}
+            </button>
+          )}
+          {job.archivedAt && <Tag tone="quiet">Archived</Tag>}
           {job.shipStatus === 'shipped' && <Tag tone="verified">Shipped</Tag>}
           <Tag tone={job.risk === 'high' || job.risk === 'critical' ? 'risk' : 'quiet'}>Risk {job.risk ?? 'low'}</Tag>
           <span className="text-xs text-muted-foreground">Owner: {ownerName}</span>
