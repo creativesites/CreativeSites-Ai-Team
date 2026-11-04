@@ -1513,6 +1513,19 @@ function RuntimeHealthSection({ connectionState }: { connectionState: Connection
           </div>
 
           <div className="flex flex-col gap-0.5">
+            <span className="text-[11px] text-muted-foreground">Owner key</span>
+            <span className="font-medium" title={connectionState.ownerKey?.detail ?? ''}>
+              <Tag tone={connectionState.ownerKey?.state === 'ok' ? 'verified' : connectionState.ownerKey?.state === 'mismatch' ? 'risk' : 'needs-you'}>
+                {connectionState.ownerKey?.state === 'ok'
+                  ? `Enrolled ${connectionState.ownerKey.fingerprint ?? ''}`
+                  : connectionState.ownerKey?.state === 'mismatch'
+                    ? 'Mismatch: owner actions refused'
+                    : 'Not available'}
+              </Tag>
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-0.5">
             <span className="text-[11px] text-muted-foreground">Process PID</span>
             <span className="font-mono text-foreground">{health.pid}</span>
           </div>

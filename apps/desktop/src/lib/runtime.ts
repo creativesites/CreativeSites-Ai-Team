@@ -139,7 +139,7 @@ export interface RuntimeConnection {
 
 export type ConnectionState =
   | { status: 'connecting' }
-  | { status: 'connected'; connection: RuntimeConnection; health: Health }
+  | { status: 'connected'; connection: RuntimeConnection; health: Health; ownerKey?: OwnerKeyStatus }
   | { status: 'unavailable'; reason: string };
 
 export type {
@@ -178,8 +178,22 @@ export class RuntimeError extends Error {
   }
 }
 
+export interface OwnerKeyStatus {
+  /** 'ok': enrolled with this app's key; 'mismatch': a different key is enrolled; 'unavailable': not in the desktop app or Keychain failed. */
+  state: 'ok' | 'mismatch' | 'unavailable';
+  fingerprint: string | null;
+  detail?: string;
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export class RuntimeClient {
   connection: RuntimeConnection;
+  /** Owner key from the macOS Keychain (security review S1); sent only to the runtime on loopback. */
+  private ownerKey: string | null = null;
 
   constructor(connection: RuntimeConnection) {
     this.connection = connection;
@@ -191,6 +205,7 @@ export class RuntimeClient {
         method,
         headers: {
           Authorization: `Bearer ${conn.token}`,
+          ...(this.ownerKey ? { 'X-MyaOS-Owner-Key': this.ownerKey } : {}),
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -218,6 +233,37 @@ export class RuntimeClient {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) throw new RuntimeError(res.status, data.error ?? `HTTP ${res.status}`);
     return data as T;
+  }
+
+  /**
+   * Loads the owner key from the Keychain and enrols its hash with the runtime once. If the runtime
+   * already has a different key enrolled, report a mismatch: something else enrolled first.
+   */
+  async ensureOwnerKey(): Promise<OwnerKeyStatus> {
+    if (!isTauri()) return { state: 'unavailable', fingerprint: null, detail: 'Owner key needs the desktop app' };
+    let key: string;
+    try {
+      key = await invoke<string>('owner_key');
+    } catch (e) {
+      return { state: 'unavailable', fingerprint: null, detail: e instanceof Error ? e.message : String(e) };
+    }
+    const keyHash = await sha256Hex(key);
+    const mine = keyHash.slice(0, 16).replace(/(.{4})(?=.)/g, '$1-');
+    const status = await this.request<{ enrolled: boolean; fingerprint: string | null }>('GET', '/v1/owner-key');
+    if (!status.enrolled) {
+      await this.request('POST', '/v1/owner-key', { keyHash });
+      this.ownerKey = key;
+      return { state: 'ok', fingerprint: mine };
+    }
+    if (status.fingerprint === mine) {
+      this.ownerKey = key;
+      return { state: 'ok', fingerprint: mine };
+    }
+    return {
+      state: 'mismatch',
+      fingerprint: status.fingerprint,
+      detail: `The runtime has a different owner key enrolled (${status.fingerprint}); this app's key is ${mine}. Owner-only actions will be refused. If you did not enrol that key, reset it with the runtime stopped: node runtime/scripts/owner-key.ts reset`,
+    };
   }
 
   health = () => this.request<Health>('GET', '/health');

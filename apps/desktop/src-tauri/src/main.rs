@@ -4,6 +4,7 @@
 //! in later phases, user terminals and OS integration. It reads no app data
 //! itself: the UI gets everything from the runtime's local API.
 
+mod owner_key;
 mod pty;
 mod sidecar;
 
@@ -24,6 +25,7 @@ fn main() {
         .manage(pty::TerminalManager::default())
         .invoke_handler(tauri::generate_handler![
             runtime_connection,
+            owner_key::owner_key,
             pty::terminal_spawn,
             pty::terminal_write,
             pty::terminal_resize,

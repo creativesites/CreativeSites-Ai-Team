@@ -38,9 +38,12 @@ export function RuntimeProvider({ children }: { children: React.ReactNode }) {
         const connection = await discoverRuntime();
         const c = new RuntimeClient(connection);
         const health = await c.health();
+        // Owner key (security S1): enrol once; a mismatch is surfaced, never silently replaced.
+        const ownerKey = await c.ensureOwnerKey().catch((e) => ({ state: 'unavailable' as const, fingerprint: null, detail: String(e) }));
+        if (ownerKey.state === 'mismatch') console.warn('[myaos] owner key mismatch:', ownerKey.detail);
         if (cancelled) return;
         setClient(c);
-        setState({ status: 'connected', connection, health });
+        setState({ status: 'connected', connection, health, ownerKey });
         void c.followEvents((event) => {
           for (const listener of listeners.current) listener(event);
           setRevision((r) => r + 1);
