@@ -178,10 +178,14 @@ test('a fake adapter that reports a model id: sessions.model_id is captured, ses
     assert.equal(row.agentId, 'tess');
     assert.equal(row.provider, 'anthropic');
     assert.equal(row.modelId, 'claude-sonnet-4-5');
-    // The registry knows this model, so the window resolves even though the adapter never reported a size.
+    // Nothing is shipped in the registry and the adapter never reported a size: the window is unknown.
+    const before = shouldRotateSession(rt.repo, rt.repo.getSession(started.json.id));
+    assert.equal(before.contextWindow ?? null, null);
+    // The owner enters a window for this model; it is then used (value is the test's own, not a claim about the model).
+    const added = await call('POST', '/v1/model-registry', { provider: 'anthropic', modelId: 'claude-sonnet-4-5', contextWindow: 123456, notes: 'test entry' });
+    assert.ok(added.status < 300, JSON.stringify(added.json));
     const check = shouldRotateSession(rt.repo, rt.repo.getSession(started.json.id));
-    assert.equal(check.contextWindow, 200000);
-    assert.equal(check.measurement, 'estimated');
+    assert.equal(check.contextWindow, 123456);
   } finally {
     delete process.env.FAKE_MODEL_ID;
     delete process.env.MYAOS_AGENT_ENV_PASS;
@@ -190,7 +194,7 @@ test('a fake adapter that reports a model id: sessions.model_id is captured, ses
 
 // ------------------------------------------------------------------ v21
 
-test('v21 migration is idempotent, keeps existing money budgets, and seeds the registry without prices', () => {
+test('v21 migration is idempotent, keeps existing money budgets, and ships an empty registry without prices', () => {
   const file = path.join(dir, 'v21.db');
   const old = openStore(file, MIGRATIONS.filter((m) => m.version <= 18));
   old.prepare("INSERT INTO budgets (id, scope, project_id, period, amount_cents, currency, created_at, updated_at) VALUES ('bud_old','global',NULL,'month',5000,'USD','t','t')").run();
@@ -200,7 +204,7 @@ test('v21 migration is idempotent, keeps existing money budgets, and seeds the r
   const kept = db.prepare("SELECT kind, amount_cents, warn_pct, hard_pct FROM budgets WHERE id = 'bud_old'").get() as any;
   assert.deepEqual({ ...kept }, { kind: 'money', amount_cents: 5000, warn_pct: 80, hard_pct: 100 });
   const seeded = (db.prepare('SELECT COUNT(*) AS c FROM model_registry').get() as any).c;
-  assert.ok(seeded > 0);
+  assert.equal(seeded, 0, 'no context window is shipped from memory');
   migrate(db);
   migrate(db);
   assert.equal((db.prepare('SELECT COUNT(*) AS c FROM schema_migrations WHERE version = 21').get() as any).c, 1);

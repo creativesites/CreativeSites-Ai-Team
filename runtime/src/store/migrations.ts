@@ -1152,11 +1152,8 @@ export const MIGRATIONS: Migration[] = [
         updated_at TEXT NOT NULL,
         PRIMARY KEY (provider, model_id)
       );
-      INSERT OR IGNORE INTO model_registry (provider, model_id, context_window, notes, updated_at) VALUES
-        ('anthropic', 'claude-sonnet-4-5', 200000, 'published context window; edit if your plan differs', '2026-11-03T00:00:00.000Z'),
-        ('anthropic', 'claude-opus-4-1', 200000, 'published context window; edit if your plan differs', '2026-11-03T00:00:00.000Z'),
-        ('google', 'gemini-2.5-pro', 1048576, 'published context window; edit if your plan differs', '2026-11-03T00:00:00.000Z'),
-        ('google', 'gemini-2.5-flash', 1048576, 'published context window; edit if your plan differs', '2026-11-03T00:00:00.000Z');
+      -- Intentionally empty: context windows come from what an adapter reports, or from entries the owner
+      -- makes. No window is shipped from memory (the plan's rule against unverified numbers).
 
       -- 10.4 budgets: a share of an account's limit (or a token count), not money. Rebuilt because
       -- SQLite cannot widen a CHECK; existing money budgets are copied unchanged (kind 'money').
