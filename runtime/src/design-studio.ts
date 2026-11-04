@@ -1,9 +1,10 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type * as T from './api/types.ts';
 import { boardDir } from './design-agent.ts';
 import type { Orchestrator } from './orchestrator.ts';
-import type { Repo } from './store/repo.ts';
+import { ConflictError, DESIGN_FRAME_TRANSITIONS, type Repo } from './store/repo.ts';
 
 /**
  * Extracts CSS variables, font families, and brand palette tokens from an attached project repository.
@@ -187,16 +188,30 @@ export async function approveFrameAndHandoff(
   const frame = repo.getDesignFrame(frameId);
   const board = repo.getDesignBoard(frame.boardId);
   const actorId = input.actorId?.trim() || 'winston';
-  const nowIso = new Date().toISOString();
+  // An approved frame can be handed off again (another build task) without being re-approved.
+  const handOffAgain = frame.status === 'approved';
+  if (!handOffAgain && !DESIGN_FRAME_TRANSITIONS[frame.status].includes('approved')) {
+    throw new ConflictError(`design frame ${frame.id} cannot move from ${frame.status} to approved`);
+  }
+
+  // The approved version is frozen as a snapshot, so implementers keep a stable reference
+  // even after the frame is edited into a newer version.
+  const contentSha = crypto.createHash('sha256').update(frame.htmlContent).digest('hex');
+  const snapshotDir = path.join(boardDir(board.id), 'approved');
+  fs.mkdirSync(snapshotDir, { recursive: true });
+  const artifactPath = path.join(snapshotDir, `${frame.id}-v${frame.version}.html`);
+  fs.writeFileSync(artifactPath, frame.htmlContent, 'utf8');
 
   // 1. Record what was approved: the runtime observed this exact frame version.
   // An approval is the owner's decision, not a re-run check, so it is never Verified.
-  const evidence = repo.appendEvidence({
+  // A repeat hand-off reuses the approval's evidence instead of recording a second approval.
+  const evidence = handOffAgain && frame.evidenceId ? repo.getEvidence(frame.evidenceId) : repo.appendEvidence({
     jobId: board.jobId ?? undefined,
     kind: 'artifact',
     class: 'OBSERVED',
     summary: `Owner ${actorId} approved design frame: ${frame.title} (v${frame.version}, ${frame.device})`,
     payload: {
+      type: 'design_reference',
       boardId: board.id,
       boardTitle: board.title,
       frameId: frame.id,
@@ -207,6 +222,8 @@ export async function approveFrameAndHandoff(
       height: frame.height,
       sourceFiles: input.targetFiles ?? frame.sourceFiles,
       htmlPath: frame.htmlPath,
+      artifactPath,
+      contentSha,
       note: input.note ?? null,
     },
     recordedBy: 'runtime',
@@ -214,15 +231,15 @@ export async function approveFrameAndHandoff(
   });
 
   // 2. Mark the frame approved in SQLite
-  const approvedFrame = repo.updateDesignFrame(frame.id, {
-    status: 'approved',
-    approvedBy: actorId,
-    approvedAt: nowIso,
-    evidenceId: evidence.id,
-    sourceFiles: input.targetFiles ?? frame.sourceFiles,
-    notes: input.note ? `${frame.notes ? `${frame.notes} · ` : ''}Approved: ${input.note}` : frame.notes,
-    bumpVersion: false,
-  });
+  const approvedFrame = handOffAgain
+    ? frame
+    : repo.transitionFrame(frame.id, 'approved', actorId, input.note ?? null, {
+        evidenceId: evidence.id,
+        artifactPath,
+        contentSha,
+        sourceFiles: input.targetFiles ?? frame.sourceFiles,
+        notes: input.note ? `${frame.notes ? `${frame.notes} · ` : ''}Approved: ${input.note}` : frame.notes,
+      });
 
   // 3. Optionally create & dispatch a Build Task to an engineering agent
   let createdTask: T.Task | null = null;

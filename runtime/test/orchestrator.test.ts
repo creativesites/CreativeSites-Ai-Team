@@ -168,9 +168,16 @@ test('3. agent self-scheduling & cron/timer tick wakes the scheduled agent when 
   assert.equal(created.status, 201);
   const scheduleId = created.json.id as string;
 
+  // The schedule is already due, so the orchestrator's own 2s tick may fire it before this manual tick
+  // does (it did under a loaded full-suite run). Either way it must end up fired exactly once.
   const ticked = await call('POST', '/v1/schedules/tick');
   assert.equal(ticked.status, 200);
-  assert.ok((ticked.json.triggered as string[]).includes(scheduleId));
+  const fired = await waitFor(async () => {
+    const list = (await call('GET', '/v1/schedules')).json as any[];
+    const sch = list.find((x) => x.id === scheduleId);
+    return sch && sch.runCount >= 1 ? sch : null;
+  });
+  assert.equal(fired.runCount, 1, 'fired exactly once, by whichever tick got there first');
 
   const nyx = await waitFor(async () => {
     const res = await call('GET', '/v1/identities');

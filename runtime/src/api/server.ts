@@ -1,4 +1,12 @@
 import crypto from 'node:crypto';
+import { Ledger, LedgerError } from '../ledger/ledger.ts';
+import { jobTimeline } from '../ledger/timeline.ts';
+import type { DatabaseSync } from 'node:sqlite';
+import { skillServiceFor } from '../skills/service.ts';
+import { handleMcp } from '../agent-tools/mcp-server.ts';
+import { submitPlan } from '../planning/plan.ts';
+import { resolveAgentToken } from '../agent-tools/tokens.ts';
+import { fingerprint, isReserved, OWNER_KEY_HEADER, OWNER_KEY_SETTING, ownerKeyMatches } from '../agent-tools/owner-key.ts';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -15,6 +23,10 @@ import {
   type Repo,
 } from '../store/repo.ts';
 import * as workspaces from '../workspaces.ts';
+import * as usageAccounts from '../usage/accounts.ts';
+import * as usageAlerts from '../usage/alerts.ts';
+import { computeEstimates } from '../usage/estimates.ts';
+import { weeklyReport } from '../usage/report.ts';
 import type { Checker } from '../checks.ts';
 import { formatSessionTerminalOutput, type SessionManager } from '../acp/session-manager.ts';
 import { compileBatonCapsule, shouldRotateSession } from '../acp/baton.ts';
@@ -25,20 +37,29 @@ import {
   writeFrameFileToDisk,
 } from '../design-studio.ts';
 import { DesignRunner } from '../design-agent.ts';
+import { createDesignRequest } from '../design-lifecycle.ts';
+import { createIntake } from '../intake/intake.ts';
 import type { Bridge } from '../bridge.ts';
 import type { Orchestrator } from '../orchestrator.ts';
 import type { TerminalManager } from '../terminal-manager.ts';
 import { getRosterPayload } from '../council-roster.ts';
 import { findFolderSession, listFolderSessions } from '../council-watch.ts';
 import { resolveCommunityDir, syncCommunity } from '../community-sync.ts';
+import type { Scheduler } from '../scheduler/scheduler.ts';
+import type { StandupService } from '../standup/pipeline.ts';
 import {
   buildSessionPayloadFromCouncil,
-  startLiveCouncil,
+  startSimulatedCouncil,
   subscribeCouncilStream,
 } from '../council-runner.ts';
+import type { CouncilService } from '../council/live.ts';
 
 export interface ServerOptions {
   repo: Repo;
+  /** The store handle, for tables owned by the agent action interface (session tokens, tool calls). */
+  db?: DatabaseSync;
+  /** Workforce time ledger (WP9). */
+  ledger?: Ledger;
   token: string;
   health: () => Health;
   /** Extra browser origins allowed to call the API (the desktop's dev server). */
@@ -50,7 +71,12 @@ export interface ServerOptions {
   sessions: SessionManager;
   bridge: Bridge;
   orchestrator: Orchestrator;
+  /** Named recurring schedules and their run ledger (WP6). */
+  scheduler: Scheduler;
+  standups: StandupService;
   terminals: TerminalManager;
+  /** Agent-driven Planning Council (WP3). */
+  councils?: CouncilService;
 }
 
 export interface RuntimeServer {
@@ -94,6 +120,12 @@ interface Route {
   keys: string[];
   open: boolean;
   handler: Handler;
+}
+
+/** The acting person for archive/delete/link calls: body.actorId, then ?actorId, then the owner. */
+function actorOf(ctx: { body: Record<string, unknown>; query: URLSearchParams }): string {
+  const fromBody = typeof ctx.body?.actorId === 'string' ? ctx.body.actorId.trim() : '';
+  return fromBody || ctx.query.get('actorId')?.trim() || 'owner';
 }
 
 function route(method: string, pathTemplate: string, handler: Handler, open = false): Route {
@@ -246,13 +278,127 @@ export function createServer(opts: ServerOptions): RuntimeServer {
 
   // ------------------------------------------------------------------ handlers
 
+  const usageDb = (): DatabaseSync => {
+    if (!opts.db) throw new HttpError(503, 'usage tracking needs the runtime store');
+    return opts.db;
+  };
+
+  const skillsOf = () => {
+    const svc = skillServiceFor(repo);
+    if (!svc) throw new HttpError(503, 'skills are not enabled');
+    return svc;
+  };
   const routes: Route[] = [
     route('GET', '/health', () => ({ status: 200, body: opts.health() }), true),
 
     route('GET', '/v1/summary', () => ({ status: 200, body: repo.summary() })),
 
     route('GET', '/v1/settings', () => ({ status: 200, body: repo.getSettings() })),
-    route('POST', '/v1/settings', (ctx) => ({ status: 200, body: repo.updateSettings(ctx.body as T.Settings) })),
+    route('POST', '/v1/settings', (ctx) => {
+      const patch = { ...(ctx.body as T.Settings) } as Record<string, unknown>;
+      delete patch[OWNER_KEY_SETTING]; // the owner key has its own enrolment route
+      return { status: 200, body: repo.updateSettings(patch as T.Settings) };
+    }),
+    // Owner key (security review S1): GET reports enrolment; POST enrols once.
+    route('GET', '/v1/owner-key', () => {
+      const h = repo.getSetting(OWNER_KEY_SETTING);
+      return { status: 200, body: { enrolled: typeof h === 'string' && h.length > 0, fingerprint: typeof h === 'string' && h ? fingerprint(h) : null } };
+    }),
+    route('POST', '/v1/owner-key', (ctx) => {
+      const existing = repo.getSetting(OWNER_KEY_SETTING);
+      if (typeof existing === 'string' && existing) throw new HttpError(409, 'An owner key is already enrolled. Reset it with the runtime stopped: node runtime/scripts/owner-key.ts reset');
+      const keyHash = asString(ctx.body.keyHash, 'keyHash');
+      if (!/^[0-9a-f]{64}$/.test(keyHash)) throw new HttpError(400, 'keyHash must be a hex SHA-256');
+      repo.updateSettings({ [OWNER_KEY_SETTING]: keyHash } as T.Settings);
+      return { status: 201, body: { enrolled: true, fingerprint: fingerprint(keyHash) } };
+    }),
+    // Workforce time (WP9). Owner token only: agents never write human time.
+    ...(() => {
+      const L = () => {
+        if (!opts.ledger) throw new HttpError(503, 'time ledger is not enabled');
+        return opts.ledger;
+      };
+      const wrap = <R,>(fn: () => R): R => {
+        try {
+          return fn();
+        } catch (e) {
+          if (e instanceof LedgerError) throw new HttpError(400, e.message);
+          throw e;
+        }
+      };
+      const owner = () => repo.ownerId();
+      return [
+        route('GET', '/v1/time/intervals', (ctx) => ({
+          status: 200,
+          body: L().list({
+            from: ctx.query.get('from') ?? undefined,
+            to: ctx.query.get('to') ?? undefined,
+            identityId: ctx.query.get('identityId') ?? undefined,
+            jobId: ctx.query.get('jobId') ?? undefined,
+            actorKind: ctx.query.get('actorKind') ?? undefined,
+          }),
+        })),
+        route('POST', '/v1/time/timer/start', (ctx) => ({ status: 201, body: wrap(() => L().startTimer({ ...(ctx.body as Record<string, never>), identityId: owner() })) })),
+        route('POST', '/v1/time/timer/stop', () => ({ status: 200, body: wrap(() => L().stopTimer(owner())) })),
+        route('POST', '/v1/time/entries', (ctx) => ({
+          status: 201,
+          body: wrap(() => L().addManual({ ...(ctx.body as Record<string, never>), identityId: owner(), startedAt: asString(ctx.body.startedAt, 'startedAt'), endedAt: asString(ctx.body.endedAt, 'endedAt') })),
+        })),
+        route('POST', '/v1/time/intervals/:id/adjust', (ctx) => ({
+          status: 201,
+          body: wrap(() => L().adjust(ctx.params.id!, { deltaMs: Number(ctx.body.deltaMs), note: asString(ctx.body.note, 'note'), by: owner() })),
+        })),
+        route('POST', '/v1/time/intervals/:id/support', (ctx) => ({ status: 200, body: wrap(() => L().linkSupport(ctx.params.id!, asString(ctx.body.humanIntervalId, 'humanIntervalId'))) })),
+        route('GET', '/v1/time/summary', (ctx) => ({
+          status: 200,
+          body: L().summary(asString(ctx.query.get('from'), 'from'), asString(ctx.query.get('to'), 'to'), ctx.query.get('engagementId') ?? undefined),
+        })),
+        route('GET', '/v1/timesheets', (ctx) => ({ status: 200, body: L().listTimesheets(ctx.query.get('engagementId') ?? undefined) })),
+        route('POST', '/v1/timesheets', (ctx) => ({
+          status: 201,
+          body: wrap(() => L().draftTimesheet(asString(ctx.body.engagementId, 'engagementId'), asString(ctx.body.periodStart, 'periodStart'), owner())),
+        })),
+        route('POST', '/v1/timesheets/:id/submit', (ctx) => ({ status: 200, body: wrap(() => L().setTimesheetState(ctx.params.id!, 'submitted', owner())) })),
+        route('POST', '/v1/timesheets/:id/approve', (ctx) => ({ status: 200, body: wrap(() => L().setTimesheetState(ctx.params.id!, 'approved', owner())) })),
+        route('GET', '/v1/timesheets/:id/export', (ctx) => ({ status: 200, body: wrap(() => L().exportTimesheet(ctx.params.id!)) })),
+        route('GET', '/v1/engagements', () => ({ status: 200, body: opts.db ? opts.db.prepare('SELECT * FROM engagements ORDER BY id').all() : [] })),
+        route('GET', '/v1/jobs/:id/timeline', (ctx) => {
+          if (!opts.db) throw new HttpError(503, 'timeline needs the store');
+          repo.getJob(ctx.params.id!);
+          return { status: 200, body: jobTimeline(opts.db, ctx.params.id!) };
+        }),
+      ];
+    })(),
+    // Agent action interface (programme plan K4). Authenticated by a session-scoped agent token, not the owner token.
+    route(
+      'POST',
+      '/mcp',
+      (ctx) => {
+        if (!opts.db) throw new HttpError(503, 'agent tools are not enabled');
+        const principal = resolveAgentToken(opts.db, ctx.req.headers.authorization);
+        if (!principal) throw new HttpError(401, 'missing, expired or revoked agent token');
+        const out = handleMcp(ctx.body, { principal, repo, db: opts.db });
+        return out === null ? { status: 202 } : { status: 200, body: out };
+      },
+      true
+    ),
+
+    // Runtime-loaded skills (WP8).
+    route('GET', '/v1/skills', () => {
+      const svc = skillsOf();
+      return { status: 200, body: { root: svc.root(), skills: svc.list() } };
+    }),
+    route('POST', '/v1/skills/reload', () => ({ status: 200, body: skillsOf().sync() })),
+    route('GET', '/v1/skills/:id', (ctx) => {
+      const skill = skillsOf().get(ctx.params.id!);
+      if (!skill) throw new HttpError(404, `no skill ${ctx.params.id}`);
+      return { status: 200, body: skill };
+    }),
+    route('GET', '/v1/tasks/:id/skills', (ctx) => {
+      repo.getTask(ctx.params.id!);
+      const svc = skillsOf();
+      return { status: 200, body: { taskId: ctx.params.id, skills: svc.taskSkills(ctx.params.id!), packet: svc.skillPacket(ctx.params.id!) } };
+    }),
 
     route('GET', '/v1/search', (ctx) => ({
       status: 200,
@@ -383,6 +529,16 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         directive: asOptionalString(ctx.body.directive) ?? asString(ctx.body.goal, 'directive'),
       }),
     })),
+    route('GET', '/v1/schedules/runs', (ctx) => ({
+      status: 200,
+      body: opts.scheduler.listRuns(ctx.query.get('scheduleId') ?? undefined, Number(ctx.query.get('limit') ?? 100)),
+    })),
+    route('POST', '/v1/standups/run-now', async (ctx) => {
+      if (!opts.standups.enabled()) throw new HttpError(409, 'Stand-ups are off: set workflow.standups to true first');
+      const { run, existing } = await opts.standups.runNow();
+      return { status: existing ? 200 : 202, body: { existing, run } };
+    }),
+    route('GET', '/v1/standups/latest', () => ({ status: 200, body: opts.standups.latest() })),
     route('GET', '/v1/schedules', (ctx) => ({
       status: 200,
       body: repo.listSchedules({
@@ -444,6 +600,7 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     route('GET', '/v1/projects/:id', (ctx) => ({ status: 200, body: repo.getProject(ctx.params.id!) })),
     route('POST', '/v1/projects/:id', (ctx) => ({ status: 200, body: repo.updateProject(ctx.params.id!, ctx.body as T.UpdateProjectInput) })),
     route('GET', '/v1/projects/:id/status', (ctx) => ({ status: 200, body: projectStatus(ctx.params.id!) })),
+    route('GET', '/v1/projects/:id/health', (ctx) => ({ status: 200, body: repo.projectHealth(ctx.params.id!) })),
 
     // project tasks & sprint management
     route('GET', '/v1/project-tasks', (ctx) => {
@@ -560,14 +717,41 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         projectId: ctx.query.get('projectId') ?? undefined,
         stage: (ctx.query.get('stage') as T.JobStage | null) ?? undefined,
         limit: Number(ctx.query.get('limit') ?? 500),
+        includeArchived: ctx.query.get('includeArchived') === '1',
       }),
     })),
     route('POST', '/v1/jobs', (ctx) => ({ status: 201, body: repo.createJob(ctx.body as unknown as T.CreateJobInput) })),
+    // intake (WP2): the single front door for new work
+    route('POST', '/v1/intake', (ctx) => ({ status: 201, body: createIntake(repo, ctx.body as unknown as T.CreateIntakeInput) })),
+    route('GET', '/v1/intakes', (ctx) => ({
+      status: 200,
+      body: repo.listIntakes({ jobId: ctx.query.get('jobId') ?? undefined, limit: Number(ctx.query.get('limit') ?? 200) }),
+    })),
+    route('GET', '/v1/departments', () => ({ status: 200, body: repo.listDepartments() })),
+    route('POST', '/v1/jobs/:id/triage', (ctx) => ({
+      status: 200,
+      body: repo.overrideTriage(ctx.params.id!, ctx.body as { workflow: string; reason: string; by: string }),
+    })),
     route('GET', '/v1/jobs/:id', (ctx) => ({ status: 200, body: repo.getJob(ctx.params.id!) })),
     route('PATCH', '/v1/jobs/:id', (ctx) => ({ status: 200, body: repo.updateJob(ctx.params.id!, ctx.body as T.UpdateJobInput) })),
     route('POST', '/v1/jobs/:id/stage', (ctx) => ({ status: 200, body: repo.transitionJob(ctx.params.id!, ctx.body as unknown as T.TransitionJobInput) })),
     route('POST', '/v1/jobs/:id/plan', (ctx) => ({ status: 200, body: repo.setPlan(ctx.params.id!, ctx.body as unknown as T.SetPlanInput) })),
     route('POST', '/v1/jobs/:id/plan/accept', (ctx) => ({ status: 200, body: repo.acceptPlan(ctx.params.id!, asString(ctx.body.actorId, 'actorId')) })),
+    route('POST', '/v1/jobs/:id/plan/submit', (ctx) => {
+      const { actorId, ...packet } = ctx.body as Record<string, unknown>;
+      const actor = typeof actorId === 'string' && actorId.trim() ? actorId.trim() : repo.ownerId();
+      return { status: 200, body: submitPlan(repo, ctx.params.id!, packet, { id: actor, kind: 'human' }) };
+    }),
+    route('GET', '/v1/needs-you', () => ({ status: 200, body: repo.needsYou() })),
+    route('GET', '/v1/blockers', (ctx) => {
+      const status = ctx.query.get('status');
+      if (status && status !== 'open' && status !== 'resolved') throw new HttpError(400, 'status must be open or resolved');
+      return { status: 200, body: repo.listBlockers({ status: (status as 'open' | 'resolved' | null) ?? undefined, jobId: ctx.query.get('jobId') ?? undefined }) };
+    }),
+    route('POST', '/v1/blockers/:id/resolve', (ctx) => ({
+      status: 200,
+      body: repo.resolveBlocker(ctx.params.id!, typeof ctx.body.resolvedBy === 'string' && ctx.body.resolvedBy.trim() ? ctx.body.resolvedBy : repo.ownerId()),
+    })),
     route('GET', '/v1/jobs/:id/history', (ctx) => ({ status: 200, body: repo.listHistory(ctx.params.id!) })),
     route('POST', '/v1/jobs/:id/checks', async (ctx) => ({
       status: 201,
@@ -619,9 +803,56 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       repo.deleteCriterion(ctx.params.id!);
       return { status: 204 };
     }),
-    route('GET', '/v1/jobs/:id/tasks', (ctx) => ({ status: 200, body: repo.listTasks(ctx.params.id!) })),
+    route('GET', '/v1/jobs/:id/tasks', (ctx) => ({ status: 200, body: repo.listTasks(ctx.params.id!, ctx.query.get('includeArchived') === '1') })),
+    // archive / unarchive / confirmed delete (WP7). Delete needs ?confirm=<id> and an archived item.
+    route('POST', '/v1/jobs/:id/archive', (ctx) => ({ status: 200, body: repo.archiveJob(ctx.params.id!, actorOf(ctx), true) })),
+    route('POST', '/v1/jobs/:id/unarchive', (ctx) => ({ status: 200, body: repo.archiveJob(ctx.params.id!, actorOf(ctx), false) })),
+    route('DELETE', '/v1/jobs/:id', (ctx) => {
+      repo.deleteJob(ctx.params.id!, ctx.query.get('confirm'), actorOf(ctx));
+      return { status: 204 };
+    }),
+    route('POST', '/v1/tasks/:id/archive', (ctx) => ({ status: 200, body: repo.archiveTask(ctx.params.id!, actorOf(ctx), true) })),
+    route('POST', '/v1/tasks/:id/unarchive', (ctx) => ({ status: 200, body: repo.archiveTask(ctx.params.id!, actorOf(ctx), false) })),
+    route('DELETE', '/v1/tasks/:id', (ctx) => {
+      repo.deleteTask(ctx.params.id!, ctx.query.get('confirm'), actorOf(ctx));
+      return { status: 204 };
+    }),
+    // link a job to a key result and milestone; krId null unlinks
+    route('POST', '/v1/jobs/:id/kr-link', (ctx) => {
+      const b = ctx.body as { krId?: string | null; milestoneId?: string | null; weight?: number };
+      if (b.krId === undefined) throw new InputError('krId is required (use null to unlink)');
+      return {
+        status: 200,
+        body: repo.linkJobToKr(ctx.params.id!, {
+          krId: b.krId,
+          milestoneId: b.milestoneId,
+          weight: b.weight,
+          actorId: actorOf(ctx),
+        }),
+      };
+    }),
     route('POST', '/v1/jobs/:id/tasks', (ctx) => ({ status: 201, body: repo.createTask(ctx.params.id!, ctx.body as unknown as T.CreateTaskInput) })),
-    route('PATCH', '/v1/tasks/:id', (ctx) => ({ status: 200, body: repo.updateTask(ctx.params.id!, ctx.body as T.UpdateTaskInput) })),
+    route('PATCH', '/v1/tasks/:id', (ctx) => {
+      if (ctx.body && 'status' in ctx.body) {
+        throw new ConflictError(
+          `A task's status cannot be set with PATCH. Use POST /v1/tasks/${ctx.params.id}/transition with {"to", "actorId", "reason"}.`
+        );
+      }
+      return { status: 200, body: repo.updateTask(ctx.params.id!, ctx.body as T.UpdateTaskInput) };
+    }),
+    route('POST', '/v1/tasks/:id/transition', (ctx) => {
+      const input = ctx.body as unknown as T.TransitionTaskInput;
+      return {
+        status: 200,
+        body: repo.transitionTask(ctx.params.id!, input.to, {
+          actorId: input.actorId,
+          actorKind: input.actorKind ?? 'agent',
+          reason: input.reason ?? null,
+          assigneeId: input.assigneeId,
+        }),
+      };
+    }),
+    route('GET', '/v1/tasks/ready', (ctx) => ({ status: 200, body: repo.readyTasks(ctx.query.get('jobId') ?? undefined) })),
     route('GET', '/v1/jobs/:id/evidence', (ctx) => ({ status: 200, body: repo.listEvidence({ jobId: ctx.params.id, limit: 1000 }) })),
     route('POST', '/v1/jobs/:id/evidence', (ctx) => ({
       status: 201,
@@ -643,8 +874,9 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         prompt: c.decision || c.brief || '',
         mode: c.mode,
         status: c.status === 'running' ? 'running' : 'done',
-        source: 'runtime',
+        source: c.runMode === 'simulation' ? 'simulation' : 'runtime',
         jobId: c.jobId,
+        runMode: c.runMode ?? null,
       }));
       const folders = listFolderSessions();
       return { status: 200, body: { liveId: dbCouncils.find((c) => c.status === 'running')?.id ?? null, sessions: [...dbCouncils, ...folders] } };
@@ -656,14 +888,32 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const council = repo.getCouncil(id);
       return { status: 200, body: buildSessionPayloadFromCouncil(council) };
     }),
-    route('GET', '/v1/jobs/:id/councils', (ctx) => ({ status: 200, body: repo.listCouncils(ctx.params.id!) })),
+    route('GET', '/v1/jobs/:id/councils', (ctx) => {
+      const runMode = ctx.query.get('runMode');
+      if (runMode && !['live', 'simulation', 'manual'].includes(runMode)) throw new HttpError(400, 'runMode must be live, simulation or manual');
+      return { status: 200, body: repo.listCouncils(ctx.params.id!, { runMode: (runMode as 'live' | 'simulation' | 'manual' | null) ?? undefined }) };
+    }),
+    // WP3: convene the Planning Council for a job (owner). 'live' wakes real agent seats; 'simulation' is the scripted demo, labelled as such.
+    route('POST', '/v1/jobs/:id/council', async (ctx) => {
+      const body = ctx.body as unknown as T.StartJobCouncilInput & { boardGroup?: 'myaos' | 'operators'; actorId?: string };
+      const mode = body.mode ?? 'live';
+      if (mode === 'simulation') {
+        const out = startSimulatedCouncil(repo, ctx.params.id!, { prompt: body.prompt, seats: body.seats, options: body.options, boardGroup: body.boardGroup, mode: body.rounds === 1 ? 'quick' : 'full' });
+        return { status: 201, body: { runMode: 'simulation', council: out.council, sessionId: out.sessionId, selection: null } };
+      }
+      if (mode !== 'live') throw new HttpError(400, "mode must be 'live' or 'simulation'");
+      if (!opts.councils) throw new HttpError(503, 'the live council is not enabled');
+      const out = await opts.councils.start(ctx.params.id!, body, typeof body.actorId === 'string' && body.actorId ? body.actorId : repo.ownerId());
+      return { status: out.council ? 201 : 200, body: { runMode: 'live', council: out.council, selection: out.selection, skipped: out.selection.skipped } };
+    }),
     route('POST', '/v1/jobs/:id/councils', (ctx) => ({
       status: 201,
       body: repo.createCouncil(ctx.params.id!, ctx.body as unknown as T.CreateCouncilInput),
     })),
     route('POST', '/v1/jobs/:id/councils/run', (ctx) => ({
       status: 201,
-      body: startLiveCouncil(repo, ctx.params.id!, ctx.body as unknown as T.RunCouncilInput),
+      // The scripted runner: always a simulation (gap audit C3); POST /v1/jobs/:id/council runs the live council.
+      body: startSimulatedCouncil(repo, ctx.params.id!, ctx.body as unknown as T.RunCouncilInput),
     })),
     route('GET', '/v1/councils/:id', (ctx) => ({ status: 200, body: repo.getCouncil(ctx.params.id!) })),
     route('GET', '/v1/councils/:id/stream', (ctx) => {
@@ -698,10 +948,15 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const verdict = repo.getVerdict(ctx.params.id!);
       return { status: 200, body: { ...verdict, ...verdict.payload } };
     }),
-    route('POST', '/v1/councils/:id/accept', (ctx) => ({
-      status: 200,
-      body: repo.acceptVerdict(ctx.params.id!, ctx.body as unknown as T.AcceptVerdictInput),
-    })),
+    route('POST', '/v1/councils/:id/accept', async (ctx) => {
+      const council = repo.getCouncil(ctx.params.id!);
+      if (council.runMode === 'live') {
+        if (!opts.councils) throw new HttpError(503, 'the live council is not enabled');
+        const out = await opts.councils.accept(council.id, ctx.body as unknown as T.AcceptVerdictInput);
+        return { status: 200, body: { ...out.council, plan: out.plan } };
+      }
+      return { status: 200, body: repo.acceptVerdict(ctx.params.id!, ctx.body as unknown as T.AcceptVerdictInput) };
+    }),
     route('POST', '/v1/jobs/:id/usage', (ctx) => ({
       status: 201,
       body: repo.recordUsage({ ...(ctx.body as T.RecordUsageInput), jobId: ctx.params.id }),
@@ -731,6 +986,16 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       repo.deletePolicy(ctx.params.id!);
       return { status: 204 };
     }),
+    // Model registry (K6): context windows, no prices. Renewal policy override per identity (K7).
+    route('GET', '/v1/model-registry', () => ({ status: 200, body: repo.listModelRegistry() })),
+    route('POST', '/v1/model-registry', (ctx) => {
+      repo.upsertModel(ctx.body as { provider: string; modelId: string; contextWindow?: number | null; notes?: string });
+      return { status: 201, body: repo.listModelRegistry() };
+    }),
+    route('POST', '/v1/identities/:id/renewal-policy', (ctx) => ({
+      status: 200,
+      body: repo.setIdentityRenewalPolicy(ctx.params.id!, (ctx.body.policy ?? null) as Record<string, number> | null),
+    })),
     route('GET', '/v1/budgets', () => ({ status: 200, body: repo.listBudgets() })),
     route('POST', '/v1/budgets', (ctx) => ({ status: 201, body: repo.createBudget(ctx.body as unknown as T.CreateBudgetInput) })),
 
@@ -944,9 +1209,32 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const htmlPath = writeFrameFileToDisk(baseDir, board.id, created.id, created.htmlContent);
       return { status: 201, body: repo.updateDesignFrame(created.id, { htmlPath, bumpVersion: false }) };
     }),
+    // A design request: a job (via intake, source 'design'), a linked design task and a board.
+    route('POST', '/v1/design/requests', (ctx) => ({
+      status: 201,
+      body: createDesignRequest(repo, opts.sessions, ctx.body as unknown as T.CreateDesignRequestInput),
+    })),
+    // Lifecycle move (send to review, request changes, approve, archive). Approval goes through the
+    // approve flow so the OBSERVED evidence and the approved snapshot are written.
+    route('POST', '/v1/design-frames/:id/transition', async (ctx) => {
+      const body = ctx.body as { to?: T.DesignFrameStatus; actorId?: string; reason?: string | null };
+      const actor = String(body.actorId ?? 'winston');
+      if (body.to === 'approved') {
+        const res = await approveFrameAndHandoff(repo, opts.orchestrator, ctx.params.id!, { actorId: actor, note: body.reason ?? undefined });
+        return { status: 200, body: res.frame };
+      }
+      return { status: 200, body: repo.transitionFrame(ctx.params.id!, body.to as T.DesignFrameStatus, actor, body.reason ?? null) };
+    }),
     route('PATCH', '/v1/design-frames/:id', (ctx) => {
       const existing = repo.getDesignFrame(ctx.params.id!);
       const input = ctx.body as unknown as T.UpdateDesignFrameInput;
+      if (input.status !== undefined && input.status !== existing.status) {
+        // Status never changes through a plain edit: lifecycle moves are validated transitions.
+        const { status, ...rest } = input;
+        if (status === 'approved') throw new InputError('use POST /v1/design-frames/:id/approve or /transition to approve');
+        repo.transitionFrame(existing.id, status, String((ctx.body as { actorId?: string }).actorId ?? 'winston'), null);
+        return { status: 200, body: Object.keys(rest).length ? repo.updateDesignFrame(existing.id, { ...rest, htmlPath: existing.htmlPath }) : repo.getDesignFrame(existing.id) };
+      }
       let htmlPath = existing.htmlPath;
       if (input.htmlContent !== undefined && existing.htmlPath) {
         try {
@@ -1046,7 +1334,7 @@ export function createServer(opts: ServerOptions): RuntimeServer {
         const thread = repo.getThread(ctx.params.id!);
         if (thread.original_file_path && fs.existsSync(thread.original_file_path)) {
           const stamp = new Date().toISOString();
-          const replyBlock = `\n\n### Reply from @${reply.from_identity ?? 'unknown'} (${stamp})\n\n${reply.body}\n`;
+          const replyBlock = `\n\n### Reply from @${reply.from_identity ?? input.from ?? 'unknown'} (${stamp})\n\n${reply.body}\n`;
           fs.appendFileSync(thread.original_file_path, replyBlock, 'utf8');
         }
       } catch {
@@ -1139,12 +1427,47 @@ export function createServer(opts: ServerOptions): RuntimeServer {
       const input = ctx.body as unknown as T.UpdateOkrProgressInput;
       return {
         status: 200,
-        body: repo.updateOkrProgress(ctx.params.id!, Number(input?.current_value ?? 0)),
+        body: repo.updateOkrProgress(ctx.params.id!, Number(input?.current_value ?? 0), { actorId: input?.actorId, note: input?.note }),
       };
     }),
+    route('GET', '/v1/okrs/key-results/:id/progress', (ctx) => ({ status: 200, body: repo.listOkrProgressEntries(ctx.params.id!) })),
     route('GET', '/v1/okrs/reality-audit', () => ({
       status: 200,
       body: repo.getRealityHealthScore(),
+    })),
+
+    // Subscription AI usage (K6/K9). Percentages are read from /usage by a person: 'actual'.
+    // Attributions to tasks and per-task-type medians are always 'estimated'.
+    route('GET', '/v1/ai-accounts', (ctx) => {
+      const db = usageDb();
+      const accounts = usageAccounts.listAccounts(db, { includeArchived: ctx.query.get('includeArchived') === '1' });
+      return {
+        status: 200,
+        body: accounts.map((account) => ({ ...account, latestSnapshot: usageAccounts.latestSnapshot(db, account.id) })),
+      };
+    }),
+    route('POST', '/v1/ai-accounts', (ctx) => ({
+      status: 201,
+      body: usageAccounts.createAccount(usageDb(), ctx.body as unknown as usageAccounts.CreateAccountInput),
+    })),
+    route('POST', '/v1/ai-accounts/:id/snapshots', (ctx) => {
+      const db = usageDb();
+      const snapshot = usageAccounts.addSnapshot(db, ctx.params.id!, ctx.body as usageAccounts.SnapshotInput);
+      const alert = usageAlerts.evaluateAlerts(db, ctx.params.id!);
+      return { status: 201, body: { snapshot, alert } };
+    }),
+    route('GET', '/v1/ai-accounts/:id/snapshots', (ctx) => {
+      const limit = Number(ctx.query.get('limit') ?? 100);
+      return { status: 200, body: usageAccounts.listSnapshots(usageDb(), ctx.params.id!, Number.isFinite(limit) ? limit : 100) };
+    }),
+    route('GET', '/v1/usage/weekly', () => ({ status: 200, body: weeklyReport(usageDb()) })),
+    route('GET', '/v1/usage/estimates', (ctx) => ({
+      status: 200,
+      body: computeEstimates(usageDb(), { accountId: ctx.query.get('accountId') ?? undefined }),
+    })),
+    route('POST', '/v1/usage/alerts/:id/ack', (ctx) => ({
+      status: 200,
+      body: usageAlerts.ackAlert(usageDb(), ctx.params.id!),
     })),
   ];
 
@@ -1309,7 +1632,7 @@ export function createServer(opts: ServerOptions): RuntimeServer {
     if (origin && originAllowed) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Last-Event-ID, Idempotency-Key');
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Last-Event-ID, Idempotency-Key, X-MyaOS-Owner-Key');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
       res.setHeader('Access-Control-Max-Age', '600');
     }
@@ -1338,6 +1661,12 @@ export function createServer(opts: ServerOptions): RuntimeServer {
 
       const needsBody = !['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(req.method ?? '');
       const body = needsBody ? await readJson(req) : {};
+      if (!r.open && isReserved(req.method ?? '', url.pathname, body)) {
+        const enrolled = repo.getSetting(OWNER_KEY_SETTING);
+        if (typeof enrolled === 'string' && enrolled && !ownerKeyMatches(req.headers[OWNER_KEY_HEADER], enrolled)) {
+          throw new HttpError(403, 'This action is reserved for the owner: the owner key is missing or wrong');
+        }
+      }
       const idempotencyKey = req.headers['idempotency-key'];
       if (typeof idempotencyKey === 'string' && idempotencyKey.length > 0) {
         if (idempotencyKey.length > 200) throw new HttpError(400, 'Idempotency-Key is too long');

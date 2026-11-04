@@ -4,15 +4,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type * as T from '../api/types.ts';
+import * as strategy from '../strategy/okrs.ts';
 import { loadConfig } from '../config.ts';
 import { computeCouncil } from '../council.ts';
+import {
+  assertAcyclic,
+  planTransition,
+  resolveLifecycleSettings,
+  selectReady,
+  type LifecycleSettings,
+  type TransitionOptions,
+} from '../lifecycle/tasks.ts';
 
 type Row = Record<string, unknown>;
 
-export class InputError extends Error {}
-export class NotFoundError extends Error {}
-export class ConflictError extends Error {}
-export class ForbiddenError extends Error {}
+import { ConflictError, ForbiddenError, InputError, NotFoundError } from '../errors.ts';
+export { ConflictError, ForbiddenError, InputError, NotFoundError };
 
 const now = () => new Date().toISOString();
 const newId = (prefix: string) => `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
@@ -33,6 +40,21 @@ function parseJson<T>(v: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function integer(value: unknown, field: string, fallback = 0): number {
+  if (value === undefined || value === null) return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n)) throw new InputError(`${field} must be an integer`);
+  return n;
+}
+
+function stringList(value: unknown, field: string): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.some((v) => typeof v !== 'string' || !v.trim())) {
+    throw new InputError(`${field} must be an array of non-empty strings`);
+  }
+  return value.map((v) => (v as string).trim());
 }
 
 function required(value: unknown, field: string): string {
@@ -87,19 +109,50 @@ const STAGE_TRANSITIONS: Record<T.JobStage, T.JobStage[]> = {
 };
 const RISKS: T.Risk[] = ['low', 'medium', 'high', 'critical'];
 const RISK_RANK: Record<T.Risk, number> = { low: 0, medium: 1, high: 2, critical: 3 };
-const TASK_STATUSES: T.TaskStatus[] = ['pending', 'running', 'done', 'failed', 'blocked'];
+const DESIGN_FRAME_STATUSES: T.DesignFrameStatus[] = ['draft', 'iterating', 'review', 'approved', 'superseded', 'archived'];
+
+/**
+ * Design frame lifecycle (vision section 12): Draft -> Review -> Approved -> Superseded.
+ * draft|iterating -> approved is kept only so the pre-review approve API keeps working.
+ */
+export const DESIGN_FRAME_TRANSITIONS: Record<T.DesignFrameStatus, T.DesignFrameStatus[]> = {
+  draft: ['review', 'approved', 'archived'],
+  iterating: ['review', 'approved', 'archived'],
+  review: ['approved', 'iterating', 'archived'],
+  approved: ['superseded', 'iterating', 'archived'],
+  superseded: ['archived'],
+  archived: [],
+};
+
+export interface DesignTransitionExtra {
+  actorKind?: T.ActorKind;
+  /** approved: the OBSERVED evidence row and the immutable snapshot of what was approved. */
+  evidenceId?: string | null;
+  artifactPath?: string | null;
+  contentSha?: string | null;
+  sourceFiles?: string[];
+  notes?: string | null;
+  /** superseded: the frame that replaced this one. */
+  supersededBy?: string | null;
+}
+
 const TASK_MODES: NonNullable<T.Task['mode']>[] = ['build', 'verify', 'review', 'ops', 'design'];
 const JOB_KINDS: T.JobKind[] = ['code', 'research', 'ops', 'design', 'decision'];
 const SHIP_STATUSES: T.ShipStatus[] = ['none', 'ready', 'merged', 'pr_opened', 'cherry_picked', 'branch_pushed'];
 const IDENTITY_STATUS_STATES: T.IdentityStatusState[] = ['idle', 'working', 'rate_limited', 'waiting_reset', 'offline'];
 
-interface EventInput {
+export interface EventInput {
   type: string;
   subjectId: string | null;
   payload?: unknown;
   actorId?: string | null;
   actorKind?: T.ActorKind | null;
   subjectType?: string | null;
+  jobId?: string | null;
+  taskId?: string | null;
+  sessionId?: string | null;
+  /** A second event with the same key is a no-op (K2). */
+  idempotencyKey?: string | null;
 }
 
 /** All reads and writes of the v2 store. Writes and their events share one transaction. */
@@ -116,6 +169,21 @@ export class Repo {
 
   // ---------------------------------------------------------------- plumbing
 
+  /** The store's SQLite handle, for the usage/renewal/budget modules that own their own tables. */
+  sqlite(): DatabaseSync {
+    return this.db;
+  }
+
+  private archiveColumns: boolean | null = null;
+
+  /** False only on a store opened below migration v19 (older-schema tests); then nothing is archived. */
+  private hasArchiveColumns(): boolean {
+    if (this.archiveColumns === null) {
+      this.archiveColumns = (this.db.prepare('PRAGMA table_info(tasks)').all() as Row[]).some((c) => c.name === 'archived_at');
+    }
+    return this.archiveColumns;
+  }
+
   private all(sql: string, ...params: SQLInputValue[]): Row[] {
     return this.db.prepare(sql).all(...params) as Row[];
   }
@@ -127,6 +195,18 @@ export class Repo {
   private scalar(sql: string, ...params: SQLInputValue[]): unknown {
     const row = this.one(sql, ...params);
     return row ? Object.values(row)[0] : null;
+  }
+
+  /**
+   * For modules that keep their own tables (scheduler, stand-ups): runs `fn` and the events it emits in one
+   * transaction, then broadcasts. `fn` writes through the raw handle it is given.
+   */
+  transact<R>(fn: (emit: (input: EventInput) => void, db: DatabaseSync) => R): R {
+    return this.write((events) =>
+      fn((input) => {
+        this.recordEvent(events, input);
+      }, this.db)
+    );
   }
 
   /**
@@ -148,6 +228,10 @@ export class Repo {
   }
 
   private recordEvent(events: T.RuntimeEvent[], input: EventInput): T.RuntimeEvent {
+    if (input.idempotencyKey) {
+      const existing = this.one('SELECT * FROM events WHERE idempotency_key = ?', input.idempotencyKey);
+      if (existing) return toEvent(existing);
+    }
     const createdAt = now();
     const prev = this.one('SELECT hash FROM events ORDER BY seq DESC LIMIT 1');
     const prevHash = prev ? str(prev.hash) : null;
@@ -160,10 +244,14 @@ export class Repo {
     );
     const res = this.db
       .prepare(
-        `INSERT INTO events (type, subject_id, payload, created_at, actor_id, actor_kind, subject_type, hash, prev_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO events (type, subject_id, payload, created_at, actor_id, actor_kind, subject_type, hash, prev_hash,
+           idempotency_key, job_id, task_id, session_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(input.type, input.subjectId, jsonText(payload), createdAt, actorId, actorKind, subjectType, hash, prevHash);
+      .run(
+        input.type, input.subjectId, jsonText(payload), createdAt, actorId, actorKind, subjectType, hash, prevHash,
+        input.idempotencyKey ?? null, input.jobId ?? null, input.taskId ?? null, input.sessionId ?? null
+      );
     const event: T.RuntimeEvent = {
       seq: Number(res.lastInsertRowid),
       type: input.type,
@@ -173,6 +261,10 @@ export class Repo {
       actorId,
       actorKind,
       subjectType,
+      jobId: input.jobId ?? null,
+      taskId: input.taskId ?? null,
+      sessionId: input.sessionId ?? null,
+      idempotencyKey: input.idempotencyKey ?? null,
       hash,
       prevHash,
     };
@@ -855,7 +947,7 @@ export class Repo {
     return this.getRoom(id);
   }
 
-  updateRoom(id: string, input: { name?: string; projectId?: string | null; teamId?: string | null; archived?: boolean }): T.Room {
+  updateRoom(id: string, input: { name?: string; projectId?: string | null; teamId?: string | null; archived?: boolean; intakeEnabled?: boolean }): T.Room {
     if (!this.one('SELECT id FROM rooms WHERE id = ?', id)) throw new NotFoundError(`room ${id} not found`);
     this.write((events) => {
       const fields: [string, SQLInputValue][] = [];
@@ -863,6 +955,7 @@ export class Repo {
       if (input.projectId !== undefined) fields.push(['project_id', input.projectId]);
       if (input.teamId !== undefined) fields.push(['team_id', input.teamId]);
       if (input.archived !== undefined) fields.push(['archived', input.archived ? 1 : 0]);
+      if (input.intakeEnabled !== undefined) fields.push(['intake_enabled', input.intakeEnabled ? 1 : 0]);
       if (fields.length) {
         this.db.prepare(`UPDATE rooms SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
       }
@@ -940,8 +1033,9 @@ export class Repo {
 
   // ---------------------------------------------------------------- jobs
 
-  listJobs(filter: { roomId?: string; projectId?: string; stage?: T.JobStage; limit?: number } = {}): T.JobSummary[] {
+  listJobs(filter: { roomId?: string; projectId?: string; stage?: T.JobStage; limit?: number; includeArchived?: boolean } = {}): T.JobSummary[] {
     const where: string[] = [];
+    if (!filter.includeArchived && this.hasArchiveColumns()) where.push('j.archived_at IS NULL');
     const params: SQLInputValue[] = [];
     if (filter.roomId) {
       where.push('j.room_id = ?');
@@ -1026,14 +1120,20 @@ export class Repo {
   }
 
   createJob(input: T.CreateJobInput): T.JobDetail {
+    const id = newId('job');
+    this.write((events) => this.insertJob(events, id, input));
+    return this.getJob(id);
+  }
+
+  /** Validates and inserts a job plus its stage history and `job.created` event inside the caller's transaction. */
+  private insertJob(events: T.RuntimeEvent[], id: string, input: T.CreateJobInput): void {
     const roomId = required(input.roomId, 'roomId');
     const title = required(input.title, 'title');
     const createdBy = required(input.createdBy, 'createdBy');
     const room = this.one('SELECT * FROM rooms WHERE id = ?', roomId);
     if (!room) throw new NotFoundError(`room ${roomId} not found`);
     if (input.criteria && !Array.isArray(input.criteria)) throw new InputError('criteria must be a list of strings');
-    const id = newId('job');
-    this.write((events) => {
+    {
       const projectId = input.projectId ?? str(room.project_id);
       const ownerId = this.ownerId();
       const t = now();
@@ -1066,8 +1166,7 @@ export class Repo {
         actorKind: 'human',
         subjectType: 'job',
       });
-    });
-    return this.getJob(id);
+    }
   }
 
   updateJob(jobId: string, input: T.UpdateJobInput): T.JobDetail {
@@ -1088,6 +1187,336 @@ export class Repo {
       this.recordEvent(events, { type: 'job.updated', subjectId: jobId, payload: { fields: fields.map(([c]) => c) }, subjectType: 'job' });
     });
     return this.getJob(jobId);
+  }
+
+  // ---------------------------------------------------------------- archive / delete (WP7)
+
+  /** Archived items drop out of lists, dispatch and key-result math. Nothing is removed. */
+  archiveJob(jobId: string, actorId: string, archive = true): T.JobDetail {
+    const job = this.getJob(jobId);
+    const actor = required(actorId, 'actorId');
+    if (archive && job.archivedAt) throw new ConflictError(`job ${jobId} is already archived`);
+    if (!archive && !job.archivedAt) throw new ConflictError(`job ${jobId} is not archived`);
+    this.write((events) => {
+      this.db.prepare('UPDATE jobs SET archived_at = ?, updated_at = ? WHERE id = ?').run(archive ? now() : null, now(), jobId);
+      this.recordEvent(events, {
+        type: archive ? 'job.archived' : 'job.unarchived',
+        subjectId: jobId,
+        subjectType: 'job',
+        payload: { krId: job.okrKrId ?? null, stage: job.stage },
+        actorId: actor,
+        actorKind: 'human',
+        jobId,
+      });
+    });
+    return this.getJob(jobId);
+  }
+
+  /** Permanent. Only an archived job, and only when `confirm` equals its id. FKs decide what cascades. */
+  deleteJob(jobId: string, confirm: string | null | undefined, actorId: string): void {
+    const job = this.getJob(jobId);
+    const actor = required(actorId, 'actorId');
+    if (!job.archivedAt) throw new ConflictError(`job ${jobId} must be archived before it can be deleted`);
+    if (confirm !== jobId) throw new ConflictError(`confirm must equal the job id (${jobId}) to delete it`);
+    try {
+      this.write((events) => {
+        this.db.prepare('DELETE FROM jobs WHERE id = ?').run(jobId);
+        this.recordEvent(events, {
+          type: 'job.deleted',
+          subjectId: jobId,
+          subjectType: 'job',
+          payload: { title: job.title, stage: job.stage, krId: job.okrKrId ?? null, number: job.number },
+          actorId: actor,
+          actorKind: 'human',
+        });
+      });
+    } catch (e) {
+      throw this.deleteRefusal(e, `job ${jobId}`);
+    }
+  }
+
+  getArchivedTask(taskId: string): T.Task {
+    const row = this.one('SELECT * FROM tasks WHERE id = ?', taskId);
+    if (!row) throw new NotFoundError(`task ${taskId} not found`);
+    return toTask(row);
+  }
+
+  archiveTask(taskId: string, actorId: string, archive = true): T.Task {
+    const task = this.getArchivedTask(taskId);
+    const actor = required(actorId, 'actorId');
+    if (archive && task.archivedAt) throw new ConflictError(`task ${taskId} is already archived`);
+    if (!archive && !task.archivedAt) throw new ConflictError(`task ${taskId} is not archived`);
+    this.write((events) => {
+      this.db.prepare('UPDATE tasks SET archived_at = ?, updated_at = ? WHERE id = ?').run(archive ? now() : null, now(), taskId);
+      this.recordEvent(events, {
+        type: archive ? 'task.archived' : 'task.unarchived',
+        subjectId: taskId,
+        subjectType: 'task',
+        payload: { status: task.status },
+        actorId: actor,
+        actorKind: 'human',
+        jobId: task.jobId,
+        taskId,
+      });
+    });
+    return this.getArchivedTask(taskId);
+  }
+
+  deleteTask(taskId: string, confirm: string | null | undefined, actorId: string): void {
+    const task = this.getArchivedTask(taskId);
+    const actor = required(actorId, 'actorId');
+    if (!task.archivedAt) throw new ConflictError(`task ${taskId} must be archived before it can be deleted`);
+    if (confirm !== taskId) throw new ConflictError(`confirm must equal the task id (${taskId}) to delete it`);
+    try {
+      this.write((events) => {
+        this.db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+        this.recordEvent(events, {
+          type: 'task.deleted',
+          subjectId: taskId,
+          subjectType: 'task',
+          payload: { title: task.title, status: task.status },
+          actorId: actor,
+          actorKind: 'human',
+          jobId: task.jobId,
+        });
+      });
+    } catch (e) {
+      throw this.deleteRefusal(e, `task ${taskId}`);
+    }
+  }
+
+  /** Evidence, sessions and messages reference jobs and tasks without a cascade; the ledger keeps them. */
+  private deleteRefusal(e: unknown, what: string): Error {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/FOREIGN KEY|constraint/i.test(msg)) {
+      return new ConflictError(
+        `${what} cannot be deleted: evidence, sessions or messages still reference it and the append-only ledger keeps them. It stays archived.`
+      );
+    }
+    return e instanceof Error ? e : new Error(msg);
+  }
+
+  /** Links a job to a key result and milestone (validated) and recomputes the affected key results. */
+  linkJobToKr(jobId: string, input: strategy.LinkInput): ReturnType<typeof strategy.linkJob> {
+    return strategy.linkJob(this.db, (e) => this.emitEvent(e), jobId, input);
+  }
+
+  // ---------------------------------------------------------------- intake (WP2)
+
+  getIntake(id: string): T.IntakeRequest {
+    const row = this.one('SELECT * FROM intake_requests WHERE id = ?', id);
+    if (!row) throw new NotFoundError(`intake ${id} not found`);
+    return toIntake(row);
+  }
+
+  listIntakes(filter: { jobId?: string; limit?: number } = {}): T.IntakeRequest[] {
+    const limit = Math.min(positiveInt(filter.limit, 'limit', 200) || 200, 1000);
+    return filter.jobId
+      ? this.all(
+          'SELECT * FROM intake_requests WHERE job_id = ? OR duplicate_of_job_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
+          filter.jobId,
+          filter.jobId,
+          limit
+        ).map(toIntake)
+      : this.all('SELECT * FROM intake_requests ORDER BY created_at DESC, rowid DESC LIMIT ?', limit).map(toIntake);
+  }
+
+  /** The project an intake resolves to: explicit project, else the room's project, else none. */
+  resolveIntakeProject(projectId: string | null | undefined, roomId: string | null | undefined): string | null {
+    if (projectId) {
+      if (!this.one('SELECT id FROM projects WHERE id = ?', projectId)) throw new NotFoundError(`project ${projectId} not found`);
+      return projectId;
+    }
+    if (roomId) {
+      const room = this.one('SELECT project_id FROM rooms WHERE id = ?', roomId);
+      if (!room) throw new NotFoundError(`room ${roomId} not found`);
+      return str(room.project_id);
+    }
+    return null;
+  }
+
+  /** Open (not done/cancelled) jobs a new request could duplicate: same project; with no project, same room. */
+  listOpenJobsForDedupe(projectId: string | null, roomId: string | null): { id: string; number: number; title: string; brief: string }[] {
+    const rows = projectId
+      ? this.all("SELECT id, number, title, brief FROM jobs WHERE project_id = ? AND stage NOT IN ('done','cancelled') ORDER BY number", projectId)
+      : this.all(
+          "SELECT id, number, title, brief FROM jobs WHERE project_id IS NULL AND room_id = ? AND stage NOT IN ('done','cancelled') ORDER BY number",
+          roomId ?? ''
+        );
+    return rows.map((r) => ({ id: String(r.id), number: num(r.number), title: String(r.title), brief: String(r.brief ?? '') }));
+  }
+
+  /**
+   * Persists one intake. With `duplicateOf` no job is created and the intake links to the existing job.
+   * Otherwise the job, intake row, `job.created`, `intake.received` and `job.triaged` commit in one transaction.
+   */
+  recordIntake(input: {
+    text: string;
+    source: T.IntakeSource;
+    sourceRef: string | null;
+    projectId: string | null;
+    roomId: string | null;
+    requestedBy: string;
+    title: string;
+    classification: Record<string, unknown> & {
+      workflow: string;
+      urgency: string;
+      impact: string;
+      risk: string;
+      reason: string;
+      by: string;
+      override: boolean;
+    };
+    duplicateOf: { jobId: string; reason: string } | null;
+  }): T.IntakeResult {
+    const intakeId = newId('intake');
+    const requestedBy = required(input.requestedBy, 'requestedBy');
+    let jobId = '';
+    this.write((events) => {
+      const t = now();
+      const c = input.classification;
+      const insertIntake = `INSERT INTO intake_requests
+        (id, raw_text, source, source_ref, project_id, requested_by, created_at, job_id, duplicate_of_job_id, dedupe_reason, classification)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      if (input.duplicateOf) {
+        jobId = input.duplicateOf.jobId;
+        this.db
+          .prepare(insertIntake)
+          .run(intakeId, input.text, input.source, input.sourceRef, input.projectId, requestedBy, t, null, jobId, input.duplicateOf.reason, jsonText(c));
+      } else {
+        // Room: explicit, else a room of the project, else the shared "intake" room.
+        let roomId = input.roomId;
+        if (!roomId && input.projectId) {
+          roomId = str(this.one('SELECT id FROM rooms WHERE project_id = ? AND archived = 0 ORDER BY created_at, rowid LIMIT 1', input.projectId)?.id);
+        }
+        if (!roomId) {
+          roomId = str(this.one("SELECT id FROM rooms WHERE name = 'intake'")?.id);
+          if (!roomId) {
+            roomId = newId('room');
+            this.db.prepare("INSERT INTO rooms (id, name, repo_path, created_at, kind) VALUES (?, 'intake', NULL, ?, 'adhoc')").run(roomId, t);
+            this.recordEvent(events, { type: 'room.created', subjectId: roomId, payload: { name: 'intake' }, subjectType: 'room' });
+          }
+        }
+        jobId = newId('job');
+        this.insertJob(events, jobId, {
+          roomId,
+          title: input.title,
+          brief: input.text,
+          createdBy: requestedBy,
+          projectId: input.projectId ?? undefined,
+          risk: c.risk as T.Risk,
+          priority: c.urgency === 'critical' ? 'urgent' : c.urgency === 'high' ? 'high' : c.urgency === 'low' ? 'low' : 'normal',
+        });
+        this.db
+          .prepare(insertIntake)
+          .run(intakeId, input.text, input.source, input.sourceRef, input.projectId, requestedBy, t, jobId, null, null, jsonText(c));
+        this.db
+          .prepare('UPDATE jobs SET workflow = ?, triage_reason = ?, urgency = ?, impact = ?, intake_id = ? WHERE id = ?')
+          .run(c.workflow, c.reason, c.urgency, c.impact, intakeId, jobId);
+      }
+      this.recordEvent(events, {
+        type: 'intake.received',
+        subjectId: intakeId,
+        subjectType: 'intake',
+        actorId: requestedBy,
+        payload: {
+          intakeId,
+          source: input.source,
+          sourceRef: input.sourceRef,
+          projectId: input.projectId,
+          jobId,
+          duplicate: !!input.duplicateOf,
+          dedupeReason: input.duplicateOf?.reason ?? null,
+        },
+      });
+      if (!input.duplicateOf) {
+        this.recordEvent(events, {
+          type: 'job.triaged',
+          subjectId: jobId,
+          subjectType: 'job',
+          actorId: c.override ? c.by : null,
+          actorKind: c.override ? 'agent' : 'system',
+          payload: { intakeId, workflow: c.workflow, urgency: c.urgency, impact: c.impact, risk: c.risk, reason: c.reason, by: c.by, override: c.override },
+        });
+      }
+    });
+    return { intake: this.getIntake(intakeId), job: this.getJob(jobId), duplicate: !!input.duplicateOf };
+  }
+
+  /** Records an Orchestrator override of a job's triage (workflow and reason), with a `job.triaged` event. */
+  overrideTriage(jobId: string, input: { workflow: string; reason: string; by: string }): T.JobDetail {
+    const job = this.getJob(jobId);
+    const workflow = oneOf(input.workflow, ['quick', 'feature', 'strategic', 'incident'] as const, 'workflow');
+    const reason = required(input.reason, 'reason');
+    const by = required(input.by, 'by');
+    const full = `override by ${by}: ${reason} (was ${job.workflow ?? 'untriaged'}${job.triageReason ? `: ${job.triageReason}` : ''})`;
+    this.write((events) => {
+      this.db.prepare('UPDATE jobs SET workflow = ?, triage_reason = ?, updated_at = ? WHERE id = ?').run(workflow, full, now(), jobId);
+      this.recordEvent(events, {
+        type: 'job.triaged',
+        subjectId: jobId,
+        subjectType: 'job',
+        actorId: by,
+        actorKind: 'agent',
+        payload: { intakeId: job.intakeId ?? null, workflow, reason: full, by, override: true, previousWorkflow: job.workflow ?? null },
+      });
+    });
+    return this.getJob(jobId);
+  }
+
+  // ---------------------------------------------------------------- departments (K5)
+
+  listDepartments(): T.Department[] {
+    return this.all(
+      `SELECT d.*, (SELECT COUNT(*) FROM identities i WHERE i.department_id = d.id) AS member_count FROM departments d ORDER BY d.name`
+    ).map((r) => ({
+      id: String(r.id),
+      name: String(r.name),
+      leadIdentityId: str(r.lead_identity_id),
+      createdAt: String(r.created_at),
+      memberCount: num(r.member_count),
+    }));
+  }
+
+  /** Sets department and seniority for identities that exist; idempotent. Also records the first lead per department. */
+  applyDepartmentMapping(mapping: Record<string, T.DepartmentMappingEntry>): T.DepartmentMappingResult {
+    const result: T.DepartmentMappingResult = { changed: [], unchanged: [], missing: [], leads: [] };
+    const departments = new Set(this.all('SELECT id FROM departments').map((r) => String(r.id)));
+    for (const entry of Object.values(mapping)) {
+      if (!departments.has(entry.department)) throw new InputError(`unknown department ${entry.department}`);
+      if (entry.seniority) oneOf(entry.seniority, ['exec', 'lead', 'senior', 'member'] as const, 'seniority');
+    }
+    this.write((events) => {
+      for (const [rawId, entry] of Object.entries(mapping)) {
+        const id = rawId.toLowerCase();
+        const row = this.one('SELECT id, department_id, seniority FROM identities WHERE id = ?', id);
+        if (!row) {
+          result.missing.push(id);
+          continue;
+        }
+        const seniority = entry.seniority ?? 'member';
+        const was = { department: str(row.department_id), seniority: String(row.seniority ?? 'member') };
+        if (was.department === entry.department && was.seniority === seniority) {
+          result.unchanged.push(id);
+        } else {
+          this.db.prepare('UPDATE identities SET department_id = ?, seniority = ? WHERE id = ?').run(entry.department, seniority, id);
+          this.recordEvent(events, {
+            type: 'identity.updated',
+            subjectId: id,
+            subjectType: 'identity',
+            payload: { departmentId: entry.department, seniority },
+          });
+          result.changed.push({ id, department: entry.department, seniority, was });
+        }
+        if (seniority === 'lead') {
+          const res = this.db
+            .prepare('UPDATE departments SET lead_identity_id = ? WHERE id = ? AND lead_identity_id IS NULL')
+            .run(id, entry.department);
+          if (Number(res.changes) > 0) result.leads.push({ department: entry.department, lead: id });
+        }
+      }
+    });
+    return result;
   }
 
   transitionJob(jobId: string, input: T.TransitionJobInput): T.JobDetail {
@@ -1147,6 +1576,197 @@ export class Repo {
     return this.getJob(jobId);
   }
 
+  /**
+   * Materialises a validated plan packet in ONE transaction (S1-C): stores the packet as
+   * the job plan, replaces tasks left over from a previous submission (only if untouched),
+   * adds new criteria, creates tasks with real ids mapped from keys, links criteria and
+   * records plan.submitted. Validation lives in planning/plan.ts.
+   */
+  materialisePlan(jobId: string, packet: T.PlanPacket, actor: { id: string; kind: T.ActorKind }): { taskKeys: Record<string, string>; replaced: string[] } {
+    const job = this.getJob(jobId);
+    if (job.stage !== 'plan') throw new ConflictError(`A plan can be submitted only while the job is in the plan stage (it is in ${job.stage})`);
+    const previous = Object.values(job.plan?.taskKeys ?? {});
+    const replace: string[] = [];
+    for (const id of previous) {
+      const t = job.tasks.find((x) => x.id === id);
+      if (!t) continue;
+      const touched = this.one('SELECT 1 AS x FROM sessions WHERE task_id = ? LIMIT 1', id);
+      if (t.status !== 'pending' || touched) {
+        throw new ConflictError(`Task "${t.title}" from the previous plan has already started (${t.status}); the plan can no longer be replaced`);
+      }
+      replace.push(id);
+    }
+    const taskKeys: Record<string, string> = {};
+    for (const t of packet.tasks) taskKeys[t.key] = newId('task');
+    const at = now();
+    this.write((events) => {
+      for (const id of replace) {
+        this.db.prepare('DELETE FROM task_criteria WHERE task_id = ?').run(id);
+        this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
+      }
+      // A pending plan approval from the earlier submission is now stale.
+      this.db
+        .prepare(
+          `UPDATE approvals SET status = 'declined', decided_by = 'runtime', decided_by_kind = 'system', decided_at = ?, note = 'superseded by a resubmitted plan'
+           WHERE job_id = ? AND action_type = 'plan.accept' AND status = 'pending'`
+        )
+        .run(at, jobId);
+      const criterionIds: string[] = [];
+      const existing = new Map(job.criteria.map((c) => [c.text.trim().toLowerCase(), c.id]));
+      let pos = Number(this.scalar('SELECT COALESCE(MAX(position), -1) + 1 FROM criteria WHERE job_id = ?', jobId) ?? 0);
+      for (const text of packet.criteria ?? []) {
+        let cid = existing.get(text.trim().toLowerCase());
+        if (!cid) {
+          cid = newId('crit');
+          this.db.prepare('INSERT INTO criteria (id, job_id, text, position) VALUES (?, ?, ?, ?)').run(cid, jobId, text.trim(), pos++);
+          existing.set(text.trim().toLowerCase(), cid);
+        }
+        criterionIds.push(cid);
+      }
+      let tpos = Number(this.scalar('SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE job_id = ?', jobId) ?? 0);
+      const maxAttempts = this.lifecycleSettings().maxAttempts;
+      for (const t of packet.tasks) {
+        const id = taskKeys[t.key]!;
+        this.db
+          .prepare(
+            `INSERT INTO tasks (id, job_id, title, assignee_id, check_command, status, created_at, position, plan_task_id, mode,
+               evidence_required, updated_at, depends_on, priority, max_attempts, required_skills, verification_required, last_event_at)
+             VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, 'build', 1, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            id, jobId, t.title.trim(), t.assigneeId ?? null, t.checkCommand ?? null, at, tpos++, t.key, at,
+            jsonText((t.dependsOn ?? []).map((k) => taskKeys[k]!)), integer(t.priority, 'priority', 0),
+            maxAttempts, jsonText(t.requiredSkills ?? []), t.verificationRequired ? 1 : 0, at
+          );
+        for (const ref of t.criteriaRefs ?? []) {
+          this.db.prepare('INSERT OR IGNORE INTO task_criteria (task_id, criterion_id) VALUES (?, ?)').run(id, criterionIds[ref]!);
+        }
+      }
+      const { criteria: _c, tasks: _t, ...rest } = packet;
+      const plan: T.JobPlan = { ...rest, taskKeys, submittedBy: actor.id, submittedAt: at, approvedAt: null, approvedBy: null };
+      this.db.prepare('UPDATE jobs SET plan = ?, updated_at = ? WHERE id = ?').run(jsonText(plan), at, jobId);
+      this.recordEvent(events, {
+        type: 'plan.submitted',
+        subjectId: jobId,
+        subjectType: 'job',
+        jobId,
+        actorId: actor.id,
+        actorKind: actor.kind,
+        payload: { summary: packet.summary, risk: packet.risk, tasks: packet.tasks.length, replaced: replace.length, humanDecisions: packet.humanDecisions?.length ?? 0 },
+      });
+    });
+    return { taskKeys, replaced: replace };
+  }
+
+  /** Records a plan lifecycle event (plan.auto_accepted and similar) with the given actor. */
+  recordPlanEvent(jobId: string, type: string, payload: Record<string, unknown>, actor: { id: string; kind: T.ActorKind }): void {
+    this.getJob(jobId);
+    this.write((events) => {
+      this.recordEvent(events, { type, subjectId: jobId, subjectType: 'job', jobId, actorId: actor.id, actorKind: actor.kind, payload });
+    });
+  }
+
+  /** Accepts the plan and moves the job plan -> build. Used by auto-accept and by approving a plan.accept approval. */
+  acceptPlanAndBuild(jobId: string, actor: { id: string; kind: T.ActorKind }, note: string): T.JobDetail {
+    const job = this.getJob(jobId);
+    if (job.stage !== 'plan') throw new ConflictError(`The job is in ${job.stage}, not plan`);
+    this.acceptPlan(jobId, actor.id);
+    return this.transitionJob(jobId, { to: 'build', actorId: actor.id, actorKind: actor.kind, note });
+  }
+
+  // ---------------------------------------------------------------- blockers / needs-you
+
+  listBlockers(filter: { status?: 'open' | 'resolved'; jobId?: string } = {}): T.Blocker[] {
+    const where: string[] = [];
+    const params: SQLInputValue[] = [];
+    if (filter.status) {
+      where.push('status = ?');
+      params.push(oneOf(filter.status, ['open', 'resolved'] as const, 'status'));
+    }
+    if (filter.jobId) {
+      where.push('job_id = ?');
+      params.push(filter.jobId);
+    }
+    return this.all(`SELECT * FROM blockers ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY created_at DESC`, ...params).map((r) => ({
+      id: String(r.id),
+      jobId: str(r.job_id),
+      taskId: str(r.task_id),
+      raisedBy: String(r.raised_by),
+      summary: String(r.summary),
+      needs: str(r.needs),
+      severity: String(r.severity) as T.Blocker['severity'],
+      status: String(r.status) as T.Blocker['status'],
+      resolvedBy: str(r.resolved_by),
+      resolvedAt: str(r.resolved_at),
+      createdAt: String(r.created_at),
+    }));
+  }
+
+  resolveBlocker(blockerId: string, resolvedByInput: string): T.Blocker {
+    const resolvedBy = required(resolvedByInput, 'resolvedBy');
+    const row = this.one('SELECT * FROM blockers WHERE id = ?', blockerId);
+    if (!row) throw new NotFoundError(`blocker ${blockerId} not found`);
+    if (row.status === 'resolved') throw new ConflictError('This blocker is already resolved');
+    this.write((events) => {
+      this.db.prepare("UPDATE blockers SET status = 'resolved', resolved_by = ?, resolved_at = ? WHERE id = ?").run(resolvedBy, now(), blockerId);
+      this.recordEvent(events, {
+        type: 'blocker.resolved',
+        subjectId: str(row.job_id),
+        subjectType: 'job',
+        jobId: str(row.job_id),
+        taskId: str(row.task_id),
+        actorId: resolvedBy,
+        actorKind: 'human',
+        payload: { blockerId },
+      });
+    });
+    return this.listBlockers().find((b) => b.id === blockerId)!;
+  }
+
+  /** The one list of everything that waits for the owner (S1-C). Each source appears exactly once. */
+  needsYou(): T.NeedsYouItem[] {
+    const items: T.NeedsYouItem[] = [];
+    const riskSeverity = (r?: string): T.NeedsYouItem['severity'] => (r === 'critical' || r === 'high' ? 'high' : r === 'medium' ? 'normal' : 'low');
+    for (const a of this.listApprovals({ status: 'pending', limit: 1000 })) {
+      items.push({ kind: 'approval', id: a.id, jobId: a.jobId, title: a.title, detail: a.consequence, createdAt: a.createdAt, severity: riskSeverity(a.risk) });
+    }
+    for (const b of this.listBlockers({ status: 'open' })) {
+      items.push({
+        kind: 'blocker', id: b.id, jobId: b.jobId, title: b.summary, detail: b.needs ?? b.summary, createdAt: b.createdAt,
+        severity: b.severity === 'high' ? 'high' : b.severity === 'low' ? 'low' : 'normal',
+      });
+    }
+    for (const r of this.all("SELECT * FROM tasks WHERE status IN ('needs_human', 'reassignment_required') ORDER BY updated_at DESC")) {
+      const human = r.status === 'needs_human';
+      items.push({
+        kind: human ? 'task_needs_human' : 'task_reassignment_required',
+        id: String(r.id),
+        jobId: String(r.job_id),
+        title: String(r.title),
+        detail: human ? 'This task needs a human decision or action.' : 'This task failed and needs a new assignee.',
+        createdAt: String(r.updated_at ?? r.created_at),
+        severity: human ? 'high' : 'normal',
+      });
+    }
+    for (const j of this.all("SELECT id, title, updated_at, created_at FROM jobs WHERE stage NOT IN ('done', 'cancelled')")) {
+      const jobId = String(j.id);
+      const b = this.budget(jobId);
+      if (b.configured && b.limitCents != null && b.spentCents >= b.limitCents) {
+        items.push({
+          kind: 'budget_exception', id: jobId, jobId, title: `Budget exceeded: ${String(j.title)}`,
+          detail: `${b.spentCents}c spent of ${b.limitCents}c (${b.source}).`, createdAt: String(j.updated_at ?? j.created_at), severity: 'high',
+        });
+      }
+    }
+    for (const j of this.all("SELECT id, title, updated_at, created_at FROM jobs WHERE stage = 'approve'")) {
+      items.push({
+        kind: 'delivery_approval', id: String(j.id), jobId: String(j.id), title: `Approve delivery: ${String(j.title)}`,
+        detail: 'Verification is complete; the job waits for your delivery approval.', createdAt: String(j.updated_at ?? j.created_at), severity: 'normal',
+      });
+    }
+    return items.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  }
+
   private gates(job: T.JobDetail, to: T.JobStage): string[] {
     const gates: string[] = [];
     if (to === 'build') {
@@ -1154,7 +1774,7 @@ export class Repo {
       if (job.tasks.length === 0) gates.push('the plan has at least one task');
     }
     if (to === 'verify') {
-      const unfinished = job.tasks.filter((t) => t.status !== 'done');
+      const unfinished = job.tasks.filter((t) => t.status !== 'done' && t.status !== 'verified');
       if (unfinished.length) gates.push(`${unfinished.length} task(s) are not done`);
       for (const task of job.tasks) {
         if (task.evidenceRequired === false) continue;
@@ -1164,7 +1784,12 @@ export class Repo {
     }
     if (to === 'approve') {
       for (const criterion of job.criteria) {
-        if (CLASS_RANK[criterion.evidenceClass] < CLASS_RANK.OBSERVED) {
+        // C7: a criterion covered by a task that requires verification needs VERIFIED evidence,
+        // which only an independent verifier can record. Others need at least OBSERVED.
+        const needsVerified = job.tasks.some((t) => t.verificationRequired && (criterion.taskIds ?? []).includes(t.id));
+        if (needsVerified && CLASS_RANK[criterion.evidenceClass] < CLASS_RANK.VERIFIED) {
+          gates.push(`criterion "${criterion.text}" needs independent verification`);
+        } else if (CLASS_RANK[criterion.evidenceClass] < CLASS_RANK.OBSERVED) {
           gates.push(`criterion "${criterion.text}" is not observed yet`);
         }
       }
@@ -1219,8 +1844,8 @@ export class Repo {
 
   // ---------------------------------------------------------------- tasks
 
-  listTasks(jobId: string): T.Task[] {
-    return this.all('SELECT * FROM tasks WHERE job_id = ? ORDER BY position, created_at', jobId).map(toTask);
+  listTasks(jobId: string, includeArchived = false): T.Task[] {
+    return this.all(`SELECT * FROM tasks WHERE job_id = ?${includeArchived || !this.hasArchiveColumns() ? '' : ' AND archived_at IS NULL'} ORDER BY position, created_at`, jobId).map(toTask);
   }
 
   createTask(jobId: string, input: T.CreateTaskInput): T.Task {
@@ -1228,17 +1853,24 @@ export class Repo {
     const title = required(input.title, 'title');
     const position = input.position == null ? Number(this.scalar('SELECT COALESCE(MAX(position), -1) + 1 FROM tasks WHERE job_id = ?', jobId) ?? 0) : positiveInt(input.position, 'position');
     const id = newId('task');
+    const dependsOn = this.checkedDependsOn(id, input.dependsOn);
     this.write((events) => {
       this.db
         .prepare(
           `INSERT INTO tasks (id, job_id, title, assignee_id, check_command, gate, status, created_at,
-             position, plan_task_id, mode, evidence_required, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`
+             position, plan_task_id, mode, evidence_required, updated_at, depends_on, priority, max_attempts,
+             parent_task_id, required_skills, budget_tokens, verification_required, last_event_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id, jobId, title, optionalString(input.assigneeId, 'assigneeId'), optionalString(input.checkCommand, 'checkCommand'),
           optionalString(input.gate, 'gate'), now(), position, optionalString(input.planTaskId, 'planTaskId'),
-          oneOf(input.mode, TASK_MODES, 'mode', 'build'), input.evidenceRequired === false ? 0 : 1, now()
+          oneOf(input.mode, TASK_MODES, 'mode', 'build'), input.evidenceRequired === false ? 0 : 1, now(),
+          jsonText(dependsOn), integer(input.priority, 'priority', 0),
+          input.maxAttempts == null ? this.lifecycleSettings().maxAttempts : positiveInt(input.maxAttempts, 'maxAttempts'),
+          optionalString(input.parentTaskId, 'parentTaskId'), jsonText(stringList(input.requiredSkills, 'requiredSkills')),
+          input.budgetTokens == null ? null : positiveInt(input.budgetTokens, 'budgetTokens'),
+          input.verificationRequired ? 1 : 0, now()
         );
       for (const criterionId of input.criterionIds ?? []) {
         if (!this.one('SELECT id FROM criteria WHERE id = ? AND job_id = ?', criterionId, jobId)) {
@@ -1265,17 +1897,174 @@ export class Repo {
       if (input.position !== undefined) fields.push(['position', positiveInt(input.position, 'position')]);
       if (input.mode !== undefined) fields.push(['mode', oneOf(input.mode, TASK_MODES, 'mode')]);
       if (input.evidenceRequired !== undefined) fields.push(['evidence_required', input.evidenceRequired ? 1 : 0]);
-      if (input.status !== undefined) {
-        const status = oneOf(input.status, TASK_STATUSES, 'status');
-        fields.push(['status', status]);
-        if (status === 'running' && !row.started_at) fields.push(['started_at', now()]);
-        if (status === 'done' || status === 'failed') fields.push(['ended_at', now()]);
-      }
+      if (input.dependsOn !== undefined) fields.push(['depends_on', jsonText(this.checkedDependsOn(taskId, input.dependsOn))]);
+      if (input.priority !== undefined) fields.push(['priority', integer(input.priority, 'priority', 0)]);
+      if (input.maxAttempts !== undefined) fields.push(['max_attempts', positiveInt(input.maxAttempts, 'maxAttempts')]);
+      if (input.requiredSkills !== undefined) fields.push(['required_skills', jsonText(stringList(input.requiredSkills, 'requiredSkills'))]);
+      if (input.budgetTokens !== undefined) fields.push(['budget_tokens', input.budgetTokens == null ? null : positiveInt(input.budgetTokens, 'budgetTokens')]);
+      if (input.verificationRequired !== undefined) fields.push(['verification_required', input.verificationRequired ? 1 : 0]);
       this.db.prepare(`UPDATE tasks SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), taskId);
       this.refreshJobUpdated(jobId);
-      this.recordEvent(events, { type: 'task.updated', subjectId: jobId, payload: { taskId, status: input.status }, subjectType: 'job' });
+      this.recordEvent(events, {
+        type: 'task.updated',
+        subjectId: jobId,
+        payload: { taskId, fields: fields.map(([c]) => c).filter((c) => c !== 'updated_at') },
+        subjectType: 'job',
+        jobId,
+        taskId,
+      });
     });
     return this.listTasks(jobId).find((t) => t.id === taskId)!;
+  }
+
+  // ------------------------------------------------- task lifecycle (K3, WP1)
+
+  /** Lifecycle knobs (ackTimeoutSec, maxAttempts, backoffSec, staleSweepSec) from settings, else K3 defaults. */
+  lifecycleSettings(): LifecycleSettings {
+    return resolveLifecycleSettings((key) => this.getSetting(key));
+  }
+
+  /**
+   * The only way a task's status changes. Validates against the K3 table, applies the
+   * change and emits exactly one event in the same transaction. A repeated
+   * idempotencyKey returns the task unchanged.
+   */
+  transitionTask(taskId: string, to: T.TaskStatus, opts: TransitionOptions): T.Task {
+    const row = this.one('SELECT * FROM tasks WHERE id = ?', taskId);
+    if (!row) throw new NotFoundError(`task ${taskId} not found`);
+    if (opts.idempotencyKey && this.one('SELECT seq FROM events WHERE idempotency_key = ?', opts.idempotencyKey)) {
+      return toTask(row);
+    }
+    const task = toTask(row);
+    const plan = planTransition(
+      {
+        id: task.id,
+        jobId: task.jobId,
+        status: task.status,
+        assigneeId: task.assigneeId,
+        attempt: task.attempt ?? 0,
+        maxAttempts: task.maxAttempts ?? 3,
+        verificationRequired: Boolean(task.verificationRequired),
+        startedAt: task.startedAt ?? null,
+      },
+      to,
+      opts,
+      this.lifecycleSettings()
+    );
+    const actorKind = opts.actorKind ?? 'agent';
+    this.write((events) => {
+      this.db
+        .prepare(`UPDATE tasks SET ${plan.columns.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
+        .run(...plan.columns.map(([, v]) => v), taskId);
+      this.refreshJobUpdated(task.jobId);
+      this.recordEvent(events, {
+        type: plan.eventType,
+        subjectId: taskId,
+        subjectType: 'task',
+        payload: plan.payload,
+        actorId: opts.actorId.trim(),
+        actorKind,
+        jobId: task.jobId,
+        taskId,
+        idempotencyKey: opts.idempotencyKey ?? null,
+      });
+    });
+    return this.getTask(taskId);
+  }
+
+  /** Records liveness for the stale sweep: any session activity on a task counts as an event. */
+  touchTask(taskId: string, at = now()): void {
+    this.db.prepare('UPDATE tasks SET last_event_at = ? WHERE id = ?').run(at, taskId);
+  }
+
+  /** Pending tasks whose dependencies are all done or verified: priority high first, then position. */
+  readyTasks(jobId?: string): T.Task[] {
+    const live = this.hasArchiveColumns() ? ' AND archived_at IS NULL' : '';
+    const liveJobs = this.hasArchiveColumns() ? ' AND job_id IN (SELECT id FROM jobs WHERE archived_at IS NULL)' : '';
+    const pending = (jobId
+      ? this.all(`SELECT * FROM tasks WHERE status = 'pending'${live} AND job_id = ?`, jobId)
+      : this.all(`SELECT * FROM tasks WHERE status = 'pending'${live}${liveJobs}`)
+    ).map(toTask);
+    const wanted = new Set(pending.flatMap((t) => t.dependsOn ?? []));
+    const statusById = new Map<string, T.TaskStatus>();
+    for (const id of wanted) {
+      const r = this.one('SELECT status FROM tasks WHERE id = ?', id);
+      if (r) statusById.set(id, r.status as T.TaskStatus);
+    }
+    return selectReady(
+      pending.map((t) => ({ ...t, dependsOn: t.dependsOn ?? [], priority: t.priority ?? 0, position: t.position ?? 0 })),
+      (id) => statusById.get(id)
+    );
+  }
+
+  /** True when every dependency of the task is done or verified. */
+  dependenciesMet(taskId: string): boolean {
+    const task = this.getTask(taskId);
+    return (task.dependsOn ?? []).every((id) => {
+      const r = this.one('SELECT status FROM tasks WHERE id = ?', id);
+      return r ? r.status === 'done' || r.status === 'verified' : false;
+    });
+  }
+
+  /** Dependencies must exist and the resulting graph must stay acyclic. */
+  private checkedDependsOn(taskId: string, input: unknown): string[] {
+    const deps = [...new Set(stringList(input, 'dependsOn'))];
+    for (const dep of deps) {
+      if (dep === taskId) throw new ConflictError('A task cannot depend on itself');
+      if (!this.one('SELECT id FROM tasks WHERE id = ?', dep)) throw new NotFoundError(`dependency ${dep} not found`);
+    }
+    if (deps.length) {
+      const graph: Record<string, string[]> = {};
+      for (const r of this.all("SELECT id, depends_on FROM tasks WHERE depends_on != '[]'")) {
+        graph[String(r.id)] = parseJson<string[]>(r.depends_on, []);
+      }
+      graph[taskId] = deps;
+      assertAcyclic(graph);
+    }
+    return deps;
+  }
+
+  /** Tasks selected by a SQL condition; used by the lifecycle sweeper. */
+  listTasksWhere(where: string, ...params: SQLInputValue[]): T.Task[] {
+    return this.all(`SELECT * FROM tasks WHERE ${where}`, ...params).map(toTask);
+  }
+
+  /**
+   * A failed verification sends the work back (WP1 1.6): each failing task returns to its
+   * assignee as `assigned` with the failing criterion in the reason, and a job in the
+   * verify stage goes back to build.
+   */
+  returnFailedVerification(
+    jobId: string,
+    failures: { taskId: string; reason: string }[],
+    actorId: string
+  ): { returned: string[]; jobMovedToBuild: boolean } {
+    const returned: string[] = [];
+    for (const f of failures) {
+      const task = this.getTask(f.taskId);
+      if (!task.assigneeId || !['needs_review', 'verified', 'done'].includes(task.status)) continue;
+      this.transitionTask(task.id, 'assigned', { actorId, actorKind: 'agent', reason: f.reason });
+      returned.push(task.id);
+    }
+    let jobMovedToBuild = false;
+    if (this.getJob(jobId).stage === 'verify') {
+      this.transitionJob(jobId, {
+        to: 'build',
+        actorId,
+        actorKind: 'agent',
+        note: `Verification failed: ${failures.map((f) => f.reason).join('; ').slice(0, 500)}`,
+      });
+      jobMovedToBuild = true;
+    }
+    return { returned, jobMovedToBuild };
+  }
+
+  /** Text of the criteria a task is meant to satisfy. */
+  taskCriterionTexts(taskId: string): string[] {
+    return this.all(
+      'SELECT c.text FROM task_criteria tc JOIN criteria c ON c.id = tc.criterion_id WHERE tc.task_id = ? ORDER BY c.position',
+      taskId
+    ).map((r) => String(r.text));
   }
 
   // ---------------------------------------------------------------- evidence
@@ -1586,6 +2375,25 @@ export class Repo {
         subjectType: 'job',
       });
     });
+    if (decision === 'approve' && approval.actionType === 'budget.exceed') {
+      // Approving a budget exception is a one-time override for that budget scope (K6, WP10 10.4).
+      const grant = (approval.action ?? {}) as { budgetId?: unknown; periodKey?: unknown; scopeKey?: unknown };
+      if (typeof grant.budgetId === 'string' && typeof grant.periodKey === 'string') {
+        this.db
+          .prepare(
+            `INSERT INTO budget_overrides (id, budget_id, period_key, scope_key, approval_id, granted_at)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          )
+          .run(newId('bov'), grant.budgetId, grant.periodKey, typeof grant.scopeKey === 'string' ? grant.scopeKey : '', approvalId, now());
+        this.emitEvent({ type: 'budget.override_granted', subjectId: grant.budgetId, payload: { approvalId, periodKey: grant.periodKey, decidedBy } });
+      }
+    }
+    if (decision === 'approve' && approval.actionType === 'plan.accept') {
+      // Approving a plan acceptance moves the job into build (S1-C). Skipped if the job has moved on.
+      if (this.getJob(approval.jobId).stage === 'plan') {
+        this.acceptPlanAndBuild(approval.jobId, { id: decidedBy, kind: decidedByKind }, 'plan approved');
+      }
+    }
     return this.getApproval(approvalId);
   }
 
@@ -1754,7 +2562,7 @@ export class Repo {
           `UPDATE identities
              SET active_session_id = ?,
                  acp_session_id = COALESCE(?, acp_session_id),
-                 status_state = 'working',
+                 status_state = CASE WHEN status_state IN ('rate_limited','waiting_reset') THEN status_state ELSE 'working' END,
                  last_woken_at = ?
            WHERE id = ?`
         )
@@ -1779,7 +2587,7 @@ export class Repo {
     return this.getSession(id);
   }
 
-  updateSession(id: string, input: { state?: T.SessionState; pid?: number | null; lastSeenAt?: string; exitCode?: number | null; error?: string | null; turnCount?: number; acpSessionId?: string | null; model?: string | null; supersededBySessionId?: string | null; contextTokens?: number; batonCapsule?: string | null }): T.Session {
+  updateSession(id: string, input: { state?: T.SessionState; pid?: number | null; lastSeenAt?: string; exitCode?: number | null; error?: string | null; turnCount?: number; acpSessionId?: string | null; model?: string | null; supersededBySessionId?: string | null; contextTokens?: number; batonCapsule?: string | null; modelId?: string | null; contextWindow?: number | null; contextBand?: string | null; continuationPackage?: Record<string, unknown> | null }): T.Session {
     const session = this.getSession(id);
     this.write((events) => {
       const fields: [string, SQLInputValue][] = [];
@@ -1794,21 +2602,23 @@ export class Repo {
       if (input.supersededBySessionId !== undefined) fields.push(['superseded_by_session_id', input.supersededBySessionId]);
       if (input.contextTokens !== undefined) fields.push(['context_tokens', input.contextTokens]);
       if (input.batonCapsule !== undefined) fields.push(['baton_capsule', input.batonCapsule]);
+      if (input.modelId !== undefined) fields.push(['model_id', input.modelId]);
+      if (input.contextWindow !== undefined) fields.push(['context_window', input.contextWindow]);
+      if (input.contextBand !== undefined) fields.push(['context_band', input.contextBand]);
+      if (input.continuationPackage !== undefined) fields.push(['continuation_package', input.continuationPackage == null ? null : jsonText(input.continuationPackage)]);
       if (input.state === 'stopped' || input.state === 'failed') fields.push(['ended_at', now()]);
       this.db.prepare(`UPDATE sessions SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
 
       // Keep the agent's identity record in sync with its session state & captured acpSessionId
       const idFields: [string, SQLInputValue][] = [['active_session_id', id]];
       if (input.acpSessionId) idFields.push(['acp_session_id', input.acpSessionId]);
-      if (input.state === 'starting' || input.state === 'running') {
-        idFields.push(['status_state', 'working']);
-      } else if (input.state === 'idle' || input.state === 'stopped') {
-        idFields.push(['status_state', 'idle']);
-      } else if (input.state === 'failed') {
-        const curId = this.one('SELECT status_state FROM identities WHERE id = ?', session.agentId);
-        if (curId && str(curId.status_state) !== 'rate_limited' && str(curId.status_state) !== 'waiting_reset') {
-          idFields.push(['status_state', 'idle']);
-        }
+      // A rate limit is cleared only explicitly (clearRateLimit) or when it resets, never by another
+      // session of the same agent changing state; otherwise a limited agent could be woken early.
+      const curId = this.one('SELECT status_state FROM identities WHERE id = ?', session.agentId);
+      const limited = curId && ['rate_limited', 'waiting_reset'].includes(String(str(curId.status_state)));
+      if (!limited) {
+        if (input.state === 'starting' || input.state === 'running') idFields.push(['status_state', 'working']);
+        else if (input.state === 'idle' || input.state === 'stopped' || input.state === 'failed') idFields.push(['status_state', 'idle']);
       }
       this.db
         .prepare(`UPDATE identities SET ${idFields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`)
@@ -1860,6 +2670,9 @@ export class Repo {
       this.db
         .prepare('UPDATE sessions SET last_event_at = ?, turn_count = COALESCE(turn_count, 0) + 1, context_tokens = COALESCE(context_tokens, 0) + ? WHERE id = ?')
         .run(now(), estimatedDelta, sessionId);
+      this.db
+        .prepare('UPDATE tasks SET last_event_at = ? WHERE id = (SELECT task_id FROM sessions WHERE id = ?)')
+        .run(now(), sessionId);
       this.recordEvent(events, {
         type: 'session.transcript',
         subjectId: sessionId,
@@ -1936,22 +2749,47 @@ export class Repo {
     const cost = positiveInt(input.costCents, 'costCents', 0);
     const inTok = positiveInt(input.inputTokens, 'inputTokens', 0);
     const outTok = positiveInt(input.outputTokens, 'outputTokens', 0);
+    const cachedTok = positiveInt(input.cachedInputTokens, 'cachedInputTokens', 0);
+    const cacheWriteTok = positiveInt(input.cacheWriteTokens, 'cacheWriteTokens', 0);
+    const reasoningTok = positiveInt(input.reasoningTokens, 'reasoningTokens', 0);
+    const measurement = oneOf(input.measurement, ['actual', 'estimated', 'unavailable'] as const, 'measurement', 'actual');
+    const contextUsed = input.contextUsed == null ? null : positiveInt(input.contextUsed, 'contextUsed', 0);
+    const contextSize = input.contextSize == null ? null : positiveInt(input.contextSize, 'contextSize', 0);
+    const sessionRow = input.sessionId ? this.one('SELECT agent_id, task_id FROM sessions WHERE id = ?', input.sessionId) : undefined;
+    const agentId = input.agentId ?? (sessionRow ? str(sessionRow.agent_id) : null);
+    const taskId = input.taskId ?? (sessionRow ? str(sessionRow.task_id) : null);
     this.write((events) => {
       this.db
         .prepare(
-          `INSERT INTO usage (id, job_id, session_id, model, input_tokens, output_tokens, cost_cents, source, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO usage (id, job_id, session_id, model, input_tokens, output_tokens, cost_cents, source, created_at,
+             agent_id, task_id, provider, model_id, cached_input_tokens, cache_write_tokens, reasoning_tokens,
+             measurement, context_used, context_size)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
-          id, input.jobId ?? null, input.sessionId ?? null, input.model ?? null,
+          id, input.jobId ?? null, input.sessionId ?? null, input.model ?? input.modelId ?? null,
           inTok,
           outTok,
-          cost, input.source ?? null, now()
+          cost, input.source ?? null, now(),
+          agentId, taskId, input.provider ?? null, input.modelId ?? null, cachedTok, cacheWriteTok, reasoningTok,
+          measurement, contextUsed, contextSize
         );
-      if (input.sessionId && inTok > 0) {
-        this.db
-          .prepare('UPDATE sessions SET context_tokens = MAX(COALESCE(context_tokens, 0), ?) WHERE id = ?')
-          .run(inTok, input.sessionId);
+      if (input.sessionId && measurement !== 'unavailable') {
+        if (contextUsed != null) {
+          // The adapter's own figure is authoritative and may fall after a compaction, so it replaces the maximum.
+          this.db
+            .prepare('UPDATE sessions SET context_tokens = ?, context_window = COALESCE(?, context_window) WHERE id = ?')
+            .run(contextUsed, contextSize && contextSize > 0 ? contextSize : null, input.sessionId);
+        } else {
+          const live = inTok + cachedTok + cacheWriteTok;
+          if (live > 0) {
+            this.db
+              .prepare('UPDATE sessions SET context_tokens = MAX(COALESCE(context_tokens, 0), ?), context_window = COALESCE(?, context_window) WHERE id = ?')
+              .run(live, contextSize && contextSize > 0 ? contextSize : null, input.sessionId);
+          } else if (contextSize && contextSize > 0) {
+            this.db.prepare('UPDATE sessions SET context_window = ? WHERE id = ?').run(contextSize, input.sessionId);
+          }
+        }
       }
       if (input.jobId) {
         this.db.prepare('UPDATE jobs SET cost_cents = cost_cents + ?, updated_at = ? WHERE id = ?').run(cost, now(), input.jobId);
@@ -1959,7 +2797,7 @@ export class Repo {
       this.recordEvent(events, {
         type: 'usage.recorded',
         subjectId: input.jobId ?? input.sessionId ?? id,
-        payload: { usageId: id, costCents: cost, model: input.model ?? null },
+        payload: { usageId: id, costCents: cost, model: input.model ?? input.modelId ?? null, measurement },
         subjectType: 'usage',
       });
     });
@@ -1982,9 +2820,9 @@ export class Repo {
       };
     }
     const projectBudget = job.projectId
-      ? this.one("SELECT * FROM budgets WHERE scope = 'project' AND project_id = ? AND period = 'month' ORDER BY updated_at DESC LIMIT 1", job.projectId)
+      ? this.one("SELECT * FROM budgets WHERE kind = 'money' AND scope = 'project' AND project_id = ? AND period = 'month' ORDER BY updated_at DESC LIMIT 1", job.projectId)
       : undefined;
-    const globalBudget = this.one("SELECT * FROM budgets WHERE scope = 'global' AND period = 'month' ORDER BY updated_at DESC LIMIT 1");
+    const globalBudget = this.one("SELECT * FROM budgets WHERE kind = 'money' AND scope = 'global' AND period = 'month' ORDER BY updated_at DESC LIMIT 1");
     const budgetRow = projectBudget ?? globalBudget;
     if (budgetRow) {
       const limit = num(budgetRow.amount_cents);
@@ -2031,24 +2869,97 @@ export class Repo {
   }
 
   createBudget(input: T.CreateBudgetInput): T.Budget {
-    const scope = oneOf(input.scope, ['global', 'project'] as const, 'scope');
+    const scope = oneOf(input.scope, ['global', 'project', 'agent', 'task', 'department', 'session'] as const, 'scope');
     if (scope === 'project' && !input.projectId) throw new InputError('projectId is required for a project budget');
-    const period = oneOf(input.period, ['job', 'day', 'month'] as const, 'period', 'month');
+    if (['agent', 'task', 'department', 'session'].includes(scope) && !input.scopeId) {
+      throw new InputError(`scopeId is required for a ${scope} budget`);
+    }
+    const kind = oneOf(input.kind, ['money', 'tokens', 'weekly_pct', 'session_pct', 'requests_per_day'] as const, 'kind', 'money');
+    const period = oneOf(input.period, ['job', 'day', 'week', 'month', 'session'] as const, 'period', 'month');
+    let amountCents = 0;
+    let amount: number | null = null;
+    if (kind === 'money') {
+      if (scope !== 'global' && scope !== 'project') throw new InputError('money budgets are only global or project; use a tokens or limit-share budget for this scope');
+      amountCents = positiveInt(input.amountCents, 'amountCents');
+    } else {
+      amount = Number(input.amount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new InputError('amount must be a positive number');
+      if ((kind === 'weekly_pct' || kind === 'session_pct') && amount > 100) throw new InputError('a share of an account limit cannot exceed 100');
+    }
+    const warnPct = input.warnPct == null ? 80 : Number(input.warnPct);
+    const hardPct = input.hardPct == null ? 100 : Number(input.hardPct);
+    if (!Number.isFinite(warnPct) || !Number.isFinite(hardPct) || warnPct <= 0 || hardPct < warnPct) {
+      throw new InputError('warnPct must be positive and hardPct at least warnPct');
+    }
+    const scopeId = ['agent', 'task', 'department', 'session'].includes(scope) ? (input.scopeId ?? null) : null;
+    const projectId = input.projectId ?? null;
+    const accountId = input.accountId ?? null;
     const id = newId('bud');
     this.write((events) => {
       this.db
         .prepare(
-          `INSERT INTO budgets (id, scope, project_id, period, amount_cents, currency, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT DO UPDATE SET amount_cents = excluded.amount_cents, updated_at = excluded.updated_at`
+          `INSERT INTO budgets (id, scope, project_id, scope_id, period, amount_cents, currency, kind, amount, account_id, warn_pct, hard_pct, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT DO UPDATE SET amount_cents = excluded.amount_cents, amount = excluded.amount,
+             warn_pct = excluded.warn_pct, hard_pct = excluded.hard_pct, updated_at = excluded.updated_at`
         )
-        .run(
-          id, scope, input.projectId ?? null, period,
-          positiveInt(input.amountCents, 'amountCents'), input.currency ?? 'USD', now(), now()
-        );
-      this.recordEvent(events, { type: 'budget.created', subjectId: input.projectId ?? null, payload: { scope, amountCents: input.amountCents } });
+        .run(id, scope, projectId, scopeId, period, amountCents, input.currency ?? 'USD', kind, amount, accountId, warnPct, hardPct, now(), now());
+      this.recordEvent(events, { type: 'budget.created', subjectId: projectId ?? scopeId ?? null, payload: { scope, kind, amountCents, amount } });
     });
-    return toBudget(this.one('SELECT * FROM budgets WHERE id = ? OR (scope = ? AND COALESCE(project_id, \'\') = ? AND period = ?)', id, scope, input.projectId ?? '', period)!);
+    return toBudget(
+      this.one(
+        `SELECT * FROM budgets WHERE id = ? OR (scope = ? AND COALESCE(project_id, '') = ? AND COALESCE(scope_id, '') = ?
+           AND kind = ? AND COALESCE(account_id, '') = ? AND period = ?)`,
+        id, scope, projectId ?? '', scopeId ?? '', kind, accountId ?? '', period
+      )!
+    );
+  }
+
+  // ---------------------------------------------------------------- model registry (K6, no prices)
+
+  listModelRegistry(): { provider: string; modelId: string; contextWindow: number | null; notes: string; updatedAt: string }[] {
+    return this.all('SELECT * FROM model_registry ORDER BY provider, model_id').map((r) => ({
+      provider: String(r.provider),
+      modelId: String(r.model_id),
+      contextWindow: r.context_window == null ? null : num(r.context_window),
+      notes: String(r.notes ?? ''),
+      updatedAt: String(r.updated_at),
+    }));
+  }
+
+  /** The registry's context window for a model, or null when the model or its window is unknown. */
+  registryContextWindow(provider: string | null, modelId: string | null): number | null {
+    if (!modelId) return null;
+    const row = provider
+      ? this.one('SELECT context_window FROM model_registry WHERE provider = ? AND model_id = ?', provider, modelId)
+      : this.one('SELECT context_window FROM model_registry WHERE model_id = ? ORDER BY provider LIMIT 1', modelId);
+    return row && row.context_window != null ? num(row.context_window) : null;
+  }
+
+  upsertModel(input: { provider: string; modelId: string; contextWindow?: number | null; notes?: string }): void {
+    const provider = required(input.provider, 'provider');
+    const modelId = required(input.modelId, 'modelId');
+    const windowTokens = input.contextWindow == null ? null : positiveInt(input.contextWindow, 'contextWindow');
+    this.write((events) => {
+      this.db
+        .prepare(
+          `INSERT INTO model_registry (provider, model_id, context_window, notes, updated_at) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(provider, model_id) DO UPDATE SET context_window = excluded.context_window,
+             notes = excluded.notes, updated_at = excluded.updated_at`
+        )
+        .run(provider, modelId, windowTokens, input.notes ?? '', now());
+      this.recordEvent(events, { type: 'model_registry.updated', subjectId: modelId, payload: { provider, modelId, contextWindow: windowTokens } });
+    });
+  }
+
+  /** Sets (or with null clears) an identity's renewal-threshold override (K7). */
+  setIdentityRenewalPolicy(identityId: string, policy: Record<string, number> | null): T.Identity {
+    this.getIdentity(identityId);
+    this.write((events) => {
+      this.db.prepare('UPDATE identities SET renewal_policy = ? WHERE id = ?').run(policy ? jsonText(policy) : null, identityId);
+      this.recordEvent(events, { type: 'identity.renewal_policy', subjectId: identityId, payload: { policy } });
+    });
+    return this.getIdentity(identityId);
   }
 
   // ---------------------------------------------------------------- tasks (single), artifacts, worktrees
@@ -2131,8 +3042,43 @@ export class Repo {
   }
 
   findWorktree(jobId: string): { path: string; branch: string | null; baseSha: string | null } | null {
-    const row = this.one('SELECT * FROM worktrees WHERE job_id = ? AND state = ? ORDER BY created_at DESC LIMIT 1', jobId, 'active');
+    const row = this.one('SELECT * FROM worktrees WHERE job_id = ? AND task_id IS NULL AND state = ? ORDER BY created_at DESC LIMIT 1', jobId, 'active');
     return row ? { path: String(row.path), branch: str(row.branch), baseSha: str(row.base_sha) } : null;
+  }
+
+  /** K8: the worktree recorded for a task, whatever its state ('active', or 'integrated' after the merge). */
+  findTaskWorktree(taskId: string): { id: string; path: string; branch: string | null; baseSha: string | null; state: string } | null {
+    const row = this.one("SELECT * FROM worktrees WHERE task_id = ? AND state != 'cleaned' ORDER BY created_at DESC LIMIT 1", taskId);
+    return row ? { id: String(row.id), path: String(row.path), branch: str(row.branch), baseSha: str(row.base_sha), state: String(row.state) } : null;
+  }
+
+  setWorktreeState(id: string, state: 'active' | 'integrated' | 'cleaned'): void {
+    this.db.prepare('UPDATE worktrees SET state = ?, cleaned_at = ? WHERE id = ?').run(state, state === 'cleaned' ? now() : null, id);
+  }
+
+  /** Active task worktrees of done or verified tasks: the integration backlog for the dispatcher's sweep. */
+  listUnintegratedTaskWorktrees(jobId: string): { taskId: string }[] {
+    return this.all(
+      `SELECT w.task_id FROM worktrees w JOIN tasks t ON t.id = w.task_id
+       WHERE w.job_id = ? AND w.state = 'active' AND t.status IN ('done', 'verified')`,
+      jobId
+    ).map((r) => ({ taskId: String(r.task_id) }));
+  }
+
+  /** Sessions that are starting or running, for dispatcher concurrency limits. */
+  liveSessionRows(): { sessionId: string; agentId: string; taskId: string | null }[] {
+    return this.all("SELECT id, agent_id, task_id FROM sessions WHERE state IN ('starting', 'running')").map((r) => ({
+      sessionId: String(r.id),
+      agentId: String(r.agent_id),
+      taskId: str(r.task_id),
+    }));
+  }
+
+  /** Appends an event that is not a row change (for example dispatch.started). */
+  emitEvent(input: { type: string; subjectId: string | null; subjectType?: string | null; payload?: Record<string, unknown>; actorId?: string | null; actorKind?: T.ActorKind | null; jobId?: string | null; taskId?: string | null; sessionId?: string | null; idempotencyKey?: string | null }): void {
+    this.write((events) => {
+      this.recordEvent(events, input as EventInput);
+    });
   }
 
   setJobBaseSha(jobId: string, sha: string): void {
@@ -2167,15 +3113,16 @@ export class Repo {
     const decision = input.decision?.trim() || job.title;
     const brief = input.brief?.trim() || job.brief;
     const assumptions = Array.isArray(input.assumptions) ? input.assumptions : [];
+    const runMode = input.runMode == null ? null : oneOf(input.runMode, ['live', 'simulation'] as const, 'runMode');
     this.write((events) => {
       this.db
         .prepare(
-          `INSERT INTO councils (id, job_id, mode, status, created_at, seat_config, started_at, title, decision, brief, assumptions)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO councils (id, job_id, mode, status, created_at, seat_config, started_at, title, decision, brief, assumptions, run_mode, selection)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(id, jobId, mode, 'running', now(), jsonText({ options, seats }), now(), title, decision, brief, jsonText(assumptions));
+        .run(id, jobId, mode, 'running', now(), jsonText({ options, seats }), now(), title, decision, brief, jsonText(assumptions), runMode, jsonText(input.selection ?? {}));
       this.refreshJobUpdated(jobId);
-      this.recordEvent(events, { type: 'council.created', subjectId: jobId, payload: { councilId: id, mode, title }, subjectType: 'job' });
+      this.recordEvent(events, { type: 'council.created', subjectId: jobId, payload: { councilId: id, mode, title, runMode }, subjectType: 'job' });
     });
     return this.getCouncil(id);
   }
@@ -2187,6 +3134,8 @@ export class Repo {
     const cards = this.all('SELECT * FROM council_cards WHERE council_id = ? ORDER BY round, rowid', councilId).map(toCouncilCard);
     const verdictRow = this.one('SELECT * FROM verdicts WHERE council_id = ?', councilId);
     const draftObj = parseJson<Record<string, unknown>>(row.draft, {});
+    const selection = parseJson<Record<string, unknown>>(row.selection, {});
+    const liveState = parseJson<Record<string, unknown>>(row.live_state, {});
     return {
       id: String(row.id),
       jobId: String(row.job_id),
@@ -2205,12 +3154,59 @@ export class Repo {
       cards,
       verdict: verdictRow ? toVerdict(verdictRow) : null,
       createdAt: String(row.created_at),
+      runMode: (str(row.run_mode) as T.CouncilRunMode | null) ?? null,
+      selection: Object.keys(selection).length ? (selection as unknown as T.CouncilSelection) : null,
+      liveState: Object.keys(liveState).length ? (liveState as unknown as T.CouncilLiveState) : null,
+      absentSeats: parseJson<T.CouncilAbsentSeat[]>(row.absent_seats, []),
     };
   }
 
-  listCouncils(jobId: string): T.Council[] {
+  /**
+   * Councils of a job. `runMode: 'live'` returns only agent-driven councils: simulation runs
+   * and hand-filled councils are never mixed into live results.
+   */
+  listCouncils(jobId: string, filter: { runMode?: T.CouncilRunMode | 'manual' } = {}): T.Council[] {
     this.getJob(jobId);
-    return this.all('SELECT id FROM councils WHERE job_id = ? ORDER BY created_at DESC', jobId).map((r) => this.getCouncil(String(r.id)));
+    const where =
+      filter.runMode === 'live' ? " AND run_mode = 'live'" : filter.runMode === 'simulation' ? " AND run_mode = 'simulation'" : filter.runMode === 'manual' ? ' AND run_mode IS NULL' : '';
+    return this.all(`SELECT id FROM councils WHERE job_id = ?${where} ORDER BY created_at DESC`, jobId).map((r) => this.getCouncil(String(r.id)));
+  }
+
+  /** Running agent-driven councils (the live council service ticks these). */
+  listRunningLiveCouncils(jobId?: string): T.Council[] {
+    const rows = jobId
+      ? this.all("SELECT id FROM councils WHERE run_mode = 'live' AND status = 'running' AND job_id = ? ORDER BY created_at", jobId)
+      : this.all("SELECT id FROM councils WHERE run_mode = 'live' AND status = 'running' ORDER BY created_at");
+    return rows.map((r) => this.getCouncil(String(r.id)));
+  }
+
+  /** Live councils whose verdict waits for a synthesiser plan. */
+  listLiveCouncilsAwaitingPlan(): T.Council[] {
+    return this.all("SELECT id FROM councils WHERE run_mode = 'live' AND status = 'verdict' ORDER BY created_at").map((r) => this.getCouncil(String(r.id)));
+  }
+
+  /** Writes the live round state, absent seats and (optionally) the status of a live council. */
+  updateCouncilLive(
+    councilId: string,
+    patch: { liveState?: T.CouncilLiveState; absentSeats?: T.CouncilAbsentSeat[]; status?: T.Council['status']; event?: { type: string; payload: Record<string, unknown> } }
+  ): T.Council {
+    const council = this.getCouncil(councilId);
+    const sets: [string, SQLInputValue][] = [];
+    if (patch.liveState !== undefined) sets.push(['live_state', jsonText(patch.liveState)]);
+    if (patch.absentSeats !== undefined) sets.push(['absent_seats', jsonText(patch.absentSeats)]);
+    if (patch.status !== undefined) {
+      sets.push(['status', patch.status]);
+      if (patch.status !== 'running') sets.push(['ended_at', now()]);
+    }
+    this.write((events) => {
+      if (sets.length) {
+        this.db.prepare(`UPDATE councils SET ${sets.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...sets.map(([, v]) => v), councilId);
+      }
+      if (patch.event) {
+        this.recordEvent(events, { type: patch.event.type, subjectId: council.jobId, payload: { councilId, ...patch.event.payload }, subjectType: 'job' });
+      }
+    });
+    return this.getCouncil(councilId);
   }
 
   listAllCouncils(limit = 50): T.Council[] {
@@ -2312,27 +3308,40 @@ export class Repo {
       text: input.text ?? input.argument ?? null,
       parsed: input.parsed ?? null,
       quotes: input.quotes ?? [],
+      ...(input.vote ? { vote: oneOf(input.vote, ['endorse', 'amend', 'dissent'] as const, 'vote') } : {}),
+      ...(input.wouldHaveToBeTrue ? { wouldHaveToBeTrue: String(input.wouldHaveToBeTrue) } : {}),
+      ...(input.simulated ? { simulated: true } : {}),
     };
+    // A simulated card never lands in a live council, and a live card never in a simulation.
+    if (input.simulated && council.runMode === 'live') throw new ConflictError('A simulated card cannot be added to a live council');
+    if (!input.simulated && council.runMode === 'simulation') throw new ConflictError('This council is a simulation; only the simulation runner writes its cards');
+    if (council.runMode === 'live' && !input.sessionId) throw new ConflictError('Cards of a live council are written by seat sessions through council_card_submit');
     const id = newId('card');
     this.write((events) => {
       this.db
-        .prepare('INSERT INTO council_cards (id, council_id, round, seat, identity_id, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(id, councilId, round, seat.seat, result.identityId, jsonText(result), now());
-      this.recordEvent(events, { type: 'council.card_added', subjectId: council.jobId, payload: { councilId, seat: seat.seat, round }, subjectType: 'job' });
+        .prepare('INSERT INTO council_cards (id, council_id, round, seat, identity_id, payload, created_at, session_id, simulated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, councilId, round, seat.seat, result.identityId, jsonText(result), now(), input.sessionId ?? null, input.simulated ? 1 : 0);
+      this.recordEvent(events, { type: 'council.card_added', subjectId: council.jobId, payload: { councilId, seat: seat.seat, round, sessionId: input.sessionId ?? null, simulated: Boolean(input.simulated) }, subjectType: 'job' });
     });
     return toCouncilCard(this.one('SELECT * FROM council_cards WHERE id = ?', id)!);
   }
 
-  createVerdict(councilId: string, richOverride?: Partial<T.CouncilResult>): T.CouncilVerdict {
+  /**
+   * `presentOnly` (live councils): weigh only the seats that submitted a card in the scored
+   * round, so an absent seat neither counts as a zero score nor is filled in.
+   */
+  createVerdict(councilId: string, richOverride?: Partial<T.CouncilResult>, opts: { presentOnly?: boolean } = {}): T.CouncilVerdict {
     const council = this.getCouncil(councilId);
     if (council.status !== 'running') throw new ConflictError(`This council is ${council.status}; it cannot produce another verdict`);
     if (!council.cards.length) throw new ConflictError('No cards have been submitted');
     // Score using the latest round's cards (or all cards if only 1 round)
     const maxRound = Math.max(...council.cards.map((c) => c.round || 1));
     const roundCards = council.cards.filter((c) => (c.round || 1) === maxRound).map((c) => c.result);
+    const present = new Set(roundCards.map((c) => c.seat));
+    const seats = opts.presentOnly ? council.seats.filter((s) => present.has(s.seat)) : council.seats;
     let computed: T.CouncilResult;
     try {
-      computed = computeCouncil(council.options, council.seats, roundCards.length ? roundCards : council.cards.map((c) => c.result));
+      computed = computeCouncil(council.options, seats, roundCards.length ? roundCards : council.cards.map((c) => c.result));
     } catch (e) {
       throw new ConflictError((e as Error).message);
     }
@@ -2365,6 +3374,25 @@ export class Repo {
     return toVerdict(this.one('SELECT * FROM verdicts WHERE id = ?', id)!);
   }
 
+  /** Live councils: records the plan that carried the verdict out and marks the council accepted. */
+  markLiveCouncilAccepted(councilId: string, plan: Record<string, unknown>, actor: { id: string; kind: T.ActorKind }): T.Council {
+    const council = this.getCouncil(councilId);
+    if (council.status === 'accepted') return council;
+    this.write((events) => {
+      this.db.prepare('UPDATE verdicts SET plan = ? WHERE council_id = ?').run(jsonText(plan), councilId);
+      this.db.prepare("UPDATE councils SET status = 'accepted', ended_at = ? WHERE id = ?").run(now(), councilId);
+      this.recordEvent(events, {
+        type: 'council.accepted',
+        subjectId: council.jobId,
+        payload: { councilId, ...plan },
+        actorId: actor.id,
+        actorKind: actor.kind,
+        subjectType: 'job',
+      });
+    });
+    return this.getCouncil(councilId);
+  }
+
   getVerdict(councilId: string): T.CouncilVerdict {
     const row = this.one('SELECT * FROM verdicts WHERE council_id = ?', councilId);
     if (!row) throw new NotFoundError(`council ${councilId} has no verdict`);
@@ -2374,6 +3402,10 @@ export class Repo {
   acceptVerdict(councilId: string, input: T.AcceptVerdictInput): T.Council {
     const council = this.getCouncil(councilId);
     if (!council.verdict) throw new ConflictError('This council has no verdict to accept');
+    if (council.runMode === 'simulation') {
+      throw new ConflictError('This council is a simulation (scripted cards, no agent took part); its verdict cannot become a job plan. Run a live council.');
+    }
+    if (council.runMode === 'live') throw new ConflictError('A live council verdict is accepted through the council service (POST /v1/councils/:id/accept)');
     const actorId = required(input.actorId, 'actorId');
     const councilResult = council.verdict.payload;
     const taskInputs = Array.isArray(input.tasks) ? input.tasks : [];
@@ -2738,6 +3770,7 @@ export class Repo {
     prompt: string;
     reason?: string | null;
     maxRuns?: number | null;
+    timezone?: string;
   }): T.AgentSchedule {
     const agentId = required(input.agentId, 'agentId').toLowerCase();
     if (!this.one('SELECT id FROM identities WHERE id = ?', agentId)) throw new NotFoundError(`identity ${agentId} not found`);
@@ -2752,8 +3785,8 @@ export class Repo {
         .prepare(
           `INSERT INTO agent_schedules
             (id, agent_id, created_by, created_by_kind, job_id, room_id, task_id, kind, cron_expr,
-             interval_seconds, next_run_at, prompt, reason, enabled, max_runs, run_count, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?)`
+             interval_seconds, next_run_at, prompt, reason, enabled, max_runs, run_count, created_at, timezone)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?, ?)`
         )
         .run(
           id,
@@ -2770,7 +3803,8 @@ export class Repo {
           prompt,
           input.reason ?? null,
           input.maxRuns ?? (kind === 'timer' ? 1 : null),
-          now()
+          now(),
+          input.timezone ?? 'UTC'
         );
       this.recordEvent(events, {
         type: 'schedule.created',
@@ -2816,7 +3850,7 @@ export class Repo {
 
   listDueSchedules(asOfIso = now()): T.AgentSchedule[] {
     return this.all(
-      'SELECT * FROM agent_schedules WHERE enabled = 1 AND next_run_at <= ? ORDER BY next_run_at ASC',
+      'SELECT * FROM agent_schedules WHERE enabled = 1 AND name IS NULL AND next_run_at <= ? ORDER BY next_run_at ASC',
       asOfIso
     ).map(toAgentSchedule);
   }
@@ -2917,14 +3951,15 @@ export class Repo {
       this.db
         .prepare(
           `INSERT INTO design_boards
-            (id, project_id, job_id, room_id, title, description, mode, viewport_x, viewport_y, viewport_zoom, design_tokens_json, created_by, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0.85, ?, ?, ?, ?)`
+            (id, project_id, job_id, room_id, task_id, title, description, mode, viewport_x, viewport_y, viewport_zoom, design_tokens_json, created_by, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0.85, ?, ?, ?, ?)`
         )
         .run(
           id,
           input.projectId ?? null,
           input.jobId ?? null,
           input.roomId ?? null,
+          input.taskId ?? null,
           title,
           optionalString(input.description, 'description'),
           mode,
@@ -3076,7 +4111,10 @@ export class Repo {
       if (input.height !== undefined) fields.push(['height', Math.max(240, Number(input.height))]);
       if (input.x !== undefined) fields.push(['x', Number(input.x)]);
       if (input.y !== undefined) fields.push(['y', Number(input.y)]);
-      if (input.status !== undefined) fields.push(['status', oneOf(input.status, ['draft', 'iterating', 'approved', 'archived'] as const, 'status')]);
+      let nextStatus = input.status;
+      // Editing an approved or in-review frame starts a new version that is being iterated again.
+      if (nextStatus === undefined && contentChanged && input.bumpVersion !== false && (existing.status === 'approved' || existing.status === 'review')) nextStatus = 'iterating';
+      if (nextStatus !== undefined) fields.push(['status', oneOf(nextStatus, DESIGN_FRAME_STATUSES, 'status')]);
       if (input.sourceFiles !== undefined) fields.push(['source_files_json', jsonText(input.sourceFiles)]);
       if (input.htmlPath !== undefined) fields.push(['html_path', input.htmlPath]);
       if (input.htmlContent !== undefined) {
@@ -3113,11 +4151,94 @@ export class Repo {
       this.recordEvent(events, {
         type: 'design.frame_updated',
         subjectId: id,
-        payload: { boardId: existing.boardId, version: nextVersion, status: input.status ?? existing.status },
+        payload: { boardId: existing.boardId, version: nextVersion, status: nextStatus ?? existing.status },
         subjectType: 'design_frame',
       });
     });
     return this.getDesignFrame(id);
+  }
+
+  /**
+   * The one place a design frame changes lifecycle state. Table-driven (DESIGN_FRAME_TRANSITIONS);
+   * an illegal move is a ConflictError. Approving a version supersedes the earlier approved
+   * version of the same frame and any approved ancestor frame, in the same transaction.
+   */
+  transitionFrame(id: string, to: T.DesignFrameStatus, actor: string, reason?: string | null, extra: DesignTransitionExtra = {}): T.DesignFrame {
+    const frame = this.getDesignFrame(id);
+    if (!DESIGN_FRAME_STATUSES.includes(to)) throw new InputError(`unknown design status ${String(to)}`);
+    if (!DESIGN_FRAME_TRANSITIONS[frame.status].includes(to)) {
+      throw new ConflictError(`design frame ${id} cannot move from ${frame.status} to ${to}`);
+    }
+    const board = this.getDesignBoard(frame.boardId);
+    const t = now();
+    const actorKind: T.ActorKind = extra.actorKind ?? 'human';
+    const emit = (events: T.RuntimeEvent[], type: string, subjectId: string, payload: Record<string, unknown>) =>
+      this.recordEvent(events, { type, subjectId, subjectType: 'design_frame', payload: { boardId: board.id, ...payload }, actorId: actor, actorKind, jobId: board.jobId ?? null });
+    this.write((events) => {
+      const fields: [string, SQLInputValue][] = [['status', to], ['updated_at', t]];
+      if (to === 'approved') {
+        fields.push(['approved_by', actor], ['approved_at', t], ['evidence_id', extra.evidenceId ?? null], ['superseded_by', null]);
+        if (extra.sourceFiles) fields.push(['source_files_json', jsonText(extra.sourceFiles)]);
+        if (extra.notes !== undefined) fields.push(['notes', extra.notes]);
+      }
+      if (to === 'superseded') fields.push(['superseded_by', extra.supersededBy ?? null]);
+      this.db.prepare(`UPDATE design_frames SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
+
+      if (to === 'approved') {
+        const current = this.one('SELECT id FROM design_frame_versions WHERE frame_id = ? AND version = ?', id, frame.version);
+        const currentId = current ? String(current.id) : null;
+        if (currentId) {
+          this.db
+            .prepare("UPDATE design_frame_versions SET state = 'approved', approved_by = ?, approved_at = ?, evidence_id = ?, artifact_path = ?, content_sha = ?, superseded_by = NULL WHERE id = ?")
+            .run(actor, t, extra.evidenceId ?? null, extra.artifactPath ?? null, extra.contentSha ?? null, currentId);
+        }
+        // An earlier approved version of this same frame is replaced by this one.
+        const earlier = this.all("SELECT id, version FROM design_frame_versions WHERE frame_id = ? AND state = 'approved' AND id != ?", id, currentId ?? '');
+        for (const e of earlier) {
+          this.db.prepare("UPDATE design_frame_versions SET state = 'superseded', superseded_by = ? WHERE id = ?").run(currentId, String(e.id));
+          emit(events, 'design.version_superseded', id, { version: num(e.version), supersededByVersion: frame.version });
+        }
+        // An approved ancestor frame (this one was forked/iterated from it) is replaced too.
+        const seen = new Set<string>([id]);
+        let parentId = frame.parentFrameId;
+        while (parentId && !seen.has(parentId)) {
+          seen.add(parentId);
+          const parent = this.one('SELECT id, status, parent_frame_id FROM design_frames WHERE id = ?', parentId);
+          if (!parent) break;
+          if (str(parent.status) === 'approved') {
+            this.db.prepare("UPDATE design_frames SET status = 'superseded', superseded_by = ?, updated_at = ? WHERE id = ?").run(id, t, parentId);
+            this.db.prepare("UPDATE design_frame_versions SET state = 'superseded', superseded_by = ? WHERE frame_id = ? AND state = 'approved'").run(id, parentId);
+            emit(events, 'design.frame_superseded', parentId, { supersededBy: id, from: 'approved', reason: 'newer approved frame' });
+          }
+          parentId = str(parent.parent_frame_id);
+        }
+      }
+      this.db.prepare('UPDATE design_boards SET updated_at = ? WHERE id = ?').run(t, board.id);
+      emit(events, `design.frame_${to}`, id, { from: frame.status, to, version: frame.version, reason: reason ?? null });
+    });
+    return this.getDesignFrame(id);
+  }
+
+  /** Approved frame versions of a job's boards: what implementation work must follow (newest approved version per frame). */
+  listApprovedDesigns(jobId: string): T.ApprovedDesignRef[] {
+    const rows = this.all(
+      `SELECT f.id AS frame_id, f.device, f.html_path, v.title, v.version, v.artifact_path
+         FROM design_frame_versions v
+         JOIN design_frames f ON f.id = v.frame_id
+         JOIN design_boards b ON b.id = f.board_id
+        WHERE b.job_id = ? AND v.state = 'approved' AND f.status != 'archived'
+        ORDER BY f.created_at ASC, v.version DESC`,
+      jobId
+    );
+    const seen = new Set<string>();
+    const out: T.ApprovedDesignRef[] = [];
+    for (const r of rows) {
+      const frameId = String(r.frame_id);
+      if (seen.has(frameId)) continue;
+      seen.add(frameId);
+      out.push({ frameId, title: String(r.title), version: num(r.version), device: (str(r.device) ?? 'phone') as T.DesignDeviceKind, path: str(r.artifact_path) ?? str(r.html_path) });
+    }
+    return out;
   }
 
   deleteDesignFrame(id: string): void {
@@ -3252,8 +4373,8 @@ export class Repo {
           }
 
           const insertStd = this.db.prepare(
-            `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts, original_file_path)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+            `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts, original_file_path, team_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
           );
           for (const st of legacyStandups) {
             insertStd.run(
@@ -3264,7 +4385,8 @@ export class Repo {
               String(st.content ?? ''),
               str(st.parsed_updates) ?? '{}',
               String(st.ts || now()),
-              str(st.original_file_path)
+              str(st.original_file_path),
+              `legacy-import-${String(st.id ?? newId('std'))}`
             );
           }
         });
@@ -3509,10 +4631,10 @@ export class Repo {
     this.write((events) => {
       const res = this.db
         .prepare(
-          `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO standups (standup_date, facilitator, present_identities, absent_identities, content, parsed_updates, ts, team_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(standupDate, facilitator, present, absent, content, parsedUpdates, t);
+        .run(standupDate, facilitator, present, absent, content, parsedUpdates, t, newId('manual'));
       id = Number(res.lastInsertRowid);
 
       this.recordEvent(events, {
@@ -3608,33 +4730,16 @@ export class Repo {
         }
       }
 
-      // Default seed if no legacy data found
-      this.write(() => {
-        const t = now();
-        this.db.prepare(
-          `INSERT OR IGNORE INTO okr_objectives (id, title, description, owner_id, quarter, progress_percent, status, created_at, updated_at)
-           VALUES
-           ('OBJ_1', 'Elevate Myavana Chatbot to Executive-Grade 0-Drop Quality', 'Flawless UI widget streaming, native audio chimes, and verified regression pipelines', 'astra', 'Q4-2026', 75, 'on_track', ?, ?),
-           ('OBJ_2', 'Complete Autonomous Substrate Verification & Reality Sync', 'Enforce un-mocked verification across all agent turns with 100% truthfulness in SQLite', 'kael', 'Q4-2026', 88, 'on_track', ?, ?)`
-        ).run(t, t, t, t);
-
-        this.db.prepare(
-          `INSERT OR IGNORE INTO okr_key_results (id, objective_id, title, metric_type, current_value, target_value, unit, progress_percent, telemetry_query, created_at, updated_at)
-           VALUES
-           ('KR_1_1', 'OBJ_1', 'Widget streaming latency below 200ms', 'numeric', 180.0, 200.0, 'ms', 85, 'SELECT AVG(latency) FROM turns', ?, ?),
-           ('KR_1_2', 'OBJ_1', 'Zero un-handled exceptions in Chatbot turns', 'percentage', 96.0, 100.0, '%', 96, 'SELECT (1 - errors/total)*100', ?, ?),
-           ('KR_2_1', 'OBJ_2', '100% of implementing agent turns audited by Lead Verifier Kael', 'percentage', 88.0, 100.0, '%', 88, 'SELECT COUNT(*) FROM evidence WHERE passed = 1', ?, ?),
-           ('KR_2_2', 'OBJ_2', 'Automated Reality Engine reconciliation run continuously', 'binary', 1.0, 1.0, 'status', 100, NULL, ?, ?)`
-        ).run(t, t, t, t, t, t, t, t);
-      });
+      // No legacy source: leave OKRs empty. Never seed made-up objectives or
+      // progress numbers (vision §2.5; gap audit §11).
     } catch {
       // best-effort
     }
   }
 
   listOkrs(): { objectives: T.OkrObjective[]; keyResults: T.OkrKeyResult[] } {
-    const objectives = this.all('SELECT * FROM okr_objectives ORDER BY created_at DESC').map(toOkrObjective);
-    const keyResults = this.all('SELECT * FROM okr_key_results ORDER BY created_at ASC').map(toOkrKeyResult);
+    const objectives = this.all('SELECT * FROM okr_objectives ORDER BY created_at DESC').map((r) => this.enrichObjective(r));
+    const keyResults = this.all('SELECT * FROM okr_key_results ORDER BY created_at ASC').map((r) => this.enrichKr(r));
     return { objectives, keyResults };
   }
 
@@ -3674,7 +4779,7 @@ export class Repo {
     });
 
     const row = this.one('SELECT * FROM okr_objectives WHERE id = ?', id);
-    return toOkrObjective(row!);
+    return this.enrichObjective(row!);
   }
 
   deleteOkrObjective(id: string): void {
@@ -3690,18 +4795,36 @@ export class Repo {
     });
   }
 
+  private enrichObjective(r: Row): T.OkrObjective {
+    return { ...toOkrObjective(r), ...strategy.describeObjective(this.db, String(r.id)) };
+  }
+
+  private enrichKr(r: Row): T.OkrKeyResult {
+    return { ...toOkrKeyResult(r), ...strategy.describeKr(this.db, r) };
+  }
+
   saveOkrKeyResult(input: T.SaveOkrKeyResultInput): T.OkrKeyResult {
     const id = input.id?.trim() || `KR_${input.objective_id.replace(/^OBJ_/, '')}_${Date.now().toString(36).slice(-3).toUpperCase()}`;
     const ts = now();
     const existing = this.one('SELECT * FROM okr_key_results WHERE id = ?', id);
+    if (!this.one('SELECT 1 AS x FROM okr_objectives WHERE id = ?', input.objective_id)) {
+      throw new NotFoundError(`objective ${input.objective_id} not found`);
+    }
     const curr = Number(input.current_value ?? (existing ? existing.current_value : 0));
     const target = Number(input.target_value ?? (existing ? existing.target_value : 100));
     const progress = target > 0 ? Math.round(Math.min(100, Math.max(0, (curr / target) * 100))) : 0;
+    const kind = oneOf(input.kind, ['manual', 'evidence', 'computed'] as const, 'kind', (existing ? String(existing.kind ?? 'manual') : 'manual') as 'manual' | 'evidence' | 'computed');
+    const weight = input.weight === undefined ? (existing ? Number(existing.weight ?? 1) : 1) : Number(input.weight);
+    if (!Number.isFinite(weight) || weight <= 0) throw new InputError('weight must be a number greater than 0');
+    const source = input.source !== undefined ? input.source?.trim() || null : existing ? str(existing.source) : null;
+    const actor = input.actorId?.trim() || 'owner';
+    // A typed value is a manual entry; it is only recorded when the caller supplied one that is new.
+    const typedValue = input.current_value !== undefined && (!existing || Number(existing.current_value) !== curr || strategy.listProgressEntries(this.db, id).length === 0);
 
     this.write((events) => {
       this.db.prepare(
-        `INSERT INTO okr_key_results (id, objective_id, title, metric_type, current_value, target_value, unit, progress_percent, telemetry_query, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO okr_key_results (id, objective_id, title, metric_type, current_value, target_value, unit, progress_percent, telemetry_query, kind, source, weight, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            objective_id = excluded.objective_id,
            title = excluded.title,
@@ -3709,8 +4832,10 @@ export class Repo {
            current_value = excluded.current_value,
            target_value = excluded.target_value,
            unit = excluded.unit,
-           progress_percent = excluded.progress_percent,
            telemetry_query = excluded.telemetry_query,
+           kind = excluded.kind,
+           source = excluded.source,
+           weight = excluded.weight,
            updated_at = excluded.updated_at`
       ).run(
         id,
@@ -3720,24 +4845,30 @@ export class Repo {
         curr,
         target,
         input.unit?.trim() || (existing ? String(existing.unit || '%') : '%'),
-        progress,
+        existing ? Number(existing.progress_percent) : 0,
         input.telemetry_query?.trim() || null,
+        kind,
+        source,
+        weight,
         existing ? String(existing.created_at) : ts,
         ts
       );
-
-      this.recomputeObjectiveProgress(input.objective_id);
+      if (kind === 'manual' && typedValue) {
+        strategy.appendProgressEntry(this.db, { keyResultId: id, value: curr, progressPercent: progress, provenance: 'manual', recordedBy: actor, note: 'typed value' });
+      }
+      strategy.syncStoredProgress(this.db, id);
+      if (existing && String(existing.objective_id) !== input.objective_id) strategy.syncStoredObjective(this.db, String(existing.objective_id));
 
       this.recordEvent(events, {
         type: existing ? 'okr.key_result_updated' : 'okr.key_result_created',
         subjectId: id,
-        payload: { title: input.title, objectiveId: input.objective_id, progress },
+        payload: { title: input.title, objectiveId: input.objective_id, kind },
         subjectType: 'okr_key_result',
       });
     });
 
     const row = this.one('SELECT * FROM okr_key_results WHERE id = ?', id);
-    return toOkrKeyResult(row!);
+    return this.enrichKr(row!);
   }
 
   deleteOkrKeyResult(id: string): void {
@@ -3746,6 +4877,7 @@ export class Repo {
     const objId = String(kr.objective_id);
 
     this.write((events) => {
+      this.db.prepare('UPDATE jobs SET okr_kr_id = NULL WHERE okr_kr_id = ?').run(id);
       this.db.prepare('DELETE FROM okr_key_results WHERE id = ?').run(id);
       this.recomputeObjectiveProgress(objId);
       this.recordEvent(events, {
@@ -3757,9 +4889,14 @@ export class Repo {
     });
   }
 
-  updateOkrProgress(krId: string, currentValue: number): { keyResult: T.OkrKeyResult; objective: T.OkrObjective } {
+  /** Records a typed-in value. Allowed only for manual key results; the history row is labelled manual. */
+  updateOkrProgress(krId: string, currentValue: number, opts: { actorId?: string; note?: string } = {}): { keyResult: T.OkrKeyResult; objective: T.OkrObjective } {
     const kr = this.one('SELECT * FROM okr_key_results WHERE id = ?', krId);
     if (!kr) throw new Error(`Key result not found: ${krId}`);
+    if (String(kr.kind ?? 'manual') !== 'manual') {
+      throw new ConflictError(`Key result ${krId} is ${String(kr.kind)}: its progress comes from ${kr.kind === 'evidence' ? 'verified linked jobs' : 'no computation (reserved)'}, not typed values.`);
+    }
+    if (!Number.isFinite(currentValue)) throw new InputError('current_value must be a number');
 
     const target = Number(kr.target_value) || 100;
     const progress = target > 0 ? Math.round(Math.min(100, Math.max(0, (currentValue / target) * 100))) : 0;
@@ -3767,53 +4904,71 @@ export class Repo {
     const objId = String(kr.objective_id);
 
     this.write((events) => {
-      this.db.prepare(
-        'UPDATE okr_key_results SET current_value = ?, progress_percent = ?, updated_at = ? WHERE id = ?'
-      ).run(currentValue, progress, ts, krId);
-
-      this.recomputeObjectiveProgress(objId);
+      this.db.prepare('UPDATE okr_key_results SET current_value = ?, updated_at = ? WHERE id = ?').run(currentValue, ts, krId);
+      strategy.appendProgressEntry(this.db, {
+        keyResultId: krId,
+        value: currentValue,
+        progressPercent: progress,
+        provenance: 'manual',
+        recordedBy: opts.actorId?.trim() || 'owner',
+        note: opts.note ?? null,
+      });
+      strategy.syncStoredProgress(this.db, krId);
 
       this.recordEvent(events, {
         type: 'okr.progress_updated',
         subjectId: krId,
-        payload: { currentValue, progress, objectiveId: objId },
+        payload: { currentValue, progress, objectiveId: objId, provenance: 'manual' },
         subjectType: 'okr_key_result',
       });
     });
 
     const updatedKr = this.one('SELECT * FROM okr_key_results WHERE id = ?', krId);
     const updatedObj = this.one('SELECT * FROM okr_objectives WHERE id = ?', objId);
-    return { keyResult: toOkrKeyResult(updatedKr!), objective: toOkrObjective(updatedObj!) };
+    return { keyResult: this.enrichKr(updatedKr!), objective: this.enrichObjective(updatedObj!) };
   }
 
   recomputeObjectiveProgress(objectiveId: string): T.OkrObjective | null {
-    const row = this.one('SELECT AVG(progress_percent) AS avg_prog FROM okr_key_results WHERE objective_id = ?', objectiveId);
-    const avg = row?.avg_prog !== null && row?.avg_prog !== undefined ? Math.round(Number(row.avg_prog)) : 0;
-    const status = avg >= 80 ? 'on_track' : avg >= 40 ? 'at_risk' : 'behind';
-    const ts = now();
-
-    this.db.prepare(
-      'UPDATE okr_objectives SET progress_percent = ?, status = ?, updated_at = ? WHERE id = ?'
-    ).run(avg, status, ts, objectiveId);
-
+    strategy.syncStoredObjective(this.db, objectiveId);
     const obj = this.one('SELECT * FROM okr_objectives WHERE id = ?', objectiveId);
-    return obj ? toOkrObjective(obj) : null;
+    return obj ? this.enrichObjective(obj) : null;
+  }
+
+  listOkrProgressEntries(krId: string): T.OkrProgressEntry[] {
+    return strategy.listProgressEntries(this.db, krId);
+  }
+
+  projectHealth(projectId: string): strategy.ProjectHealth {
+    return strategy.projectHealth(this.db, projectId);
   }
 
   getRealityHealthScore(): T.RealityAuditSummary {
+    const parts = strategy.healthParts(this.db);
     const objCount = Number(this.one('SELECT COUNT(*) AS c FROM okr_objectives')?.c || 0);
     const krCount = Number(this.one('SELECT COUNT(*) AS c FROM okr_key_results')?.c || 0);
-    const avgProgRow = this.one('SELECT AVG(progress_percent) AS a FROM okr_objectives');
-    const avgOkrProgress = avgProgRow?.a ? Math.round(Number(avgProgRow.a)) : 0;
+    let known = 0;
+    let sum = 0;
+    for (const o of this.all('SELECT id FROM okr_objectives')) {
+      const p = strategy.computeObjectiveProgress(this.db, String(o.id));
+      if (p.progress !== null) {
+        known++;
+        sum += p.progress;
+      }
+    }
+    const avgOkrProgress = known > 0 ? Math.round(sum / known) : 0;
 
     const totalEvidence = Number(this.one('SELECT COUNT(*) AS c FROM evidence')?.c || 0);
-    const verifiedEvidence = Number(this.one('SELECT COUNT(*) AS c FROM evidence WHERE exit_code = 0')?.c || 0);
-    const activeJobs = Number(this.one("SELECT COUNT(*) AS c FROM jobs WHERE stage NOT IN ('done', 'cancelled')")?.c || 0);
+    const verifiedEvidence = Number(this.one("SELECT COUNT(*) AS c FROM evidence WHERE class = 'VERIFIED'")?.c || 0);
+    const activeJobs = Number(this.one("SELECT COUNT(*) AS c FROM jobs WHERE archived_at IS NULL AND stage NOT IN ('done', 'cancelled')")?.c || 0);
 
-    const evidenceRatio = totalEvidence > 0 ? (verifiedEvidence / totalEvidence) : 1;
-    const healthScore = Math.round(Math.min(100, Math.max(0, (evidenceRatio * 60) + (avgOkrProgress * 0.4))));
+    // Deprecated combined number: the mean of the measured figures only (never typed-in progress).
+    const measured = [parts.execution.value, parts.evidence.value, parts.strategy.value].filter((v): v is number => v !== null);
+    const healthScore = measured.length ? Math.round(measured.reduce((a, b) => a + b, 0) / measured.length) : 0;
 
     return {
+      ...parts,
+      healthScoreDeprecated: true,
+      healthScoreUnknown: measured.length === 0,
       healthScore,
       totalObjectives: objCount,
       totalKeyResults: krCount,
@@ -4182,6 +5337,12 @@ const toIdentity = (r: Row): T.Identity => ({
   rateLimitResetAt: str(r.rate_limit_reset_at),
   rateLimitReason: str(r.rate_limit_reason),
   lastWokenAt: str(r.last_woken_at),
+  departmentId: str(r.department_id),
+  seniority: (str(r.seniority) ?? 'member') as NonNullable<T.Identity['seniority']>,
+  skills: parseJson<string[]>(r.skills, []),
+  providers: parseJson<string[]>(r.providers, []),
+  permissions: parseJson<string[]>(r.permissions, []),
+  renewalPolicy: r.renewal_policy == null ? null : parseJson<Record<string, number> | null>(r.renewal_policy, null),
 });
 
 const toTeam = (r: Row): T.Team => ({
@@ -4241,6 +5402,7 @@ const toRoom = (r: Row): T.Room => ({
   teamId: str(r.team_id),
   kind: (str(r.kind) ?? 'adhoc') as T.Room['kind'],
   archived: bool(r.archived),
+  intakeEnabled: r.intake_enabled === 1,
 });
 
 const toRoomMember = (r: Row): T.RoomMember => ({
@@ -4282,6 +5444,29 @@ const toJobSummary = (r: Row): T.JobSummary => ({
   kind: (str(r.kind) ?? 'code') as T.JobKind,
   shipStatus: (str(r.ship_status) ?? 'none') as T.ShipStatus,
   shipPayload: parseJson<Record<string, unknown>>(r.ship_payload, {}),
+  workflow: (str(r.workflow) as T.JobSummary['workflow']) ?? null,
+  triageReason: str(r.triage_reason),
+  urgency: str(r.urgency),
+  impact: str(r.impact),
+  intakeId: str(r.intake_id),
+  okrKrId: str(r.okr_kr_id),
+  milestoneId: str(r.milestone_id),
+  krWeight: r.kr_weight == null ? 1 : num(r.kr_weight),
+  archivedAt: str(r.archived_at),
+});
+
+const toIntake = (r: Row): T.IntakeRequest => ({
+  id: String(r.id),
+  rawText: String(r.raw_text),
+  source: String(r.source) as T.IntakeSource,
+  sourceRef: str(r.source_ref),
+  projectId: str(r.project_id),
+  requestedBy: String(r.requested_by),
+  createdAt: String(r.created_at),
+  jobId: str(r.job_id),
+  duplicateOfJobId: str(r.duplicate_of_job_id),
+  dedupeReason: str(r.dedupe_reason),
+  classification: parseJson<Record<string, unknown>>(r.classification, {}),
 });
 
 const toTask = (r: Row): T.Task => ({
@@ -4300,6 +5485,20 @@ const toTask = (r: Row): T.Task => ({
   endedAt: str(r.ended_at),
   updatedAt: str(r.updated_at),
   evidenceRequired: bool(r.evidence_required),
+  dependsOn: parseJson<string[]>(r.depends_on, []),
+  priority: num(r.priority),
+  attempt: num(r.attempt),
+  maxAttempts: r.max_attempts == null ? 3 : num(r.max_attempts),
+  acknowledgedAt: str(r.acknowledged_at),
+  ackDeadlineAt: str(r.ack_deadline_at),
+  nextRetryAt: str(r.next_retry_at),
+  parentTaskId: str(r.parent_task_id),
+  requiredSkills: parseJson<string[]>(r.required_skills, []),
+  budgetTokens: r.budget_tokens == null ? null : num(r.budget_tokens),
+  verificationRequired: bool(r.verification_required),
+  legacyProjectTaskId: str(r.legacy_project_task_id),
+  lastEventAt: str(r.last_event_at),
+  archivedAt: str(r.archived_at),
 });
 
 const toEvidence = (r: Row): T.Evidence => ({
@@ -4374,9 +5573,15 @@ const toBudget = (r: Row): T.Budget => ({
   id: String(r.id),
   scope: r.scope as T.Budget['scope'],
   projectId: str(r.project_id),
+  scopeId: str(r.scope_id),
   period: r.period as T.Budget['period'],
   amountCents: num(r.amount_cents),
   currency: String(r.currency),
+  kind: (str(r.kind) ?? 'money') as NonNullable<T.Budget['kind']>,
+  amount: r.amount == null ? null : Number(r.amount),
+  accountId: str(r.account_id),
+  warnPct: r.warn_pct == null ? 80 : Number(r.warn_pct),
+  hardPct: r.hard_pct == null ? 100 : Number(r.hard_pct),
   createdAt: String(r.created_at),
   updatedAt: String(r.updated_at),
 });
@@ -4423,6 +5628,10 @@ const toSession = (r: Row): T.Session => {
     generation: r.generation == null ? 1 : Math.max(1, num(r.generation)),
     contextTokens: Math.max(num(r.context_tokens), inputTokens),
     batonCapsule: str(r.baton_capsule),
+    modelId: str(r.model_id),
+    contextWindow: r.context_window == null ? null : num(r.context_window),
+    contextBand: str(r.context_band),
+    continuationPackage: r.continuation_package == null ? null : parseJson<Record<string, unknown> | null>(r.continuation_package, null),
     usage,
   };
 };
@@ -4450,6 +5659,16 @@ const toUsage = (r: Row): T.Usage => ({
   costCents: num(r.cost_cents),
   source: str(r.source),
   createdAt: String(r.created_at),
+  agentId: str(r.agent_id),
+  taskId: str(r.task_id),
+  provider: str(r.provider),
+  modelId: str(r.model_id),
+  cachedInputTokens: num(r.cached_input_tokens),
+  cacheWriteTokens: num(r.cache_write_tokens),
+  reasoningTokens: num(r.reasoning_tokens),
+  measurement: (str(r.measurement) ?? 'actual') as NonNullable<T.Usage['measurement']>,
+  contextUsed: r.context_used == null ? null : num(r.context_used),
+  contextSize: r.context_size == null ? null : num(r.context_size),
 });
 
 const toHistory = (r: Row): T.JobStageHistory => ({
@@ -4472,6 +5691,8 @@ const toCouncilCard = (r: Row): T.CouncilCard => ({
   result: parseJson<T.CouncilCardResult>(r.payload, {
     seat: String(r.seat), identityId: null, scores: {}, pillar: 0, confidence: null, ruin: {}, reversible: null, argument: null,
   }),
+  sessionId: str(r.session_id),
+  simulated: Number(r.simulated ?? 0) === 1,
   createdAt: String(r.created_at),
 });
 
@@ -4500,6 +5721,10 @@ const toEvent = (r: Row): T.RuntimeEvent => ({
   actorId: str(r.actor_id),
   actorKind: str(r.actor_kind) as T.ActorKind | null,
   subjectType: str(r.subject_type),
+  jobId: str(r.job_id),
+  taskId: str(r.task_id),
+  sessionId: str(r.session_id),
+  idempotencyKey: str(r.idempotency_key),
   hash: str(r.hash),
   prevHash: str(r.prev_hash),
 });
@@ -4544,6 +5769,8 @@ const toAgentSchedule = (r: Row): T.AgentSchedule => ({
   maxRuns: r.max_runs == null ? null : num(r.max_runs),
   runCount: num(r.run_count),
   createdAt: String(r.created_at),
+  timezone: str(r.timezone) ?? 'UTC',
+  name: str(r.name),
 });
 
 const toDesignFrameVersion = (r: Row): T.DesignFrameVersion => ({
@@ -4555,6 +5782,13 @@ const toDesignFrameVersion = (r: Row): T.DesignFrameVersion => ({
   notes: str(r.notes),
   authorId: String(r.author_id ?? 'atlas'),
   createdAt: String(r.created_at),
+  state: (str(r.state) as 'approved' | 'superseded' | null) ?? null,
+  approvedBy: str(r.approved_by),
+  approvedAt: str(r.approved_at),
+  evidenceId: str(r.evidence_id),
+  artifactPath: str(r.artifact_path),
+  contentSha: str(r.content_sha),
+  supersededBy: str(r.superseded_by),
 });
 
 const toDesignFrame = (r: Row, versions?: T.DesignFrameVersion[]): T.DesignFrame => ({
@@ -4577,6 +5811,7 @@ const toDesignFrame = (r: Row, versions?: T.DesignFrameVersion[]): T.DesignFrame
   approvedBy: str(r.approved_by),
   approvedAt: str(r.approved_at),
   evidenceId: str(r.evidence_id),
+  supersededBy: str(r.superseded_by),
   createdAt: String(r.created_at),
   updatedAt: String(r.updated_at),
   versions,
@@ -4587,6 +5822,7 @@ const toDesignBoard = (r: Row, frames?: T.DesignFrame[]): T.DesignBoard => ({
   projectId: str(r.project_id),
   jobId: str(r.job_id),
   roomId: str(r.room_id),
+  taskId: str(r.task_id),
   title: String(r.title),
   description: str(r.description),
   mode: (str(r.mode) ?? 'greenfield') as T.DesignBoardMode,
@@ -4660,7 +5896,7 @@ const toStandup = (r: Row): T.Standup => ({
   original_file_path: str(r.original_file_path),
 });
 
-const toOkrObjective = (r: Row): T.OkrObjective => ({
+const toOkrObjective = (r: Row): Omit<T.OkrObjective, keyof T.OkrObjectiveStrategy> => ({
   id: String(r.id),
   title: String(r.title),
   description: str(r.description),
@@ -4672,7 +5908,7 @@ const toOkrObjective = (r: Row): T.OkrObjective => ({
   updated_at: String(r.updated_at),
 });
 
-const toOkrKeyResult = (r: Row): T.OkrKeyResult => ({
+const toOkrKeyResult = (r: Row): Omit<T.OkrKeyResult, keyof T.OkrKeyResultStrategy> => ({
   id: String(r.id),
   objective_id: String(r.objective_id),
   title: String(r.title),

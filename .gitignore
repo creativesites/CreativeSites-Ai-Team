@@ -31,3 +31,6 @@ apps/desktop/src-tauri/gen/
 
 # Knowledge & Intelligence layer (KI) local state
 data/ki/
+
+# Client engagement terms (programme plan K6/K9): never commit
+engagements.local.json

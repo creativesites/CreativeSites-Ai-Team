@@ -317,6 +317,7 @@ export function CoworkersScreen({
                     {isLimited
                       ? `Session limit active — resets at ${fmtTime(a.rateLimitResetAt)} (${a.rateLimitReason ?? 'usage limit'})`
                       : (a.auth?.detail ?? 'Not probed')}
+                    {a.auth?.account?.label ? ` · Account: ${a.auth.account.label}` : ''}
                   </span>
                   {isLimited ? (
                     <Tag tone="needs-you">Resets {fmtTime(a.rateLimitResetAt)}</Tag>

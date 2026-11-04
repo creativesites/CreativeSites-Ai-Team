@@ -3,6 +3,9 @@ name: intake-triage
 description: Standard operating procedure for evaluating incoming user requests or jobs and routing them to Tier 1 (Direct Execution), Tier 2 (Multi-Agent Modular Task), or Tier 3 (Council of Planners).
 version: 1.0.0
 owner: The Orchestrator
+triggers: [triage, new request, intake, duplicate, route, classify]
+workflows: []
+roles: [orchestrator, lead]
 inputs:
   - user_request: string
   - project_context: string

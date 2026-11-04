@@ -69,6 +69,8 @@ async function runTerminal(command, args) {
   };
 }
 
+let mcpServers = [];
+
 async function handlePrompt(message) {
   const promptText = (message.params?.prompt ?? [])
     .map((part) => (part?.type === 'text' ? part.text : ''))
@@ -76,6 +78,88 @@ async function handlePrompt(message) {
   currentPrompt = { id: message.id, cancelled: false };
   agentText('working');
   try {
+    // Dispatcher scenarios: `myaos-slow-ms: N` holds the turn open, `myaos-task-file: <name> <word>`
+    // writes <word> into <name> in the working folder (the task worktree).
+    const slowMs = promptText.match(/myaos-slow-ms: (\d+)/);
+    const taskFile = promptText.match(/myaos-task-file: (\S+) ([^\s"]+)/);
+    if (slowMs || taskFile) {
+      if (slowMs) await sleep(Number(slowMs[1]));
+      if (taskFile) {
+        const result = await request('fs/write_text_file', { sessionId, path: join(cwd, taskFile[1]), content: `${taskFile[2]}\n` });
+        agentText(result.error ? `write failed: ${result.error.message}` : `wrote ${taskFile[1]}`);
+      } else {
+        agentText('slow task done');
+      }
+      respond(message.id, { stopReason: 'end_turn' });
+      return;
+    }
+    // Planning Council scenarios (WP3). A seat looks for its own line in the brief:
+    //   fake-card <identityId> r<round|*>: A=9 B=3 vote=dissent
+    // and submits exactly those scores through council_card_submit. No line: it submits nothing.
+    if (/myaos-council-seat|myaos-council-synthesise/.test(promptText)) {
+      const server = mcpServers.find((m) => m.type === 'http' && m.name === 'myaos');
+      if (!server) {
+        agentText('no myaos MCP server offered');
+        respond(message.id, { stopReason: 'end_turn' });
+        return;
+      }
+      const headers = Object.fromEntries((server.headers ?? []).map((h) => [h.name, h.value]));
+      const rpc = async (method, params) => {
+        const res = await fetch(server.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }) });
+        return res.json();
+      };
+      if (/myaos-council-synthesise/.test(promptText)) {
+        const out = await rpc('tools/call', {
+          name: 'plan_submit',
+          arguments: { summary: 'Fake synthesised plan from the council verdict', risk: 'medium', criteria: ['Synthesised criterion'], tasks: [{ key: 'k1', title: 'Fake synthesised task', criteriaRefs: [0] }] },
+        });
+        agentText(`plan_submit isError=${out.result?.isError} ${JSON.stringify(out.result?.content ?? out.error ?? null).slice(0, 400)}`);
+        respond(message.id, { stopReason: 'end_turn' });
+        return;
+      }
+      const me = promptText.match(/Seat identity: (\S+)/)?.[1];
+      const round = Number(promptText.match(/Council round: (\d+)/)?.[1] ?? 1);
+      const lines = [...promptText.matchAll(/fake-card (\S+) r(\d+|\*): ([^\n]+)/g)].filter((m) => m[1] === me && (m[2] === '*' || Number(m[2]) === round));
+      const line = lines.find((m) => m[2] !== '*') ?? lines[0];
+      if (!line) {
+        agentText(`seat ${me}: no fake card for round ${round}; submitting nothing`);
+        respond(message.id, { stopReason: 'end_turn' });
+        return;
+      }
+      const scores = {};
+      let vote = 'endorse';
+      for (const [, k, v] of line[3].matchAll(/(\w+)=(\S+)/g)) {
+        if (k === 'vote') vote = v;
+        else scores[k] = Number(v);
+      }
+      const out = await rpc('tools/call', {
+        name: 'council_card_submit',
+        arguments: { round, scores, vote, rationale: `fake ${me} round ${round} rationale`, wouldHaveToBeTrue: `fake ${me}: evidence that the other option is cheaper` },
+      });
+      agentText(`council_card_submit isError=${out.result?.isError} ${JSON.stringify(out.result?.content ?? out.error ?? null).slice(0, 400)}`);
+      respond(message.id, { stopReason: 'end_turn' });
+      return;
+    }
+    if (/use myaos tools/i.test(promptText)) {
+      // Behave like an MCP client: list the runtime's tools, then report through them.
+      const server = mcpServers.find((m) => m.type === 'http' && m.name === 'myaos');
+      if (!server) {
+        agentText('no myaos MCP server offered');
+        respond(message.id, { stopReason: 'end_turn' });
+        return;
+      }
+      const headers = Object.fromEntries((server.headers ?? []).map((h) => [h.name, h.value]));
+      const rpc = async (method, params) => {
+        const res = await fetch(server.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }) });
+        return res.json();
+      };
+      const list = await rpc('tools/list', {});
+      const names = (list.result?.tools ?? []).map((t) => t.name).join(',');
+      const report = await rpc('tools/call', { name: 'task_report', arguments: { summary: 'fake agent progress via MCP' } });
+      agentText(`myaos tools: ${names}; task_report isError=${report.result?.isError}`);
+      respond(message.id, { stopReason: 'end_turn' });
+      return;
+    }
     if (/report usage/i.test(promptText)) {
       update({
         sessionUpdate: 'usage_update',
@@ -247,15 +331,20 @@ rl.on('line', (line) => {
     case 'initialize':
       respond(message.id, {
         protocolVersion: 1,
-        agentCapabilities: { loadSession: process.env.FAKE_LOAD_SESSION === '1' },
+        agentCapabilities: { loadSession: process.env.FAKE_LOAD_SESSION === '1', mcpCapabilities: { http: process.env.FAKE_NO_MCP !== '1' } },
         agentInfo: { name: 'fake-acp-agent', title: 'Fake ACP agent (harness self-test)', version: '0.1.0' },
         authMethods: [],
       });
       break;
     case 'session/new':
-      respond(message.id, { sessionId });
+      mcpServers = message.params?.mcpServers ?? [];
+      respond(message.id, {
+        sessionId,
+        ...(process.env.FAKE_MODEL_ID ? { models: { currentModelId: process.env.FAKE_MODEL_ID, availableModels: [{ modelId: process.env.FAKE_MODEL_ID }] } } : {}),
+      });
       break;
     case 'session/load':
+      mcpServers = message.params?.mcpServers ?? [];
       sessionId = message.params?.sessionId ?? sessionId;
       agentText(`resumed session: ${sessionId}`);
       respond(message.id, { sessionId });

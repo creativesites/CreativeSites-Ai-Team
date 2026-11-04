@@ -1,11 +1,18 @@
 import os from 'node:os';
+import { decideSessionAccount, ISOLATION_PREFIX, startSessionUsage } from '../usage/session-hooks.ts';
+import type { DatabaseSync } from 'node:sqlite';
+import { issueAgentToken, revokeSessionTokens } from '../agent-tools/tokens.ts';
 import path from 'node:path';
 import type * as T from '../api/types.ts';
-import { ADAPTER_PRESETS, findExecutable } from '../adapters.ts';
+import { ADAPTER_PRESETS, adapterBlockReason, adapterInfo, findExecutable } from '../adapters.ts';
 import type { Checker } from '../checks.ts';
-import { ConflictError, InputError, type Repo } from '../store/repo.ts';
+import { ConflictError, ForbiddenError, InputError, type Repo } from '../store/repo.ts';
 import { compileBatonCapsule, shouldRotateSession } from './baton.ts';
+import { afterTurn, emitSessionRenewed } from './renewal.ts';
+import { extractModelId, mapAcpUsage, providerOfAdapter } from '../usage/mapAcpUsage.ts';
+import { checkBudgets } from '../usage/budgets.ts';
 import { AcpClient, AcpError, type PermissionOption, type PermissionOutcome, type PermissionRequest } from './client.ts';
+import { skillServiceFor } from '../skills/service.ts';
 
 export interface StartSessionInput {
   jobId?: string | null;
@@ -425,15 +432,61 @@ export class SessionManager {
     this.hooks = hooks;
   }
 
+  private agentTools: { db: DatabaseSync; url: () => string | null } | null = null;
+
+  /** Enables the agent action interface (K4): each agent process gets a fresh session-bound token. */
+  enableAgentTools(opts: { db: DatabaseSync; url: () => string | null }): void {
+    this.agentTools = opts;
+  }
+
+  /**
+   * MCP servers offered to an agent process. Any earlier token for the session is revoked first,
+   * so only the live process can act. The actor of every call is the token's identity.
+   */
+  private agentToolServers(sessionId: string, agent: T.Identity, jobId: string | null, taskId: string | null): unknown[] {
+    const tools = this.agentTools;
+    const base = tools?.url();
+    if (!tools || !base) return [];
+    revokeSessionTokens(tools.db, sessionId);
+    const role =
+      agent.approvalLevel === 'lead' || agent.approvalLevel === 'owner'
+        ? 'lead'
+        : /plan|orchestrat/i.test(agent.role ?? '') || agent.departmentId === 'planning-strategy'
+          ? 'planner'
+          : 'member';
+    const { token } = issueAgentToken(tools.db, { identityId: agent.id, sessionId, jobId, taskId, role });
+    return [{ type: 'http', name: 'myaos', url: `${base}/mcp`, headers: [{ name: 'Authorization', value: `Bearer ${token}` }] }];
+  }
+
   async start(input: StartSessionInput): Promise<T.Session> {
     const agent = this.repo.getIdentity(input.agentId);
     const job = input.jobId ? this.repo.getJob(input.jobId) : null;
     const room = input.roomId ? this.repo.getRoom(input.roomId) : job ? this.repo.getRoom(job.roomId) : null;
     const task = input.taskId ? this.repo.getTask(input.taskId) : null;
     if (task && job && task.jobId !== job.id) throw new InputError('task belongs to a different job');
-    if (job) this.repo.assertBudget(job.id, 0);
+    if (task && task.status === 'pending' && !this.repo.dependenciesMet(task.id)) {
+      throw new ConflictError('This task depends on work that is not done yet');
+    }
 
     const adapter = this.resolveAdapter(input.adapterId ?? agent.adapterId ?? agent.runtime);
+
+    // K9: client work runs only on that client's AI account, and that account runs only that client's work.
+    let usageAccountId: string | null = null;
+    if (this.agentTools) {
+      const projectId = job?.projectId ?? room?.projectId ?? null;
+      const decision = decideSessionAccount(this.agentTools.db, projectId, adapterInfo(adapter.id)?.auth.account?.id ?? null);
+      if (!decision.ok) throw new ForbiddenError(`${ISOLATION_PREFIX}${decision.reason} Nothing was started.`);
+      usageAccountId = decision.accountId;
+    }
+
+    // K6/WP10 10.4: budgets are checked before every prompt send, including this first one.
+    checkBudgets(this.repo, {
+      agentId: agent.id,
+      taskId: task?.id ?? null,
+      jobId: job?.id ?? null,
+      projectId: job?.projectId ?? room?.projectId ?? null,
+      accountId: usageAccountId,
+    });
 
     let worktreePath = input.worktree ?? room?.repoPath ?? process.cwd() ?? os.homedir();
     let baseSha: string | null = null;
@@ -441,7 +494,16 @@ export class SessionManager {
 
     if (job) {
       try {
-        const worktree = await this.checker.worktreeForJob(job);
+        // K8: a task runs in its own worktree and branch; anything else shares the job worktree.
+        let worktree: { path: string; baseSha: string } | null = null;
+        if (task) {
+          try {
+            worktree = await this.checker.worktreeForTask(job, task);
+          } catch {
+            worktree = null; // fall back to the job worktree below
+          }
+        }
+        if (!worktree) worktree = await this.checker.worktreeForJob(job);
         worktreePath = worktree.path;
         baseSha = worktree.baseSha;
         baseBranch = `myaos/job-${job.number}`;
@@ -466,8 +528,16 @@ export class SessionManager {
       batonCapsule: input.batonCapsule ?? null,
     });
 
-    if (task && task.status === 'pending') {
-      this.repo.updateTask(task.id, { status: 'running' });
+    if (task) this.startTask(task, agent.id);
+    if (this.agentTools && usageAccountId) {
+      startSessionUsage(this.agentTools.db, {
+        accountId: usageAccountId,
+        sessionId: session.id,
+        taskId: task?.id ?? null,
+        jobId: job?.id ?? null,
+        agentId: agent.id,
+        taskType: (job as { workflow?: string | null } | null)?.workflow ?? job?.kind ?? null,
+      });
     }
 
     if (input.batonCapsule) {
@@ -501,7 +571,9 @@ export class SessionManager {
       args: adapter.args,
       cwd: worktreePath,
       worktree: worktreePath,
-      env: { ...process.env, ...this.env, ...(adapter.env ?? {}) },
+      // Only runtime-provided extras here: AcpClient adds the allowlisted part of process.env (security S3).
+      env: { ...this.env, ...(adapter.env ?? {}) },
+      mcpServers: this.agentToolServers(session.id, agent, job?.id ?? null, task?.id ?? null),
       handlers: {
         onUpdate: (_acpSessionId, update) => {
           if (!live.closed) this.handleUpdate(session.id, update);
@@ -563,7 +635,7 @@ export class SessionManager {
     opts?: { prompt?: string; taskId?: string | null; reason?: string }
   ): Promise<T.SessionRotationResult> {
     const existing = this.repo.getSession(sessionId);
-    const { capsule, previousContextTokens, capsuleTokens } = compileBatonCapsule(this.repo, sessionId);
+    const { capsule, previousContextTokens, capsuleTokens, continuation } = compileBatonCapsule(this.repo, sessionId);
     const estimatedSavedTokens = Math.max(0, previousContextTokens - capsuleTokens);
 
     // Close live subprocess on old session if still active
@@ -592,6 +664,15 @@ export class SessionManager {
       prompt: nextPrompt,
     });
 
+    this.repo.updateSession(newSession.id, { continuationPackage: continuation as unknown as Record<string, unknown> });
+    emitSessionRenewed(this.repo, {
+      from: sessionId,
+      to: newSession.id,
+      reason: opts?.reason ?? 'manual',
+      agentId: existing.agentId,
+      jobId: existing.jobId ?? null,
+      taskId: existing.taskId ?? null,
+    });
     this.repo.appendTranscript(sessionId, {
       kind: 'session_rotated',
       role: 'system',
@@ -629,17 +710,27 @@ export class SessionManager {
     const cleanText = stripCoordinationBoilerplate(text);
     const existing = this.repo.getSession(sessionId);
 
-    // Check if the session has crossed our internal token/turn threshold and should relay the baton
-    if (!opts?.skipAutoRotate) {
-      const rotCheck = shouldRotateSession(this.repo, existing, opts?.taskId);
-      if (rotCheck.rotate) {
-        const rotated = await this.rotate(sessionId, {
-          prompt: cleanText,
-          taskId: opts?.taskId,
-          reason: rotCheck.reason,
-        });
-        return rotated.newSession;
-      }
+    // K6: budgets are checked before every prompt send. A hard limit refuses with a 409 and opens a Needs You card.
+    checkBudgets(this.repo, this.budgetContextFor(existing));
+
+    // K7: ONE renewal decision (baton.shouldRotateSession). At the renew band the prompt is carried into a
+    // fresh generation; at the block band a prompt that cannot be carried (skipAutoRotate, or auto-renew off)
+    // is refused unless the owner set renewal.allowOverBlock.
+    const rotCheck = shouldRotateSession(this.repo, existing, opts?.taskId);
+    const autoRenew = this.repo.getSetting('renewal.autoRenew') !== false;
+    if (rotCheck.blocked && (opts?.skipAutoRotate || !autoRenew)) {
+      throw new ConflictError(
+        `This session is at the context block level (${rotCheck.pct != null ? `${rotCheck.pct}% of its ${rotCheck.contextWindow}-token window` : `about ${rotCheck.contextTokens} tokens, ${rotCheck.measurement}`}). ` +
+          'Renew it (POST /v1/sessions/:id/rotate) or set renewal.allowOverBlock to true to send anyway. Nothing was sent.'
+      );
+    }
+    if (!opts?.skipAutoRotate && autoRenew && rotCheck.rotate) {
+      const rotated = await this.rotate(sessionId, {
+        prompt: cleanText,
+        taskId: opts?.taskId,
+        reason: rotCheck.reason,
+      });
+      return rotated.newSession;
     }
 
     const live = this.live.get(sessionId);
@@ -647,24 +738,10 @@ export class SessionManager {
       this.repo.appendTranscript(sessionId, { kind: 'prompt', role: 'user', payload: { text: cleanText } });
       this.repo.updateSession(sessionId, { state: 'running' });
       const result = await live.client.prompt(text);
-      if (result && typeof result === 'object' && 'usage' in result && result.usage) {
-        const u = result.usage as Record<string, unknown>;
-        const inputTokens = Number(u.inputTokens ?? u.input_tokens ?? 0) || 0;
-        const outputTokens = Number(u.outputTokens ?? u.output_tokens ?? 0) || 0;
-        const costCents = Number(u.costCents ?? u.cost_cents ?? 0) || 0;
-        if (inputTokens || outputTokens || costCents) {
-          this.repo.recordUsage({
-            jobId: live.jobId,
-            sessionId: live.sessionId,
-            inputTokens,
-            outputTokens,
-            costCents,
-            source: 'acp',
-          });
-        }
-      }
+      this.recordTurnUsage(live, result.usage);
       this.repo.appendTranscript(sessionId, { kind: 'turn', role: 'system', payload: result });
       this.repo.updateSession(sessionId, { state: 'idle' });
+      afterTurn(this.repo, sessionId);
       return this.repo.getSession(sessionId);
     }
 
@@ -686,7 +763,8 @@ export class SessionManager {
       args: adapter.args,
       cwd: worktreePath,
       worktree: worktreePath,
-      env: { ...process.env, ...this.env, ...(adapter.env ?? {}) },
+      env: { ...this.env, ...(adapter.env ?? {}) },
+      mcpServers: this.agentToolServers(sessionId, agent, existing.jobId ?? null, existing.taskId ?? null),
       handlers: {
         onUpdate: (_acpSessionId, update) => {
           if (!resumedLive.closed) this.handleUpdate(sessionId, update);
@@ -756,7 +834,8 @@ export class SessionManager {
       live.cancelled = true;
       await live.client.close().catch(() => {});
     }
-    await Promise.allSettled([...this.runs.values()]);
+    // Runs settle once their client is closed; never let a stuck one block shutdown.
+    await Promise.race([Promise.allSettled([...this.runs.values()]), new Promise((r) => setTimeout(r, 10_000).unref())]);
     this.live.clear();
   }
 
@@ -795,11 +874,12 @@ export class SessionManager {
     try {
       if (live.jobId) {
         try {
-          await this.checker.snapshot(live.jobId, `runtime:before`);
+          await this.checker.snapshot(live.jobId, `runtime:before`, live.taskId);
         } catch {
           /* non-git or clean worktree */
         }
       }
+      if (live.closed) return; // shut down while preparing: do not start an agent process
       client.spawnProcess();
       this.repo.updateSession(live.sessionId, { state: 'starting', pid: client.pid });
       const init = await client.initialize();
@@ -807,33 +887,21 @@ export class SessionManager {
       const acpSessionId = opened.acpSessionId;
       live.acpSessionId = acpSessionId;
       const agentInfo = (init.agentInfo ?? {}) as { name?: string };
+      // `model` keeps the ACP agent name for compatibility; `modelId` is the real model the adapter reports (WP10 10.1).
+      const reportedModelId = extractModelId(init, client.newSessionResult);
       this.repo.updateSession(live.sessionId, {
         state: 'running',
         pid: client.pid,
         acpSessionId,
         model: agentInfo.name ?? null,
+        ...(reportedModelId ? { modelId: reportedModelId } : {}),
       });
 
       const result = await client.prompt(opened.prompt);
       if (live.closed) return;
 
-      if (result.usage) {
-        const u = result.usage as Record<string, unknown>;
-        const inputTokens = Number(u.inputTokens ?? u.input_tokens ?? u.tokensIn ?? 0) || 0;
-        const outputTokens = Number(u.outputTokens ?? u.output_tokens ?? u.tokensOut ?? 0) || 0;
-        const costCents = Number(u.costCents ?? u.cost_cents ?? (typeof u.cost === 'object' && u.cost ? (u.cost as any).amount : 0)) || 0;
-        if (inputTokens || outputTokens || costCents) {
-          this.repo.recordUsage({
-            jobId: live.jobId,
-            sessionId: live.sessionId,
-            model: (u.model as string) ?? null,
-            inputTokens,
-            outputTokens,
-            costCents,
-            source: 'acp',
-          });
-        }
-      }
+      this.recordTurnUsage(live, result.usage);
+      afterTurn(this.repo, live.sessionId);
 
       this.repo.appendTranscript(live.sessionId, {
         kind: 'turn_end',
@@ -845,8 +913,8 @@ export class SessionManager {
       let checkPassed = false;
       if (live.jobId && !live.closed) {
         try {
-          await this.checker.snapshot(live.jobId, `runtime:after`);
-          const commit = await this.checker.commitWorktree(live.jobId, `${live.agentId} session ${live.sessionId.slice(-6)}`);
+          await this.checker.snapshot(live.jobId, `runtime:after`, live.taskId);
+          const commit = await this.checker.commitWorktree(live.jobId, `${live.agentId} session ${live.sessionId.slice(-6)}`, live.taskId);
           if (commit.committed) {
             this.repo.appendTranscript(live.sessionId, {
               kind: 'commit',
@@ -862,9 +930,9 @@ export class SessionManager {
           if (task.checkCommand) {
             const check = await this.checker.runTaskCheck(live.jobId, task.id);
             checkPassed = check.result.exitCode === 0;
-            this.repo.updateTask(task.id, { status: checkPassed ? 'done' : 'failed' });
+            this.finishTask(task, checkPassed, checkPassed ? null : `check exited ${check.result.exitCode}`);
           } else {
-            this.repo.updateTask(task.id, { status: 'done' });
+            this.finishTask(task, true, null);
             checkPassed = true;
           }
         }
@@ -910,11 +978,7 @@ export class SessionManager {
       });
       this.repo.updateSession(live.sessionId, { state: 'failed', error: message });
       if (live.taskId) {
-        try {
-          this.repo.updateTask(live.taskId, { status: rl ? 'blocked' : 'failed' });
-        } catch {
-          /* task may have been removed */
-        }
+        this.moveTask(live.taskId, rl ? 'blocked' : 'failed', rl ? `rate limited: ${rl.reason}` : message);
       }
     } finally {
       live.closed = true;
@@ -953,6 +1017,84 @@ export class SessionManager {
       };
     }
     return { acpSessionId, prompt };
+  }
+
+  /** Records what an ACP `usage_update` reported. A context-only update records the window, not tokens. */
+  private recordUpdateUsage(live: LiveSession, update: Record<string, unknown>): void {
+    const m = mapAcpUsage(update);
+    if (m.measurement === 'unavailable') return;
+    this.persistUsage(live, m, 'acp');
+  }
+
+  /** Records a finished turn's usage; a turn that reported nothing is stored as 'unavailable', never as zero. */
+  private recordTurnUsage(live: LiveSession, usage: Record<string, unknown> | undefined): void {
+    const m = mapAcpUsage(usage ? { usage } : {});
+    if (m.measurement === 'unavailable') {
+      this.repo.recordUsage({
+        jobId: live.jobId,
+        sessionId: live.sessionId,
+        agentId: live.agentId,
+        taskId: live.taskId,
+        provider: providerOfAdapter(live.adapterId),
+        measurement: 'unavailable',
+        source: 'acp',
+      });
+    } else {
+      this.persistUsage(live, m, 'acp');
+    }
+  }
+
+  private persistUsage(live: LiveSession, m: ReturnType<typeof mapAcpUsage>, source: string): void {
+    this.repo.recordUsage({
+      jobId: live.jobId,
+      sessionId: live.sessionId,
+      agentId: live.agentId,
+      taskId: live.taskId,
+      provider: providerOfAdapter(live.adapterId),
+      modelId: m.modelId ?? this.sessionModelId(live.sessionId),
+      inputTokens: m.inputTokens,
+      outputTokens: m.outputTokens,
+      cachedInputTokens: m.cachedInputTokens,
+      cacheWriteTokens: m.cacheWriteTokens,
+      reasoningTokens: m.reasoningTokens,
+      costCents: m.costCents,
+      contextUsed: m.contextUsed,
+      contextSize: m.contextSize,
+      measurement: m.measurement,
+      source,
+    });
+    if (m.modelId && !this.sessionModelId(live.sessionId)) this.repo.updateSession(live.sessionId, { modelId: m.modelId });
+  }
+
+  private sessionModelId(sessionId: string): string | null {
+    try {
+      return this.repo.getSession(sessionId).modelId ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private budgetContextFor(session: T.Session): Parameters<typeof checkBudgets>[1] {
+    const job = session.jobId ? this.repo.getJob(session.jobId) : null;
+    const room = session.roomId ? this.repo.getRoom(session.roomId) : null;
+    let accountId: string | null = null;
+    try {
+      const row = this.repo
+        .sqlite()
+        .prepare('SELECT account_id FROM task_usage WHERE session_id = ? ORDER BY rowid DESC LIMIT 1')
+        .get(session.id) as { account_id?: string } | undefined;
+      accountId = row?.account_id ?? null;
+    } catch {
+      /* older store */
+    }
+    return {
+      agentId: session.agentId,
+      sessionId: session.id,
+      taskId: session.taskId ?? null,
+      jobId: session.jobId ?? null,
+      projectId: job?.projectId ?? room?.projectId ?? null,
+      accountId,
+    };
   }
 
   private handleUpdate(sessionId: string, update: Record<string, unknown>): void {
@@ -997,27 +1139,61 @@ export class SessionManager {
       return;
     }
     if (kind === 'usage_update' || kind === 'usage' || Boolean(update.usage)) {
-      const u = (update.usage && typeof update.usage === 'object' ? update.usage : update) as Record<string, unknown>;
-      const inputTokens = Number(u.inputTokens ?? u.input_tokens ?? u.tokensIn ?? 0) || 0;
-      const outputTokens = Number(u.outputTokens ?? u.output_tokens ?? u.tokensOut ?? 0) || 0;
-      const costCents = Number(u.costCents ?? u.cost_cents ?? (typeof u.cost === 'object' && u.cost ? (u.cost as any).amount : 0)) || 0;
-      if (inputTokens || outputTokens || costCents) {
-        this.repo.recordUsage({
-          jobId: live.jobId,
-          sessionId: live.sessionId,
-          model: (u.model as string) ?? null,
-          inputTokens,
-          outputTokens,
-          costCents,
-          source: 'acp',
-        });
-      }
+      this.recordUpdateUsage(live, update);
     }
     this.repo.appendTranscript(sessionId, {
       kind,
       role: 'system',
       payload: update,
     });
+  }
+
+  /** Routes a runtime-driven task move through the K3 transition function; illegal or stale moves are skipped. */
+  private moveTask(taskId: string, to: T.TaskStatus, reason: string | null, actorId = 'runtime:session', actorKind: T.ActorKind = 'system'): boolean {
+    try {
+      this.repo.transitionTask(taskId, to, { actorId, actorKind, reason });
+      return true;
+    } catch (e) {
+      if (e instanceof ConflictError || (e as Error).constructor.name === 'NotFoundError') return false;
+      throw e;
+    }
+  }
+
+  /** Session start: pending->assigned->acknowledged->running (or the later part of that path). */
+  private startTask(task: T.Task, agentId: string): void {
+    let status = task.status;
+    if (status === 'pending') {
+      try {
+        this.repo.transitionTask(task.id, 'assigned', {
+          actorId: 'runtime:session',
+          actorKind: 'system',
+          assigneeId: task.assigneeId ?? agentId,
+          reason: 'session started',
+        });
+      } catch (e) {
+        if (!(e instanceof ConflictError)) throw e;
+        return;
+      }
+      status = 'assigned';
+    }
+    if (status === 'assigned') {
+      if (!this.moveTask(task.id, 'acknowledged', 'session started', agentId, 'agent')) return;
+      status = 'acknowledged';
+    }
+    if (status === 'acknowledged' || status === 'blocked') this.moveTask(task.id, 'running', 'session started', agentId, 'agent');
+  }
+
+  /**
+   * A finished turn: a passing check completes the task, or sends it to review when it
+   * requires verification; a failing check fails it. The runtime, not the assignee, makes the move.
+   */
+  private finishTask(task: T.Task, passed: boolean, failure: string | null): void {
+    if (!passed) {
+      this.moveTask(task.id, 'failed', failure);
+      return;
+    }
+    const to: T.TaskStatus = task.verificationRequired ? 'needs_review' : 'done';
+    this.moveTask(task.id, to, 'check passed');
   }
 
   private async handlePermission(
@@ -1119,6 +1295,19 @@ export class SessionManager {
     return { outcome: 'cancelled' };
   }
 
+  /**
+   * Why work given to this agent could not start now (adapter missing, signed out, unsupported),
+   * or null when it can. Used by the dispatcher so it never assigns a task it cannot start.
+   */
+  adapterBlockedReason(agent: T.Identity): string | null {
+    try {
+      this.resolveAdapter(agent.adapterId ?? agent.runtime);
+      return null;
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }
+
   private resolveAdapter(requested?: string | null): { id: string; command: string; args: string[]; name: string; env?: Record<string, string> } {
     const key = requested ? (RUNTIME_TO_ADAPTER[requested.toLowerCase()] ?? requested.toLowerCase()) : 'claude';
     const override = this.repo.listAdapterOverrides().find((r) => String(r.id) === key);
@@ -1138,8 +1327,26 @@ export class SessionManager {
     if (!binary) {
       throw new ConflictError(`${preset.name} is not installed (looked for ${preset.command}). Nothing was started.`);
     }
+    // WP0-T6: an adapter that is known to be unusable (signed out, unsupported) receives no work.
+    const probed = adapterInfo(preset.id);
+    const blocked = probed ? adapterBlockReason(probed) : null;
+    if (blocked) throw new ConflictError(`${blocked} Nothing was started.`);
     const requires = preset.id === 'codex' ? findExecutable('codex') : null;
     return { id: preset.id, command: binary, args: preset.args, name: preset.name, env: pathEnv(binary, requires) };
+  }
+
+  /** Skills for this task (WP8): selected once when the task's session starts, pinned by content hash. */
+  private skillBlockFor(job: T.JobDetail, task: T.Task | null): string {
+    const svc = skillServiceFor(this.repo);
+    if (!svc || !task) return '';
+    try {
+      svc.selectSkills(task, job);
+      const packet = svc.skillPacket(task.id);
+      return packet ? `\nSkills for this task (follow them; skill_read gives the full text):\n${packet}` : '';
+    } catch (e) {
+      console.warn('[runtime] skills: could not prepare the skill packet:', (e as Error).message);
+      return '';
+    }
   }
 
   private buildPrompt(job: T.JobDetail | null, room: T.Room | null, task: T.Task | null, agent: T.Identity, override?: string): string {
@@ -1191,6 +1398,13 @@ export class SessionManager {
       '  - Self-checkpoint at the end of every turn (preserves your hot working memory across token-lean session relays):',
       '    [STATE: done=<what you finished> | active=<files/focus> | next=<immediate next step>]'
     );
+    if (this.agentTools) {
+      teamStatusLines.push(
+        'MyaOS tools (MCP server "myaos", if your client lists it): job_get (read your job), task_report (short progress),',
+        '  evidence_add (tests/commits you produced; stored as DECLARED), thread_post (job room), blocker_raise (you need a decision or access),',
+        '  usage_report / context_report. You act only as yourself, only on this job and task. You cannot mark work verified or done.'
+      );
+    }
 
     if (override?.trim()) {
       return [override.trim(), ...teamStatusLines].join('\n');
@@ -1205,6 +1419,7 @@ export class SessionManager {
     }
 
     const criteria = job.criteria.map((c, idx) => `${idx + 1}. ${c.text}`).join('\n');
+    const skillBlock = this.skillBlockFor(job, task);
     return [
       `Job #${job.number}: ${job.title} (kind: ${job.kind ?? 'code'})`,
       job.brief ? `\nBrief:\n${job.brief}` : '',
@@ -1213,6 +1428,7 @@ export class SessionManager {
       task ? `\nYour task (${agent.name}): ${task.title}` : '',
       task?.checkCommand ? `Check command the runtime will run after your turn: ${task.checkCommand}` : '',
       '\nWork only inside the current workspace directory.',
+      skillBlock,
       ...teamStatusLines,
     ]
       .filter(Boolean)

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { agentEnv } from '../agent-tools/env.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -62,6 +63,8 @@ export interface AcpClientOptions {
   worktree: string;
   handlers: AcpClientHandlers;
   env?: NodeJS.ProcessEnv;
+  /** MCP servers offered to the agent (the runtime's agent action interface, K4). */
+  mcpServers?: unknown[];
 }
 
 interface TerminalState {
@@ -128,9 +131,11 @@ export class AcpClient {
   }
 
   spawnProcess(): void {
+    // A client that has been closed must never start a process (shutdown racing a session that had not spawned yet).
+    if (this.closing) throw new AcpError(-32001, 'client closed before the agent process started');
     this.child = spawn(this.opts.command, this.opts.args, {
       cwd: this.opts.cwd,
-      env: { ...process.env, ...(this.opts.env ?? {}) },
+      env: agentEnv(process.env, (this.opts.env ?? {}) as Record<string, string>),
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: true,
     });
@@ -162,11 +167,31 @@ export class AcpClient {
   }
 
   async newSession(timeoutMs = 60_000): Promise<string> {
-    const result = (await this.request('session/new', { cwd: this.opts.worktree, mcpServers: [] }, timeoutMs)) as { sessionId?: string };
+    const result = (await this.request('session/new', { cwd: this.opts.worktree, mcpServers: this.offeredMcpServers() }, timeoutMs)) as { sessionId?: string };
     if (!result?.sessionId) throw new AcpError(-32002, 'session/new returned no sessionId');
+    this.newSessionResult = result as Record<string, unknown>;
     this.sessionId = result.sessionId;
     return result.sessionId;
   }
+
+  /**
+   * MCP servers the agent can actually use. ACP agents must support stdio; HTTP is optional and
+   * advertised as `agentCapabilities.mcpCapabilities.http`. HTTP servers are dropped for agents
+   * that do not advertise it (they fall back to bracket directives), and that is recorded.
+   */
+  offeredMcpServers(): unknown[] {
+    const servers = this.opts.mcpServers ?? [];
+    const caps = ((this.initializeResult?.agentCapabilities ?? {}) as { mcpCapabilities?: { http?: boolean } }).mcpCapabilities;
+    const kept = servers.filter((sv) => (sv as { type?: string }).type !== 'http' || caps?.http === true);
+    this.mcpDropped = servers.length - kept.length;
+    return kept;
+  }
+
+  /** How many offered MCP servers the agent could not take (0 when all were offered). */
+  mcpDropped = 0;
+
+  /** The raw `session/new` or `session/load` result, kept so the runtime can read the model id the adapter reports. */
+  newSessionResult: Record<string, unknown> | null = null;
 
   /** True when the adapter advertised `agentCapabilities.loadSession` during initialize. */
   get canLoadSession(): boolean {
@@ -183,10 +208,11 @@ export class AcpClient {
     if (!this.canLoadSession) throw new AcpError(-32601, 'adapter does not advertise session/load');
     const result = (await this.request(
       'session/load',
-      { sessionId: acpSessionId, cwd: this.opts.worktree, mcpServers: [] },
+      { sessionId: acpSessionId, cwd: this.opts.worktree, mcpServers: this.offeredMcpServers() },
       timeoutMs
     )) as { sessionId?: string } | undefined;
     const resolvedId = result?.sessionId || acpSessionId;
+    if (result && typeof result === 'object') this.newSessionResult = result as Record<string, unknown>;
     this.sessionId = resolvedId;
     return resolvedId;
   }
@@ -209,6 +235,16 @@ export class AcpClient {
 
   async close(graceMs = 4000): Promise<void> {
     this.closing = true;
+    try {
+      await this.stopProcess(graceMs);
+    } finally {
+      // Whatever the process did (even if its exit event never arrives), nothing may stay waiting on it:
+      // a prompt left pending would keep the session run, and runtime shutdown, waiting forever.
+      this.rejectPending(new AcpError(-32001, 'client closed'));
+    }
+  }
+
+  private async stopProcess(graceMs: number): Promise<void> {
     for (const state of this.terminals.values()) {
       if (!state.exit) {
         try {
@@ -418,7 +454,7 @@ export class AcpClient {
     const command = String(params.command ?? '');
     const args = Array.isArray(params.args) ? params.args.map(String) : [];
     const envAdditions = Array.isArray(params.env) ? (params.env as { name?: string; value?: string }[]) : [];
-    const env: NodeJS.ProcessEnv = { ...process.env };
+    const env: NodeJS.ProcessEnv = agentEnv(process.env, (this.opts.env ?? {}) as Record<string, string>);
     for (const entry of envAdditions) if (entry?.name) env[entry.name] = String(entry.value ?? '');
     const limit = Number(params.outputByteLimit) > 0 ? Number(params.outputByteLimit) : MAX_OUTPUT;
     const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });

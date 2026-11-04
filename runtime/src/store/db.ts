@@ -33,9 +33,27 @@ function backupBeforeUpgrade(db: DatabaseSync, dbPath: string, from: number, to:
     const target = `${dbPath}.bak-v${from}-${stamp}`;
     fs.copyFileSync(dbPath, target);
     privateFile(target);
+    prunePreMigrationBackups(dbPath, 10);
   } catch (e) {
     console.warn(`[runtime] Could not back up the store before migration: ${(e as Error).message}`);
   }
+}
+
+/** Keeps only the newest `keep` pre-migration copies (`<db>.bak-v*`), oldest removed first. */
+export function prunePreMigrationBackups(dbPath: string, keep: number): string[] {
+  const dir = path.dirname(dbPath);
+  const prefix = `${path.basename(dbPath)}.bak-v`;
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.startsWith(prefix))
+    .map((f) => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs }))
+    .sort((a, b) => b.t - a.t || (a.f < b.f ? 1 : -1));
+  const removed: string[] = [];
+  for (const { f } of files.slice(keep)) {
+    fs.rmSync(path.join(dir, f), { force: true });
+    removed.push(f);
+  }
+  return removed;
 }
 
 /** Opens (creating if needed) the v2 store and brings its schema up to date. */
@@ -75,9 +93,14 @@ export function migrate(db: DatabaseSync, migrations: Migration[] = MIGRATIONS):
   );
   for (const m of [...migrations].sort((a, b) => a.version - b.version)) {
     if (applied.has(m.version)) continue;
+    if (m.foreignKeysOff) db.exec('PRAGMA foreign_keys = OFF');
     db.exec('BEGIN');
     try {
+      const violationsBefore = m.foreignKeysOff ? foreignKeyViolations(db) : 0;
       db.exec(m.sql);
+      if (m.foreignKeysOff && foreignKeyViolations(db) > violationsBefore) {
+        throw new Error('the table rebuild introduced foreign-key violations');
+      }
       db.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
         m.version,
         m.name,
@@ -87,9 +110,15 @@ export function migrate(db: DatabaseSync, migrations: Migration[] = MIGRATIONS):
     } catch (e) {
       db.exec('ROLLBACK');
       throw new Error(`Migration ${m.version} (${m.name}) failed: ${(e as Error).message}`);
+    } finally {
+      if (m.foreignKeysOff) db.exec('PRAGMA foreign_keys = ON');
     }
   }
   return schemaVersion(db);
+}
+
+function foreignKeyViolations(db: DatabaseSync): number {
+  return db.prepare('PRAGMA foreign_key_check').all().length;
 }
 
 export function schemaVersion(db: DatabaseSync): number {

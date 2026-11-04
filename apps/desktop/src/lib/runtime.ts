@@ -1,9 +1,33 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type {
+  Engagement,
+  LatestStandup,
+  ModelRegistryRow,
+  ScheduleRunRow,
+  SkillDetail,
+  SkillList,
+  TimeInterval,
+  TimelineItem,
+  TimeSummary,
+  Timesheet,
+} from '@/lib/wp11-types';
+import type {
+  AccountWeeklyUsage,
+  AiAccount,
+  AiAccountWithSnapshot,
+  AiLimitSnapshot,
+  AiSnapshotInput,
+  CreateAiAccountInput,
+  UsageAlertRecord,
+  UsageEstimateRow,
+} from '@runtime/usage-types';
+import type {
   AdapterInfo,
   AgentSchedule,
   AgentWake,
   Approval,
+  Blocker,
+  NeedsYouItem,
   ApprovalPolicy,
   ApproveDesignFrameInput,
   ApproveDesignFrameResult,
@@ -27,8 +51,10 @@ import type {
   CreateCriterionInput,
   CreateDesignBoardInput,
   CreateDesignFrameInput,
+  CreateDesignRequestInput,
   CreateEvidenceInput,
   CreateIdentityInput,
+  CreateIntakeInput,
   CreateJobInput,
   CreatePolicyInput,
   CreateProjectFolderInput,
@@ -38,12 +64,15 @@ import type {
   CreateScheduleInput,
   CreateSocialPostInput,
   CreateStandupInput,
+  IntakeResult,
   CreateTaskInput,
   CreateTeamInput,
   CreateThreadInput,
   DecideApprovalInput,
   DesignBoard,
   DesignFrame,
+  DesignFrameStatus,
+  DesignRequestResult,
   DirectoryListing,
   Evidence,
   DesignRun,
@@ -107,6 +136,7 @@ import type {
   UpdateProjectInput,
   UpdateScheduleInput,
   UpdateTaskInput,
+  TransitionTaskInput,
   VerifyEvidenceInput,
   WakeAgentInput,
   WakeAgentResult,
@@ -124,7 +154,7 @@ export interface RuntimeConnection {
 
 export type ConnectionState =
   | { status: 'connecting' }
-  | { status: 'connected'; connection: RuntimeConnection; health: Health }
+  | { status: 'connected'; connection: RuntimeConnection; health: Health; ownerKey?: OwnerKeyStatus }
   | { status: 'unavailable'; reason: string };
 
 export type {
@@ -163,8 +193,22 @@ export class RuntimeError extends Error {
   }
 }
 
+export interface OwnerKeyStatus {
+  /** 'ok': enrolled with this app's key; 'mismatch': a different key is enrolled; 'unavailable': not in the desktop app or Keychain failed. */
+  state: 'ok' | 'mismatch' | 'unavailable';
+  fingerprint: string | null;
+  detail?: string;
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export class RuntimeClient {
   connection: RuntimeConnection;
+  /** Owner key from the macOS Keychain (security review S1); sent only to the runtime on loopback. */
+  private ownerKey: string | null = null;
 
   constructor(connection: RuntimeConnection) {
     this.connection = connection;
@@ -176,6 +220,7 @@ export class RuntimeClient {
         method,
         headers: {
           Authorization: `Bearer ${conn.token}`,
+          ...(this.ownerKey ? { 'X-MyaOS-Owner-Key': this.ownerKey } : {}),
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -205,6 +250,37 @@ export class RuntimeClient {
     return data as T;
   }
 
+  /**
+   * Loads the owner key from the Keychain and enrols its hash with the runtime once. If the runtime
+   * already has a different key enrolled, report a mismatch: something else enrolled first.
+   */
+  async ensureOwnerKey(): Promise<OwnerKeyStatus> {
+    if (!isTauri()) return { state: 'unavailable', fingerprint: null, detail: 'Owner key needs the desktop app' };
+    let key: string;
+    try {
+      key = await invoke<string>('owner_key');
+    } catch (e) {
+      return { state: 'unavailable', fingerprint: null, detail: e instanceof Error ? e.message : String(e) };
+    }
+    const keyHash = await sha256Hex(key);
+    const mine = keyHash.slice(0, 16).replace(/(.{4})(?=.)/g, '$1-');
+    const status = await this.request<{ enrolled: boolean; fingerprint: string | null }>('GET', '/v1/owner-key');
+    if (!status.enrolled) {
+      await this.request('POST', '/v1/owner-key', { keyHash });
+      this.ownerKey = key;
+      return { state: 'ok', fingerprint: mine };
+    }
+    if (status.fingerprint === mine) {
+      this.ownerKey = key;
+      return { state: 'ok', fingerprint: mine };
+    }
+    return {
+      state: 'mismatch',
+      fingerprint: status.fingerprint,
+      detail: `The runtime has a different owner key enrolled (${status.fingerprint}); this app's key is ${mine}. Owner-only actions will be refused. If you did not enrol that key, reset it with the runtime stopped: node runtime/scripts/owner-key.ts reset`,
+    };
+  }
+
   health = () => this.request<Health>('GET', '/health');
   summary = () => this.request<Summary>('GET', '/v1/summary');
   identities = () => this.request<Identity[]>('GET', '/v1/identities');
@@ -218,6 +294,8 @@ export class RuntimeClient {
     this.request<Message>('POST', `/v1/rooms/${encodeURIComponent(roomId)}/messages`, input);
   jobs = () => this.request<JobSummary[]>('GET', '/v1/jobs');
   job = (jobId: string) => this.request<JobDetail>('GET', `/v1/jobs/${encodeURIComponent(jobId)}`);
+  /** Unified intake (WP2): keeps the raw request, triages it, and creates one job or links a duplicate. */
+  intake = (input: CreateIntakeInput) => this.request<IntakeResult>('POST', '/v1/intake', input);
   createJob = (input: CreateJobInput) => this.request<JobDetail>('POST', '/v1/jobs', input);
   sessions = () => this.request<Session[]>('GET', '/v1/sessions');
   search = (q: string, limit = 8) => this.request<SearchHit[]>('GET', `/v1/search?q=${encodeURIComponent(q)}&limit=${limit}`);
@@ -343,7 +421,53 @@ export class RuntimeClient {
   deleteOkrKeyResult = (id: string) => this.request<unknown>('DELETE', `/v1/okrs/key-results/${encodeURIComponent(id)}`);
   updateOkrProgress = (krId: string, currentValue: number) =>
     this.request<{ keyResult: OkrKeyResult; objective: OkrObjective }>('POST', `/v1/okrs/key-results/${encodeURIComponent(krId)}/progress`, { current_value: currentValue });
+  // WP9 time ledger. Owner-only writes: the client already sends the owner key.
+  timeIntervals = (q: { from?: string; to?: string; identityId?: string; jobId?: string; actorKind?: string } = {}) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v) p.set(k, v);
+    return this.request<TimeInterval[]>('GET', `/v1/time/intervals${p.toString() ? `?${p}` : ''}`);
+  };
+  startTimer = (input: { category: string; jobId?: string; engagementId?: string }) => this.request<TimeInterval>('POST', '/v1/time/timer/start', input);
+  stopTimer = () => this.request<TimeInterval>('POST', '/v1/time/timer/stop', {});
+  addTimeEntry = (input: { startedAt: string; endedAt: string; category: string; engagementId?: string; note?: string }) =>
+    this.request<TimeInterval>('POST', '/v1/time/entries', input);
+  adjustInterval = (id: string, input: { deltaMs: number; note: string }) =>
+    this.request<TimeInterval>('POST', `/v1/time/intervals/${encodeURIComponent(id)}/adjust`, input);
+  timeSummary = (from: string, to: string, engagementId?: string) =>
+    this.request<TimeSummary>('GET', `/v1/time/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${engagementId ? `&engagementId=${encodeURIComponent(engagementId)}` : ''}`);
+  engagements = () => this.request<Engagement[]>('GET', '/v1/engagements');
+  timesheets = (engagementId?: string) => this.request<Timesheet[]>('GET', `/v1/timesheets${engagementId ? `?engagementId=${encodeURIComponent(engagementId)}` : ''}`);
+  draftTimesheet = (engagementId: string, periodStart: string) => this.request<Timesheet>('POST', '/v1/timesheets', { engagementId, periodStart });
+  submitTimesheet = (id: string) => this.request<Timesheet>('POST', `/v1/timesheets/${encodeURIComponent(id)}/submit`, {});
+  approveTimesheet = (id: string) => this.request<Timesheet>('POST', `/v1/timesheets/${encodeURIComponent(id)}/approve`, {});
+  exportTimesheet = (id: string) => this.request<{ csv: string; hash: string; reconciles: boolean }>('GET', `/v1/timesheets/${encodeURIComponent(id)}/export`);
+
+  // WP8 skills, WP6 stand-ups, WP11 timeline and model registry.
+  skills = () => this.request<SkillList>('GET', '/v1/skills');
+  skill = (id: string) => this.request<SkillDetail>('GET', `/v1/skills/${encodeURIComponent(id)}`);
+  reloadSkills = () => this.request<{ root: string | null; found: number; added: number; unchanged: number; skipped: { path: string; reason: string }[] }>('POST', '/v1/skills/reload', {});
+  latestStandup = () => this.request<LatestStandup | null>('GET', '/v1/standups/latest');
+  runStandupNow = () => this.request<{ existing: boolean; run: unknown }>('POST', '/v1/standups/run-now', {});
+  scheduleRuns = (scheduleId?: string, limit = 50) =>
+    this.request<ScheduleRunRow[]>('GET', `/v1/schedules/runs?limit=${limit}${scheduleId ? `&scheduleId=${encodeURIComponent(scheduleId)}` : ''}`);
+  jobTimeline = (jobId: string) => this.request<TimelineItem[]>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/timeline`);
+  modelRegistry = () => this.request<ModelRegistryRow[]>('GET', '/v1/model-registry');
   realityAudit = () => this.request<RealityAuditSummary>('GET', '/v1/okrs/reality-audit');
+
+  // ---- subscription AI usage (K6/K9)
+  aiAccounts = () => this.request<AiAccountWithSnapshot[]>('GET', '/v1/ai-accounts');
+  createAiAccount = (input: CreateAiAccountInput) => this.request<AiAccount>('POST', '/v1/ai-accounts', input);
+  addAiSnapshot = (accountId: string, input: AiSnapshotInput) =>
+    this.request<{ snapshot: AiLimitSnapshot; alert: UsageAlertRecord | null }>(
+      'POST',
+      `/v1/ai-accounts/${encodeURIComponent(accountId)}/snapshots`,
+      input
+    );
+  aiSnapshots = (accountId: string) =>
+    this.request<AiLimitSnapshot[]>('GET', `/v1/ai-accounts/${encodeURIComponent(accountId)}/snapshots`);
+  weeklyUsage = () => this.request<AccountWeeklyUsage[]>('GET', '/v1/usage/weekly');
+  usageEstimates = () => this.request<UsageEstimateRow[]>('GET', '/v1/usage/estimates');
+  ackUsageAlert = (id: string) => this.request<UsageAlertRecord>('POST', `/v1/usage/alerts/${encodeURIComponent(id)}/ack`, {});
 
   room = (id: string) => this.request<Room>('GET', `/v1/rooms/${encodeURIComponent(id)}`);
   updateRoom = (id: string, input: { name?: string; projectId?: string | null; teamId?: string | null; archived?: boolean }) =>
@@ -363,6 +487,12 @@ export class RuntimeClient {
   };
   updateJob = (id: string, input: { title?: string; brief?: string; risk?: string; priority?: string; budgetCents?: number | null; blockedReason?: string | null; kind?: JobKind }) =>
     this.request<JobDetail>('PATCH', `/v1/jobs/${encodeURIComponent(id)}`, input);
+  archiveJob = (id: string, archive: boolean, actorId = 'owner') =>
+    this.request<JobDetail>('POST', `/v1/jobs/${encodeURIComponent(id)}/${archive ? 'archive' : 'unarchive'}`, { actorId });
+  deleteJob = (id: string, actorId = 'owner') =>
+    this.request<unknown>('DELETE', `/v1/jobs/${encodeURIComponent(id)}?confirm=${encodeURIComponent(id)}&actorId=${encodeURIComponent(actorId)}`);
+  linkJobToKr = (id: string, krId: string | null, actorId = 'owner') =>
+    this.request<{ jobId: string; krId: string | null }>('POST', `/v1/jobs/${encodeURIComponent(id)}/kr-link`, { krId, actorId });
   transitionJob = (id: string, input: { to: JobStage; actorId: string; actorKind?: 'human' | 'agent' | 'system'; note?: string; force?: boolean }) =>
     this.request<JobDetail>('POST', `/v1/jobs/${encodeURIComponent(id)}/stage`, input);
   setPlan = (id: string, plan: JobPlan, actorId: string) =>
@@ -385,6 +515,9 @@ export class RuntimeClient {
     this.request<Task>('POST', `/v1/jobs/${encodeURIComponent(jobId)}/tasks`, input);
   updateTask = (taskId: string, input: UpdateTaskInput) =>
     this.request<Task>('PATCH', `/v1/tasks/${encodeURIComponent(taskId)}`, input);
+  /** Status changes go through the K3 state machine (PATCH no longer accepts `status`). */
+  transitionTask = (taskId: string, input: TransitionTaskInput) =>
+    this.request<Task>('POST', `/v1/tasks/${encodeURIComponent(taskId)}/transition`, input);
   evidence = (jobId: string) => this.request<Evidence[]>('GET', `/v1/jobs/${encodeURIComponent(jobId)}/evidence`);
   runCheck = (jobId: string, taskId: string) =>
     this.request<{ result: { exitCode: number | null; stdout: string; stderr: string }; evidence: Evidence }>(
@@ -417,6 +550,10 @@ export class RuntimeClient {
   approval = (id: string) => this.request<Approval>('GET', `/v1/approvals/${encodeURIComponent(id)}`);
   decideApproval = (id: string, input: DecideApprovalInput) =>
     this.request<Approval>('POST', `/v1/approvals/${encodeURIComponent(id)}/decision`, input);
+  needsYou = () => this.request<NeedsYouItem[]>('GET', '/v1/needs-you');
+  blockers = (status?: 'open' | 'resolved') => this.request<Blocker[]>('GET', `/v1/blockers${status ? `?status=${status}` : ''}`);
+  resolveBlocker = (id: string, resolvedBy: string) =>
+    this.request<Blocker>('POST', `/v1/blockers/${encodeURIComponent(id)}/resolve`, { resolvedBy });
   policies = () => this.request<ApprovalPolicy[]>('GET', '/v1/policies');
   createPolicy = (input: CreatePolicyInput) => this.request<ApprovalPolicy>('POST', '/v1/policies', input);
   updatePolicy = (id: string, input: UpdatePolicyInput) =>
@@ -686,6 +823,11 @@ export class RuntimeClient {
     this.request<DesignFrame>('PATCH', `/v1/design-frames/${encodeURIComponent(frameId)}`, input);
   deleteDesignFrame = (frameId: string) =>
     this.request<unknown>('DELETE', `/v1/design-frames/${encodeURIComponent(frameId)}`);
+  /** Lifecycle move: draft|iterating -> review, review -> iterating (changes requested) or approved. */
+  transitionDesignFrame = (frameId: string, to: DesignFrameStatus, actorId: string, reason?: string | null) =>
+    this.request<DesignFrame>('POST', `/v1/design-frames/${encodeURIComponent(frameId)}/transition`, { to, actorId, reason: reason ?? null });
+  /** A design request: a job, a linked design task and a board. */
+  createDesignRequest = (input: CreateDesignRequestInput) => this.request<DesignRequestResult>('POST', '/v1/design/requests', input);
   approveDesignFrame = (frameId: string, input: ApproveDesignFrameInput) =>
     this.request<ApproveDesignFrameResult>('POST', `/v1/design-frames/${encodeURIComponent(frameId)}/approve`, input);
 

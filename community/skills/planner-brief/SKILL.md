@@ -3,6 +3,9 @@ name: planner-brief
 description: Procedure for framing, convening, and executing a Council of Planners deliberation for Tier 3 strategic bets and architectural crossroads.
 version: 1.0.0
 owner: Iris (Council Chair)
+triggers: [council, planner, architecture, trade-off, tradeoff, strategic bet]
+workflows: [strategic]
+roles: [planner, lead]
 inputs:
   - strategic_decision: string
   - options: string[]

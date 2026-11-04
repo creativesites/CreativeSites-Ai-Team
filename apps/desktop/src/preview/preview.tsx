@@ -26,8 +26,6 @@ const SCREENS: Record<string, { label: string; route: Route; mode: Mode; render:
 
 export default function Preview({ screen }: { screen: string }) {
   const s = SCREENS[screen] ?? SCREENS.home;
-  const [mode, setMode] = React.useState<Mode>(s.mode);
-  React.useEffect(() => setMode(s.mode), [s]);
   return (
     <div className="flex min-h-full flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-needs-you/30 bg-needs-you/10 px-4 py-1.5 text-xs text-needs-you">
@@ -40,7 +38,7 @@ export default function Preview({ screen }: { screen: string }) {
         ))}
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:flex-row">
-        <Sidebar route={s.route} mode={mode} onModeChange={setMode} ownerName="Winston" rooms={f.rooms} jobs={f.jobs} identities={f.identities} sessions={f.sessions} />
+        <Sidebar route={s.route} ownerName="Winston" rooms={f.rooms} jobs={f.jobs} identities={f.identities} sessions={f.sessions} />
         <div className="min-w-0 flex-1">{s.render()}</div>
       </div>
     </div>

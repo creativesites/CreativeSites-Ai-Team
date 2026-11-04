@@ -17,7 +17,9 @@ import { EmptyState, EvidenceTag, jobLabel, SectionTitle, StageBar, Tag } from '
 import { AgentTerminal } from '@/components/terminal';
 import { buttonVariants } from '@/components/ui/button';
 import { href } from '@/lib/route';
+import type { RuntimeClient } from '@/lib/runtime';
 import { useRuntime, useRuntimeData } from '@/lib/runtime-context';
+import { LoadNote } from '@/components/app/metric';
 import { cn } from '@/lib/utils';
 
 const time = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -58,6 +60,7 @@ export function JobScreen({
   const ownerId = (settings.status === 'ready' && String(settings.data.ownerId ?? '')) || 'winston';
   const who = (id: string) => identities.find((i) => i.id === id);
 
+  const keyResults = useRuntimeData((c) => c.okrs(), []);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -217,6 +220,35 @@ export function JobScreen({
               </select>
             </label>
           )}
+          {client && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              Key result
+              <select
+                value={job.okrKrId ?? ''}
+                onChange={(e) => void act('kr', () => client.linkJobToKr(job.id, e.target.value || null))}
+                aria-label="Key result"
+                className="glass-panel h-8 max-w-48 rounded-md px-2 text-xs text-foreground"
+              >
+                <option value="">Not linked</option>
+                {keyResults.status === 'ready' &&
+                  keyResults.data.keyResults.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.title}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+          {client && (
+            <button
+              type="button"
+              className={buttonVariants({ variant: 'glass' })}
+              onClick={() => void act('archive', () => client.archiveJob(job.id, !job.archivedAt))}
+            >
+              {job.archivedAt ? 'Unarchive' : 'Archive'}
+            </button>
+          )}
+          {job.archivedAt && <Tag tone="quiet">Archived</Tag>}
           {job.shipStatus === 'shipped' && <Tag tone="verified">Shipped</Tag>}
           <Tag tone={job.risk === 'high' || job.risk === 'critical' ? 'risk' : 'quiet'}>Risk {job.risk ?? 'low'}</Tag>
           <span className="text-xs text-muted-foreground">Owner: {ownerName}</span>
@@ -357,7 +389,7 @@ export function JobScreen({
           </section>
 
           <section aria-label="Tasks" className="bg-card flex flex-col gap-3 rounded-xl px-5 py-4.5">
-            <SectionTitle aside={`${job.tasks.filter((t) => t.status === 'done').length}/${job.tasks.length} done`}>Tasks</SectionTitle>
+            <SectionTitle aside={`${job.tasks.filter((t) => t.status === 'done' || t.status === 'verified').length}/${job.tasks.length} done`}>Tasks</SectionTitle>
             {job.tasks.length === 0 ? (
               <EmptyState title="No tasks yet">Break the plan into tasks with a check command and gate.</EmptyState>
             ) : (
@@ -372,8 +404,8 @@ export function JobScreen({
                       const outcome = await client!.runCheck(job.id, task.id);
                       setNotice(`Check ${outcome.result.exitCode === 0 ? 'passed' : `failed (exit ${outcome.result.exitCode})`}. ${outcome.evidence.summary}`);
                     })}
-                    onDone={() => act(`done:${task.id}`, () => client!.updateTask(task.id, { status: 'done' }))}
-                    onStart={() => act(`run:${task.id}`, () => client!.updateTask(task.id, { status: 'running' }))}
+                    onDone={() => act(`done:${task.id}`, () => advanceTask(client!, task, 'done', ownerId))}
+                    onStart={() => act(`run:${task.id}`, () => advanceTask(client!, task, 'running', ownerId))}
                   />
                 ))}
               </div>
@@ -471,6 +503,8 @@ export function JobScreen({
               ))
             )}
           </section>
+
+          <JobTimeline jobId={job.id} identities={identities} />
 
           <section aria-label="What happened" className="bg-card flex flex-col gap-2 rounded-xl px-5 py-4">
             <details className="group" open={job.evidence.length > 0 && job.evidence.length <= 6}>
@@ -600,6 +634,29 @@ export function JobScreen({
   );
 }
 
+/**
+ * Walks a task along the K3 path (pending -> assigned -> acknowledged -> running -> done, or
+ * needs_review when the task requires verification), one transition per step.
+ */
+async function advanceTask(client: RuntimeClient, task: Task, target: 'running' | 'done', actorId: string): Promise<void> {
+  const step = (to: Task['status'], assigneeId?: string | null) =>
+    client.transitionTask(task.id, { to, actorId, actorKind: 'human', reason: 'Moved from the Job screen', ...(assigneeId ? { assigneeId } : {}) });
+  let status = task.status;
+  if (status === 'pending') {
+    await step('assigned', task.assigneeId);
+    status = 'assigned';
+  }
+  if (status === 'assigned') {
+    await step('acknowledged');
+    status = 'acknowledged';
+  }
+  if (status === 'acknowledged' || status === 'blocked') {
+    await step('running');
+    status = 'running';
+  }
+  if (target === 'done' && status === 'running') await step(task.verificationRequired ? 'needs_review' : 'done');
+}
+
 function TaskRow({ task, assignee, busy, onRunCheck, onDone, onStart }: { task: Task; assignee?: Identity; busy: string | null; onRunCheck: () => void; onDone: () => void; onStart: () => void }) {
   return (
     <div className="glass-panel flex flex-wrap items-center gap-2 rounded-lg px-3 py-2">
@@ -608,8 +665,8 @@ function TaskRow({ task, assignee, busy, onRunCheck, onDone, onStart }: { task: 
         <span className="truncate">{task.title}</span>
       </span>
       {task.checkCommand && <code className="basis-56 truncate font-mono text-xs text-muted-foreground">{task.checkCommand}</code>}
-      <Tag tone={task.status === 'done' ? 'verified' : task.status === 'failed' ? 'risk' : task.status === 'running' ? 'observed' : 'quiet'}>{task.status}</Tag>
-      {task.status !== 'done' && (
+      <Tag tone={task.status === 'done' || task.status === 'verified' ? 'verified' : task.status === 'failed' ? 'risk' : task.status === 'running' ? 'observed' : 'quiet'}>{task.status}</Tag>
+      {task.status !== 'done' && task.status !== 'verified' && (
         <>
           <button type="button" onClick={onRunCheck} disabled={busy !== null || !task.checkCommand} className={buttonVariants({ variant: 'glass', size: 'sm' })}>
             <RefreshCw /> Check
@@ -692,3 +749,61 @@ export function JobStageHint({ stage }: { stage: JobStage }) {
 }
 
 export type { AdapterInfo };
+
+const TIMELINE_GROUPS: { id: string; label: string; match: (kind: string) => boolean }[] = [
+  { id: 'all', label: 'Everything', match: () => true },
+  { id: 'work', label: 'Stages and tasks', match: (k) => k === 'stage' || k.startsWith('task') || k.startsWith('job') || k === 'intake' },
+  { id: 'agents', label: 'Sessions and time', match: (k) => k.startsWith('session') || k === 'time' || k === 'usage' },
+  { id: 'proof', label: 'Evidence and approvals', match: (k) => k === 'evidence' || k.startsWith('approval') || k === 'blocker' },
+];
+
+/** One chronological list from the records the runtime keeps (vision 14.4). Each row names its source table. */
+function JobTimeline({ jobId, identities }: { jobId: string; identities: Identity[] }) {
+  const timeline = useRuntimeData((c) => c.jobTimeline(jobId), [jobId]);
+  const [group, setGroup] = React.useState('all');
+  const items = timeline.status === 'ready' ? timeline.data : [];
+  const active = TIMELINE_GROUPS.find((g) => g.id === group) ?? TIMELINE_GROUPS[0]!;
+  const shown = items.filter((i) => active.match(i.kind));
+  const nameOf = (id: string | null) => (id ? (identities.find((i) => i.id === id)?.name ?? id) : null);
+  return (
+    <section aria-label="Timeline" className="bg-card flex flex-col gap-2 rounded-xl px-5 py-4">
+      <details className="group" open>
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 select-none">
+          <SectionTitle aside={timeline.status === 'ready' ? `${items.length} records` : undefined}>Timeline</SectionTitle>
+          <span className="rounded bg-foreground/[0.06] px-2 py-0.5 font-mono text-[11px] text-muted-foreground group-open:hidden">Show</span>
+          <span className="hidden rounded bg-foreground/[0.06] px-2 py-0.5 font-mono text-[11px] text-muted-foreground group-open:inline">Hide</span>
+        </summary>
+        <div className="mt-3 flex flex-col gap-2">
+          <LoadNote what="the timeline" state={timeline} />
+          <div role="group" aria-label="Filter the timeline" className="flex flex-wrap gap-1.5">
+            {TIMELINE_GROUPS.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                aria-pressed={group === g.id}
+                onClick={() => setGroup(g.id)}
+                className={cn('rounded-md px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground', group === g.id && 'glass-chosen text-foreground')}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
+          {timeline.status === 'ready' && shown.length === 0 && <EmptyState title="Nothing on the timeline yet">Records appear as the job moves.</EmptyState>}
+          <ol className="flex max-h-96 flex-col overflow-y-auto">
+            {shown.map((i, n) => (
+              <li key={`${i.kind}:${i.ref ?? n}:${i.at}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 border-b border-border/40 py-1.5 text-xs last:border-b-0">
+                <time dateTime={i.at} className="w-28 shrink-0 font-mono text-muted-foreground">{time(i.at)}</time>
+                <Tag tone="quiet">{i.kind}</Tag>
+                <span className="min-w-0 flex-1 basis-60 break-words">{i.summary}</span>
+                <span className="text-muted-foreground" title={`recorded in ${i.source}`}>
+                  {nameOf(i.actor) ? `${nameOf(i.actor)} · ` : ''}
+                  {i.source}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </details>
+    </section>
+  );
+}

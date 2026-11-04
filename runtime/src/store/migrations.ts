@@ -1,9 +1,20 @@
 // Ordered schema migrations. Never edit one that has shipped; add the next version.
 
+import { AGENT_TOOLS_SQL } from '../agent-tools/schema.ts';
+import { LEDGER_SQL, TIMESHEETS_SQL } from '../ledger/schema.ts';
+import { SCHEDULER_SQL } from '../scheduler/schema.ts';
+
 export interface Migration {
   version: number;
   name: string;
   sql: string;
+  /**
+   * Run with foreign-key enforcement off (SQLite's documented table-rebuild procedure).
+   * Needed when a table that other tables reference must be rebuilt: dropping it with
+   * enforcement on would cascade-delete the children. `migrate` checks that the
+   * rebuild introduced no new foreign-key violations.
+   */
+  foreignKeysOff?: boolean;
 }
 
 // Evidence classes match src/provenance.js. The UI shows OBSERVED as Observed,
@@ -837,6 +848,433 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE projects ADD COLUMN status TEXT DEFAULT 'active';
       ALTER TABLE projects ADD COLUMN repo TEXT;
       ALTER TABLE projects ADD COLUMN updated_at TEXT;
+    `,
+  },
+  {
+    version: 10,
+    name: '010_task_lifecycle_and_event_envelope',
+    // WP1 (K2, K3). tasks.status carries a CHECK that SQLite cannot widen, and sessions,
+    // evidence, worktrees and task_criteria reference tasks(id), so the table is rebuilt
+    // with foreign keys off, preserving every row and column. Events gain the K2 envelope
+    // columns plus a partial unique index on idempotency_key. Nothing is dropped except
+    // the old tasks table after its rows are copied.
+    foreignKeysOff: true,
+    sql: `
+      CREATE TABLE tasks_v10 (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        assignee_id TEXT,
+        check_command TEXT,
+        gate TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK (status IN ('pending','assigned','acknowledged','running','needs_review','verified','done','blocked','failed','retrying','reassignment_required','needs_human')),
+        created_at TEXT NOT NULL,
+        position INTEGER NOT NULL DEFAULT 0,
+        plan_task_id TEXT,
+        mode TEXT NOT NULL DEFAULT 'build',
+        started_at TEXT,
+        ended_at TEXT,
+        updated_at TEXT,
+        evidence_required INTEGER NOT NULL DEFAULT 1,
+        depends_on TEXT NOT NULL DEFAULT '[]',
+        priority INTEGER NOT NULL DEFAULT 0,
+        attempt INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        acknowledged_at TEXT,
+        ack_deadline_at TEXT,
+        next_retry_at TEXT,
+        parent_task_id TEXT,
+        required_skills TEXT NOT NULL DEFAULT '[]',
+        budget_tokens INTEGER,
+        verification_required INTEGER NOT NULL DEFAULT 0,
+        legacy_project_task_id TEXT,
+        last_event_at TEXT
+      );
+      INSERT INTO tasks_v10 (id, job_id, title, assignee_id, check_command, gate, status, created_at, position,
+        plan_task_id, mode, started_at, ended_at, updated_at, evidence_required, last_event_at)
+      SELECT id, job_id, title, assignee_id, check_command, gate, status, created_at, position,
+        plan_task_id, mode, started_at, ended_at, updated_at, evidence_required,
+        COALESCE(updated_at, started_at, created_at)
+      FROM tasks;
+      DROP TABLE tasks;
+      ALTER TABLE tasks_v10 RENAME TO tasks;
+      CREATE INDEX IF NOT EXISTS idx_tasks_job ON tasks(job_id, position);
+      CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+      CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id, status);
+
+      ALTER TABLE events ADD COLUMN idempotency_key TEXT;
+      ALTER TABLE events ADD COLUMN job_id TEXT;
+      ALTER TABLE events ADD COLUMN task_id TEXT;
+      ALTER TABLE events ADD COLUMN session_id TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS events_idempotency ON events(idempotency_key) WHERE idempotency_key IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS events_task ON events(task_id, seq) WHERE task_id IS NOT NULL;
+    `,
+  },
+  {
+    version: 11,
+    name: '011_intake_triage_departments',
+    // WP2 part 1 (K5, task 2.1/2.2/2.3/2.7). Additive only; independent of v10 columns.
+    sql: `
+      ALTER TABLE jobs ADD COLUMN workflow TEXT CHECK (workflow IS NULL OR workflow IN ('quick','feature','strategic','incident'));
+      ALTER TABLE jobs ADD COLUMN triage_reason TEXT;
+      ALTER TABLE jobs ADD COLUMN urgency TEXT;
+      ALTER TABLE jobs ADD COLUMN impact TEXT;
+      ALTER TABLE jobs ADD COLUMN intake_id TEXT;
+      ALTER TABLE jobs ADD COLUMN okr_kr_id TEXT;
+      ALTER TABLE jobs ADD COLUMN milestone_id TEXT;
+      CREATE INDEX IF NOT EXISTS idx_jobs_intake ON jobs(intake_id);
+
+      ALTER TABLE rooms ADD COLUMN intake_enabled INTEGER;
+
+      CREATE TABLE IF NOT EXISTS intake_requests (
+        id TEXT PRIMARY KEY,
+        raw_text TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('home','room','design','sessions','api','agent','schedule')),
+        source_ref TEXT,
+        project_id TEXT,
+        requested_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        job_id TEXT,
+        duplicate_of_job_id TEXT,
+        dedupe_reason TEXT,
+        classification TEXT NOT NULL DEFAULT '{}'
+      );
+      CREATE INDEX IF NOT EXISTS idx_intake_job ON intake_requests(job_id);
+      CREATE INDEX IF NOT EXISTS idx_intake_project ON intake_requests(project_id);
+
+      CREATE TABLE IF NOT EXISTS departments (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        lead_identity_id TEXT,
+        created_at TEXT NOT NULL
+      );
+      INSERT OR IGNORE INTO departments (id, name, lead_identity_id, created_at) VALUES
+        ('engineering', 'Engineering', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ('platform-runtime', 'Platform & Runtime', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ('quality-verification', 'Quality & Verification', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ('design', 'Design', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ('planning-strategy', 'Planning & Strategy', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        ('operations', 'Operations', NULL, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+
+      ALTER TABLE identities ADD COLUMN department_id TEXT;
+      ALTER TABLE identities ADD COLUMN seniority TEXT NOT NULL DEFAULT 'member' CHECK (seniority IN ('exec','lead','senior','member'));
+      ALTER TABLE identities ADD COLUMN skills TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE identities ADD COLUMN providers TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE identities ADD COLUMN permissions TEXT NOT NULL DEFAULT '[]';
+    `,
+  },
+  {
+    version: 12,
+    name: 'agent action interface: session tokens, tool-call audit, blockers (K4)',
+    sql: AGENT_TOOLS_SQL,
+  },
+  {
+    version: 13,
+    name: 'subscription AI usage tracking: ai_accounts, limit snapshots, task_usage, usage_alerts (K6/K9)',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ai_accounts (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL CHECK (provider IN ('anthropic','google')),
+        plan TEXT NOT NULL,
+        label TEXT NOT NULL,
+        owner_scope TEXT NOT NULL DEFAULT 'personal'
+          CHECK (owner_scope = 'personal' OR owner_scope LIKE 'client:%'),
+        limit_model TEXT NOT NULL
+          CHECK (limit_model IN ('claude_5h_weekly_pct','gemini_app_5h_weekly_pct','gemini_cli_requests_per_day')),
+        daily_request_quota INTEGER,
+        adapter_account_id TEXT,
+        created_at TEXT NOT NULL,
+        archived_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS account_limit_snapshots (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES ai_accounts(id) ON DELETE CASCADE,
+        captured_at TEXT NOT NULL,
+        session_pct REAL CHECK (session_pct IS NULL OR (session_pct >= 0 AND session_pct <= 100)),
+        session_resets_at TEXT,
+        weekly_pct REAL CHECK (weekly_pct IS NULL OR (weekly_pct >= 0 AND weekly_pct <= 100)),
+        weekly_resets_at TEXT,
+        requests_today INTEGER CHECK (requests_today IS NULL OR requests_today >= 0),
+        source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','cli_capture','runtime_count')),
+        measurement TEXT NOT NULL DEFAULT 'actual' CHECK (measurement IN ('actual','estimated')),
+        note TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_limit_snapshots_account ON account_limit_snapshots(account_id, captured_at);
+
+      CREATE TABLE IF NOT EXISTS task_usage (
+        id TEXT PRIMARY KEY,
+        task_id TEXT,
+        job_id TEXT,
+        session_id TEXT,
+        account_id TEXT NOT NULL REFERENCES ai_accounts(id) ON DELETE CASCADE,
+        agent_id TEXT,
+        model_id TEXT,
+        task_type TEXT,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        session_pct_before REAL,
+        session_pct_after REAL,
+        weekly_pct_before REAL,
+        weekly_pct_after REAL,
+        requests INTEGER,
+        concurrent_tasks_on_account INTEGER NOT NULL DEFAULT 1,
+        attributed_weekly_pct REAL,
+        measurement TEXT NOT NULL DEFAULT 'estimated' CHECK (measurement = 'estimated')
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_usage_account ON task_usage(account_id, started_at);
+      CREATE INDEX IF NOT EXISTS idx_task_usage_task ON task_usage(task_id);
+
+      CREATE TABLE IF NOT EXISTS usage_alerts (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES ai_accounts(id) ON DELETE CASCADE,
+        window_resets_at TEXT NOT NULL,
+        weekly_pct REAL NOT NULL,
+        elapsed_fraction REAL NOT NULL,
+        created_at TEXT NOT NULL,
+        acknowledged_at TEXT,
+        UNIQUE (account_id, window_resets_at)
+      );
+
+      ALTER TABLE projects ADD COLUMN ai_account_id TEXT;
+      ALTER TABLE projects ADD COLUMN confidential INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    version: 16,
+    name: 'workforce time ledger: activity intervals and engagements (K6, WP9)',
+    sql: LEDGER_SQL,
+  },
+  {
+    version: 17,
+    name: 'recurring operations: named timezone schedules, schedule_runs, stand-up pipeline (WP6)',
+    sql: SCHEDULER_SQL,
+  },
+  {
+    version: 18,
+    name: 'runtime-loaded versioned skills and per-task pinned selection (WP8)',
+    sql: `
+      CREATE TABLE IF NOT EXISTS skills (
+        id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        path TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        triggers TEXT NOT NULL DEFAULT '[]',
+        workflows TEXT NOT NULL DEFAULT '[]',
+        roles TEXT NOT NULL DEFAULT '[]',
+        body TEXT NOT NULL DEFAULT '',
+        loaded_at TEXT NOT NULL,
+        PRIMARY KEY (id, content_hash)
+      );
+
+      CREATE TABLE IF NOT EXISTS task_skills (
+        task_id TEXT NOT NULL,
+        skill_id TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        selected_at TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        PRIMARY KEY (task_id, skill_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_task_skills_task ON task_skills(task_id);
+    `,
+  },
+  {
+    version: 19,
+    name: 'strategy linkage: KR kinds, append-only progress history, archive columns (WP7)',
+    // Additive only. okr_progress_entries is append-only (triggers) and carries no foreign keys so a
+    // KR, job or evidence row can be deleted without rewriting history. Legacy project_tasks is untouched.
+    sql: `
+      ALTER TABLE okr_key_results ADD COLUMN kind TEXT NOT NULL DEFAULT 'manual' CHECK (kind IN ('manual','evidence','computed'));
+      ALTER TABLE okr_key_results ADD COLUMN source TEXT;
+      ALTER TABLE okr_key_results ADD COLUMN weight REAL NOT NULL DEFAULT 1;
+      ALTER TABLE jobs ADD COLUMN kr_weight REAL NOT NULL DEFAULT 1;
+      ALTER TABLE jobs ADD COLUMN archived_at TEXT;
+      ALTER TABLE tasks ADD COLUMN archived_at TEXT;
+      CREATE INDEX IF NOT EXISTS idx_jobs_kr ON jobs(okr_kr_id);
+
+      CREATE TABLE IF NOT EXISTS okr_progress_entries (
+        id TEXT PRIMARY KEY,
+        key_result_id TEXT NOT NULL,
+        value REAL,
+        progress_percent REAL,
+        provenance TEXT NOT NULL CHECK (provenance IN ('manual','agent_reported','runtime_observed','verified')),
+        job_id TEXT,
+        evidence_id TEXT,
+        recorded_by TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        note TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_okr_entries_kr ON okr_progress_entries(key_result_id, recorded_at);
+      CREATE TRIGGER okr_progress_entries_no_update BEFORE UPDATE ON okr_progress_entries
+      BEGIN SELECT RAISE(ABORT, 'okr_progress_entries is append-only'); END;
+      CREATE TRIGGER okr_progress_entries_no_delete BEFORE DELETE ON okr_progress_entries
+      BEGIN SELECT RAISE(ABORT, 'okr_progress_entries is append-only'); END;
+    `,
+  },
+  {
+    version: 20,
+    name: 'agent-driven planning council: selection, live round state, card session ids, simulation label (WP3)',
+    // Additive only. Councils produced by the old scripted runner (the only writer of stream
+    // events before v20) are labelled 'simulation' so they never read as live deliberation.
+    sql: `
+      ALTER TABLE councils ADD COLUMN run_mode TEXT CHECK (run_mode IS NULL OR run_mode IN ('live','simulation'));
+      ALTER TABLE councils ADD COLUMN selection TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE councils ADD COLUMN live_state TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE councils ADD COLUMN absent_seats TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE council_cards ADD COLUMN session_id TEXT;
+      ALTER TABLE council_cards ADD COLUMN simulated INTEGER NOT NULL DEFAULT 0;
+      CREATE INDEX IF NOT EXISTS idx_councils_job_mode ON councils(job_id, run_mode, status);
+      CREATE INDEX IF NOT EXISTS idx_council_cards_session ON council_cards(session_id) WHERE session_id IS NOT NULL;
+      UPDATE councils SET run_mode = 'simulation' WHERE run_mode IS NULL AND events IS NOT NULL AND events != '[]';
+      UPDATE council_cards SET simulated = 1 WHERE council_id IN (SELECT id FROM councils WHERE run_mode = 'simulation');
+    `,
+  },
+  {
+    version: 21,
+    name: 'usage v2: token breakdown + measurement, model registry, budgets as limit shares, renewal policy (K6/K7, WP10)',
+    sql: `
+      -- 10.1 usage rows carry attribution, a token breakdown and how well each number is known.
+      ALTER TABLE usage ADD COLUMN agent_id TEXT;
+      ALTER TABLE usage ADD COLUMN task_id TEXT;
+      ALTER TABLE usage ADD COLUMN provider TEXT;
+      ALTER TABLE usage ADD COLUMN model_id TEXT;
+      ALTER TABLE usage ADD COLUMN cached_input_tokens INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE usage ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE usage ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE usage ADD COLUMN measurement TEXT NOT NULL DEFAULT 'actual'
+        CHECK (measurement IN ('actual','estimated','unavailable'));
+      ALTER TABLE usage ADD COLUMN context_used INTEGER;
+      ALTER TABLE usage ADD COLUMN context_size INTEGER;
+      CREATE INDEX IF NOT EXISTS usage_agent ON usage(agent_id);
+      CREATE INDEX IF NOT EXISTS usage_task ON usage(task_id);
+      CREATE INDEX IF NOT EXISTS usage_session ON usage(session_id);
+
+      -- sessions: the real model id, the context window (null = unknown), and K7 renewal state.
+      ALTER TABLE sessions ADD COLUMN context_window INTEGER;
+      ALTER TABLE sessions ADD COLUMN model_id TEXT;
+      ALTER TABLE sessions ADD COLUMN context_band TEXT;
+      ALTER TABLE sessions ADD COLUMN continuation_package TEXT;
+
+      -- K7: per-identity override of the renewal thresholds (JSON, e.g. {"renew":80}).
+      ALTER TABLE identities ADD COLUMN renewal_policy TEXT;
+
+      -- Model registry. No prices: the team is on subscription plans. context_window is null when unknown.
+      CREATE TABLE IF NOT EXISTS model_registry (
+        provider TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        context_window INTEGER,
+        notes TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (provider, model_id)
+      );
+      -- Intentionally empty: context windows come from what an adapter reports, or from entries the owner
+      -- makes. No window is shipped from memory (the plan's rule against unverified numbers).
+
+      -- 10.4 budgets: a share of an account's limit (or a token count), not money. Rebuilt because
+      -- SQLite cannot widen a CHECK; existing money budgets are copied unchanged (kind 'money').
+      CREATE TABLE budgets_v21 (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL CHECK (scope IN ('global','project','agent','task','department','session')),
+        project_id TEXT,
+        scope_id TEXT,
+        period TEXT NOT NULL CHECK (period IN ('job','day','week','month','session')),
+        amount_cents INTEGER NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        kind TEXT NOT NULL DEFAULT 'money' CHECK (kind IN ('money','tokens','weekly_pct','session_pct','requests_per_day')),
+        amount REAL,
+        account_id TEXT,
+        warn_pct REAL NOT NULL DEFAULT 80,
+        hard_pct REAL NOT NULL DEFAULT 100,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO budgets_v21 (id, scope, project_id, period, amount_cents, currency, created_at, updated_at)
+        SELECT id, scope, project_id, period, amount_cents, currency, created_at, updated_at FROM budgets;
+      DROP TABLE budgets;
+      ALTER TABLE budgets_v21 RENAME TO budgets;
+      CREATE UNIQUE INDEX budgets_unique ON budgets(
+        scope, COALESCE(project_id, ''), COALESCE(scope_id, ''), kind, COALESCE(account_id, ''), period);
+
+      -- Warnings fire once per budget per period; overrides are one-time grants from an approval.
+      CREATE TABLE IF NOT EXISTS budget_alerts (
+        budget_id TEXT NOT NULL,
+        period_key TEXT NOT NULL,
+        level TEXT NOT NULL CHECK (level IN ('warn','hard')),
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (budget_id, period_key, level)
+      );
+      CREATE TABLE IF NOT EXISTS budget_overrides (
+        id TEXT PRIMARY KEY,
+        budget_id TEXT NOT NULL,
+        period_key TEXT NOT NULL,
+        scope_key TEXT NOT NULL,
+        approval_id TEXT,
+        granted_at TEXT NOT NULL,
+        used_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_budget_overrides_budget ON budget_overrides(budget_id, period_key, scope_key);
+    `,
+  },
+  {
+    version: 22,
+    name: 'timesheets with reconciliation hash (WP9 9.6)',
+    sql: TIMESHEETS_SQL,
+  },
+  {
+    version: 23,
+    name: '023_design_lifecycle',
+    // Vision §12. design_frames.status carries a CHECK SQLite cannot widen (adds review and
+    // superseded), and design_frame_versions references design_frames(id), so the table is
+    // rebuilt with foreign keys off exactly like v10: every row, column, index and foreign
+    // key is kept; superseded_by is the one new column. Versions gain approval/lineage
+    // columns and boards gain the linked design task. Additive otherwise.
+    foreignKeysOff: true,
+    sql: `
+      CREATE TABLE design_frames_v23 (
+        id TEXT PRIMARY KEY,
+        board_id TEXT NOT NULL REFERENCES design_boards(id) ON DELETE CASCADE,
+        parent_frame_id TEXT,
+        title TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        device TEXT NOT NULL DEFAULT 'phone' CHECK (device IN ('phone','tablet','desktop','custom')),
+        width INTEGER NOT NULL DEFAULT 393,
+        height INTEGER NOT NULL DEFAULT 852,
+        x REAL NOT NULL DEFAULT 80,
+        y REAL NOT NULL DEFAULT 80,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','iterating','review','approved','superseded','archived')),
+        source_files_json TEXT NOT NULL DEFAULT '[]',
+        html_path TEXT,
+        html_content TEXT NOT NULL DEFAULT '',
+        notes TEXT,
+        author_id TEXT NOT NULL DEFAULT 'atlas',
+        approved_by TEXT,
+        approved_at TEXT,
+        evidence_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        superseded_by TEXT
+      );
+      INSERT INTO design_frames_v23 (id, board_id, parent_frame_id, title, version, device, width, height, x, y, status,
+        source_files_json, html_path, html_content, notes, author_id, approved_by, approved_at, evidence_id, created_at, updated_at)
+      SELECT id, board_id, parent_frame_id, title, version, device, width, height, x, y, status,
+        source_files_json, html_path, html_content, notes, author_id, approved_by, approved_at, evidence_id, created_at, updated_at
+      FROM design_frames;
+      DROP TABLE design_frames;
+      ALTER TABLE design_frames_v23 RENAME TO design_frames;
+      CREATE INDEX design_frames_board ON design_frames(board_id, created_at ASC);
+
+      ALTER TABLE design_frame_versions ADD COLUMN state TEXT CHECK (state IS NULL OR state IN ('approved','superseded'));
+      ALTER TABLE design_frame_versions ADD COLUMN approved_by TEXT;
+      ALTER TABLE design_frame_versions ADD COLUMN approved_at TEXT;
+      ALTER TABLE design_frame_versions ADD COLUMN evidence_id TEXT;
+      ALTER TABLE design_frame_versions ADD COLUMN artifact_path TEXT;
+      ALTER TABLE design_frame_versions ADD COLUMN content_sha TEXT;
+      ALTER TABLE design_frame_versions ADD COLUMN superseded_by TEXT;
+      ALTER TABLE design_boards ADD COLUMN task_id TEXT;
+      CREATE INDEX IF NOT EXISTS design_frame_versions_state ON design_frame_versions(state, frame_id);
     `,
   },
 ];

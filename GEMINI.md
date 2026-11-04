@@ -76,7 +76,7 @@ Never start from:
 
 ## 2. Core Engineering & Quality Standards
 
-*   **Substrate-Native Truth**: Use the authoritative store for the runtime actually handling the work, and preserve provenance. Today, desktop Tauri SQLite and Node task/event paths are not one integrated source of record. Do not claim a cross-runtime update unless an adapter or shared service demonstrably performed it. Surface `UNKNOWN` for missing telemetry. The workflow implementation plan calls for an architecture decision before consolidating stores.
+*   **Substrate-Native Truth**: The V2 runtime store (`~/.myaos/runtime.db`) is the single source of record for workflow state (decision K1, `community/proposals/MYAOS_V2_PROGRAMME_PLAN.md`). The v1 desktop SQLite (`data/myaos.db`) and Node task/event paths are legacy, read-only import sources. Do not claim a cross-runtime update unless an adapter demonstrably performed it. All progress trackers, dashboards and metrics compute values from recorded data and surface `UNKNOWN` for missing telemetry.
 *   **The Independent Verifier Rule**: To prevent confirmation bias and protect the codebase's epistemic integrity, **the implementing agent is strictly forbidden from self-verifying their own work**. 
     *   Upon completing an implementation, the author must author robust, un-mocked regression tests, and transition the task status to `in_review`.
     *   Independent verification (e.g. via Lead Verifier Kael or Automated QA Antigravity) must run the verification commands, inspect outcomes, and write the final passed status to the `evidence` table.

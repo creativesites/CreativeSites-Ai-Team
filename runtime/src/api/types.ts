@@ -7,7 +7,19 @@ export type JobKind = 'code' | 'research' | 'ops' | 'design' | 'decision';
 export type ShipStatus = 'none' | 'ready' | 'shipped' | 'merged' | 'pr_opened' | 'cherry_picked' | 'branch_pushed';
 export type SessionState = 'starting' | 'running' | 'idle' | 'stopped' | 'failed';
 export type IdentityStatusState = 'idle' | 'working' | 'rate_limited' | 'waiting_reset' | 'offline';
-export type TaskStatus = 'pending' | 'running' | 'done' | 'failed' | 'blocked';
+export type TaskStatus =
+  | 'pending'
+  | 'assigned'
+  | 'acknowledged'
+  | 'running'
+  | 'needs_review'
+  | 'verified'
+  | 'done'
+  | 'blocked'
+  | 'failed'
+  | 'retrying'
+  | 'reassignment_required'
+  | 'needs_human';
 export type ApprovalStatus = 'pending' | 'approved' | 'declined' | 'expired' | 'escalated';
 export type Risk = 'low' | 'medium' | 'high' | 'critical';
 export type ActorKind = 'human' | 'agent' | 'system';
@@ -124,6 +136,14 @@ export interface Identity {
   rateLimitResetAt?: string | null;
   rateLimitReason?: string | null;
   lastWokenAt?: string | null;
+  /** K5: department id (see `departments`), set by `applyDepartmentMapping`. */
+  departmentId?: string | null;
+  /** K7 per-identity override of the renewal thresholds, e.g. { renew: 80 }. */
+  renewalPolicy?: Record<string, number> | null;
+  seniority?: 'exec' | 'lead' | 'senior' | 'member';
+  skills?: string[];
+  providers?: string[];
+  permissions?: string[];
 }
 
 export interface Team {
@@ -188,6 +208,8 @@ export interface Room {
   teamId?: string | null;
   kind?: 'project' | 'squad' | 'adhoc';
   archived?: boolean;
+  /** When true, a non-@mention human message in the room becomes an intake. Default off. */
+  intakeEnabled?: boolean;
 }
 
 export interface RoomMember {
@@ -230,6 +252,16 @@ export interface JobSummary {
   kind?: JobKind;
   shipStatus?: ShipStatus;
   shipPayload?: Record<string, unknown>;
+  /** WP2 triage fields; null on jobs created outside intake. */
+  workflow?: 'quick' | 'feature' | 'strategic' | 'incident' | null;
+  triageReason?: string | null;
+  urgency?: string | null;
+  impact?: string | null;
+  intakeId?: string | null;
+  okrKrId?: string | null;
+  milestoneId?: string | null;
+  krWeight?: number;
+  archivedAt?: string | null;
 }
 
 export interface Criterion {
@@ -257,6 +289,20 @@ export interface Task {
   endedAt?: string | null;
   updatedAt?: string | null;
   evidenceRequired?: boolean;
+  dependsOn?: string[];
+  priority?: number;
+  attempt?: number;
+  maxAttempts?: number;
+  acknowledgedAt?: string | null;
+  ackDeadlineAt?: string | null;
+  nextRetryAt?: string | null;
+  parentTaskId?: string | null;
+  requiredSkills?: string[];
+  budgetTokens?: number | null;
+  verificationRequired?: boolean;
+  legacyProjectTaskId?: string | null;
+  lastEventAt?: string | null;
+  archivedAt?: string | null;
 }
 
 export interface Evidence {
@@ -333,6 +379,44 @@ export interface JobPlan {
   approvedAt?: string | null;
   approvedBy?: string | null;
   councilId?: string | null;
+  // Structured plan packet (S1-C). All optional so older plans still parse.
+  requirements?: string[];
+  architecture?: string;
+  risks?: { text: string; severity: string }[];
+  risk?: 'low' | 'medium' | 'high';
+  humanDecisions?: string[];
+  estimates?: { agentHours?: number; notes?: string };
+  submittedBy?: string;
+  submittedAt?: string;
+  /** Plan task key -> real task id, for the tasks this plan created. */
+  taskKeys?: Record<string, string>;
+}
+
+export interface PlanTaskInput {
+  key: string;
+  title: string;
+  assigneeId?: string | null;
+  dependsOn?: string[];
+  checkCommand?: string | null;
+  verificationRequired?: boolean;
+  requiredSkills?: string[];
+  priority?: number;
+  /** Indexes into the packet's `criteria`. */
+  criteriaRefs?: number[];
+}
+
+export interface PlanPacket {
+  summary: string;
+  requirements?: string[];
+  architecture?: string;
+  risks?: { text: string; severity: string }[];
+  risk: 'low' | 'medium' | 'high';
+  humanDecisions?: string[];
+  estimates?: { agentHours?: number; notes?: string };
+  criteria?: string[];
+  tasks: PlanTaskInput[];
+  /** The council whose verdict this plan carries out (WP3 3.3). */
+  councilId?: string | null;
 }
 
 export interface JobStageHistory {
@@ -391,6 +475,14 @@ export interface Session {
   generation?: number;
   contextTokens?: number;
   batonCapsule?: string | null;
+  /** The real model id the adapter reported (not the ACP agent name in `model`). null when never reported. */
+  modelId?: string | null;
+  /** Context window in tokens: reported by the adapter, else the model registry. null = unknown. */
+  contextWindow?: number | null;
+  /** Highest renewal band already reported for this session (K7); each band fires once. */
+  contextBand?: string | null;
+  /** The continuation package compiled at the `prepare` band (K7). */
+  continuationPackage?: Record<string, unknown> | null;
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -429,6 +521,17 @@ export interface Usage {
   costCents: number;
   source: string | null;
   createdAt: string;
+  agentId?: string | null;
+  taskId?: string | null;
+  provider?: string | null;
+  modelId?: string | null;
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  /** How well the numbers are known. 'unavailable' rows carry zeros that are NOT measurements. */
+  measurement?: 'actual' | 'estimated' | 'unavailable';
+  contextUsed?: number | null;
+  contextSize?: number | null;
 }
 
 export interface ApprovalPolicy {
@@ -446,13 +549,27 @@ export interface ApprovalPolicy {
   createdAt: string;
 }
 
+export type BudgetScope = 'global' | 'project' | 'agent' | 'task' | 'department' | 'session';
+export type BudgetKind = 'money' | 'tokens' | 'weekly_pct' | 'session_pct' | 'requests_per_day';
+export type BudgetPeriod = 'job' | 'day' | 'week' | 'month' | 'session';
+
 export interface Budget {
   id: string;
-  scope: 'global' | 'project';
+  scope: BudgetScope;
   projectId: string | null;
-  period: 'job' | 'day' | 'month';
+  /** The agent / task / department / session id for those scopes. */
+  scopeId?: string | null;
+  period: BudgetPeriod;
+  /** Legacy money budgets only; 0 for subscription-limit budgets. */
   amountCents: number;
   currency: string;
+  /** 'money' is the legacy kind; new budgets are tokens or a share of an account's limit. */
+  kind?: BudgetKind;
+  /** The limit: a token count, a percent of the account's limit, or a request count. */
+  amount?: number | null;
+  accountId?: string | null;
+  warnPct?: number;
+  hardPct?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -460,6 +577,20 @@ export interface Budget {
 export interface AdapterAuth {
   state: 'ready' | 'configured' | 'needs_login' | 'missing_binary' | 'unsupported' | 'unknown';
   detail: string;
+  /**
+   * Which account the adapter is signed in to, when the CLI exposes it locally.
+   * Used for AI-account isolation (programme plan K9). Never sent off the machine.
+   */
+  account?: AdapterAccount | null;
+}
+
+export interface AdapterAccount {
+  /** Stable identifier when available (email or organisation id). */
+  id: string | null;
+  /** Human label (email, organisation name, plan). */
+  label: string | null;
+  /** Where it was read from, e.g. `claude auth status`, `~/.gemini/google_accounts.json`. */
+  source: string;
 }
 
 export interface AdapterInfo {
@@ -536,6 +667,11 @@ export interface CouncilCardResult {
   text?: string | null;
   parsed?: CouncilCardParsed | null;
   quotes?: CouncilQuoteCheck[];
+  /** Live councils: the seat's vote and what would have to be true for it to change its mind. */
+  vote?: 'endorse' | 'amend' | 'dissent' | null;
+  wouldHaveToBeTrue?: string | null;
+  /** Written by the scripted simulation runner, never by an agent. */
+  simulated?: boolean;
 }
 
 export interface CouncilCard {
@@ -545,6 +681,9 @@ export interface CouncilCard {
   seat: string;
   identityId: string | null;
   result: CouncilCardResult;
+  /** The agent session that wrote this card (live councils). */
+  sessionId?: string | null;
+  simulated?: boolean;
   createdAt: string;
 }
 
@@ -615,6 +754,60 @@ export interface CouncilResult {
   seats?: CouncilVerdictSeatSummary[];
   disclaimer?: string;
   tasks?: CreateTaskInput[];
+  // WP3 live council synthesis (3.4)
+  runMode?: CouncilRunMode | null;
+  scoredRound?: number;
+  dissents?: { seat: string; quote: string; would_have_to_be_true: string; round: number }[];
+  rejectedOptions?: CouncilScore[];
+  absent?: CouncilAbsentSeat[];
+}
+
+export type CouncilRunMode = 'live' | 'simulation';
+
+export interface CouncilAbsentSeat {
+  seat: string;
+  identityId: string | null;
+  round: number;
+  reason: string;
+}
+
+export interface CouncilSeatSelection {
+  identityId: string;
+  weight: number;
+  score: number;
+  reasons: string[];
+}
+
+export interface CouncilSelection {
+  skipped: string | null;
+  keywords: string[];
+  seats: CouncilSeatSelection[];
+  excluded: { identityId: string; reason: string }[];
+  override: boolean;
+  selectedAt: string;
+}
+
+export interface CouncilLiveState {
+  rounds: number;
+  round: number;
+  timeoutMinutes: number;
+  roundOpenedAt: string | null;
+  deadlineAt: string | null;
+  closedRounds: number[];
+  /** seat -> round -> session id that was invited to write that card. */
+  sessions: Record<string, Record<string, string | null>>;
+  outcome?: string | null;
+  /** seat -> round -> why its session could not start. */
+  startErrors?: Record<string, Record<string, string>>;
+  synthesiser?: {
+    identityId: string;
+    reason: string;
+    sessionId: string | null;
+    requestedBy: string;
+    requestedAt: string;
+    status: 'requested' | 'running' | 'submitted' | 'failed';
+    error?: string | null;
+  } | null;
 }
 
 export interface CouncilStreamEvent {
@@ -641,6 +834,11 @@ export interface Council {
   cards: CouncilCard[];
   verdict: CouncilVerdict | null;
   createdAt: string;
+  /** null for councils filled by hand through the cards API. */
+  runMode?: CouncilRunMode | null;
+  selection?: CouncilSelection | null;
+  liveState?: CouncilLiveState | null;
+  absentSeats?: CouncilAbsentSeat[];
 }
 
 export interface CouncilVerdict {
@@ -664,6 +862,8 @@ export interface CreateCouncilInput {
   assumptions?: string[];
   options: CouncilOption[];
   seats: CouncilSeat[];
+  runMode?: CouncilRunMode | null;
+  selection?: CouncilSelection | null;
 }
 
 export interface CreateCouncilCardInput {
@@ -679,6 +879,19 @@ export interface CreateCouncilCardInput {
   text?: string;
   parsed?: CouncilCardParsed;
   quotes?: CouncilQuoteCheck[];
+  sessionId?: string | null;
+  simulated?: boolean;
+  vote?: 'endorse' | 'amend' | 'dissent' | null;
+  wouldHaveToBeTrue?: string | null;
+}
+
+export interface StartJobCouncilInput {
+  mode?: CouncilRunMode;
+  /** Identity ids that replace the automatic selection. */
+  seats?: string[];
+  options?: CouncilOption[];
+  prompt?: string;
+  rounds?: 1 | 2;
 }
 
 export interface RunCouncilInput {
@@ -697,6 +910,7 @@ export interface CouncilSessionSummary {
   status: string;
   source?: string;
   jobId?: string | null;
+  runMode?: CouncilRunMode | null;
 }
 
 export interface CouncilSessionPayload {
@@ -706,12 +920,16 @@ export interface CouncilSessionPayload {
   mode: 'quick' | 'full';
   status: string;
   jobId?: string | null;
+  runMode?: CouncilRunMode | null;
   events: CouncilStreamEvent[];
 }
 
 export interface AcceptVerdictInput {
   actorId: string;
   tasks?: CreateTaskInput[];
+  /** Live councils: ask the synthesiser seat to submit the plan instead of supplying tasks. */
+  synthesise?: boolean;
+  risk?: 'low' | 'medium' | 'high';
 }
 
 export interface BridgeStatus {
@@ -782,6 +1000,10 @@ export interface RuntimeEvent {
   actorId?: string | null;
   actorKind?: ActorKind | null;
   subjectType?: string | null;
+  jobId?: string | null;
+  taskId?: string | null;
+  sessionId?: string | null;
+  idempotencyKey?: string | null;
   hash?: string | null;
   prevHash?: string | null;
 }
@@ -945,17 +1167,39 @@ export interface CreateTaskInput {
   mode?: Task['mode'];
   evidenceRequired?: boolean;
   criterionIds?: string[];
+  dependsOn?: string[];
+  priority?: number;
+  maxAttempts?: number;
+  parentTaskId?: string | null;
+  requiredSkills?: string[];
+  budgetTokens?: number | null;
+  verificationRequired?: boolean;
 }
 
+/** Status is deliberately absent: it changes only through TransitionTaskInput (K3). */
 export interface UpdateTaskInput {
   title?: string;
   assigneeId?: string | null;
   checkCommand?: string | null;
   gate?: string | null;
-  status?: TaskStatus;
   position?: number;
   mode?: Task['mode'];
   evidenceRequired?: boolean;
+  dependsOn?: string[];
+  priority?: number;
+  maxAttempts?: number;
+  requiredSkills?: string[];
+  budgetTokens?: number | null;
+  verificationRequired?: boolean;
+}
+
+export interface TransitionTaskInput {
+  to: TaskStatus;
+  actorId: string;
+  actorKind?: ActorKind;
+  reason?: string | null;
+  /** New assignee when moving to assigned. */
+  assigneeId?: string | null;
 }
 
 export interface CreateEvidenceInput {
@@ -1031,11 +1275,19 @@ export interface UpdatePolicyInput {
 }
 
 export interface CreateBudgetInput {
-  scope: 'global' | 'project';
+  scope: BudgetScope;
   projectId?: string | null;
-  period: 'job' | 'day' | 'month';
-  amountCents: number;
+  scopeId?: string | null;
+  period: BudgetPeriod;
+  /** Required for kind 'money' (the default). */
+  amountCents?: number;
   currency?: string;
+  kind?: BudgetKind;
+  /** Required for non-money kinds: tokens, % of the account limit, or requests. */
+  amount?: number;
+  accountId?: string | null;
+  warnPct?: number;
+  hardPct?: number;
 }
 
 export interface RegisterSessionInput {
@@ -1075,6 +1327,17 @@ export interface RecordUsageInput {
   outputTokens?: number;
   costCents?: number;
   source?: string | null;
+  agentId?: string | null;
+  taskId?: string | null;
+  provider?: string | null;
+  modelId?: string | null;
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  /** Defaults to 'actual'. Use 'unavailable' when the adapter reported nothing. */
+  measurement?: 'actual' | 'estimated' | 'unavailable';
+  contextUsed?: number | null;
+  contextSize?: number | null;
 }
 
 export interface ImportIdentitiesInput {
@@ -1173,9 +1436,14 @@ export interface AgentSchedule {
   maxRuns: number | null;
   runCount: number;
   createdAt: string;
+  /** IANA zone the cron fields are evaluated in. */
+  timezone: string;
+  /** Set for runtime-seeded recurring routines; unique. */
+  name: string | null;
 }
 
 export interface CreateScheduleInput {
+  timezone?: string;
   agentId?: string;
   targetAgentId?: string;
   createdBy: string;
@@ -1230,8 +1498,10 @@ export interface RateLimitReportInput {
 }
 
 export interface ShipJobInput {
-  strategy: 'merge' | 'cherry-pick' | 'branch';
+  strategy: 'merge' | 'cherry-pick' | 'branch' | 'pr';
   targetBranch?: string;
+  /** For strategy 'pr': the git remote to push to (default origin). */
+  remote?: string;
   actorId: string;
   message?: string;
 }
@@ -1239,11 +1509,12 @@ export interface ShipJobInput {
 export interface ShipJobResult {
   ok?: boolean;
   job: JobDetail;
-  strategy: 'merge' | 'cherry-pick' | 'branch';
+  strategy: 'merge' | 'cherry-pick' | 'branch' | 'pr';
   targetBranch: string;
   branch?: string;
   commitSha: string;
   evidence: Evidence;
+  prUrl?: string;
 }
 
 // --- Session Baton Relay & Token Efficiency ---
@@ -1259,7 +1530,7 @@ export interface SessionRotationResult {
 
 export type DesignBoardMode = 'greenfield' | 'extracted' | 'hybrid';
 export type DesignDeviceKind = 'phone' | 'tablet' | 'desktop' | 'custom';
-export type DesignFrameStatus = 'draft' | 'iterating' | 'approved' | 'archived';
+export type DesignFrameStatus = 'draft' | 'iterating' | 'review' | 'approved' | 'superseded' | 'archived';
 
 export interface DesignTokens {
   brandName?: string;
@@ -1278,6 +1549,16 @@ export interface DesignFrameVersion {
   notes: string | null;
   authorId: string;
   createdAt: string;
+  /** 'approved' / 'superseded' once this exact version was approved; null while it never was. */
+  state: 'approved' | 'superseded' | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  evidenceId: string | null;
+  /** Snapshot of the approved HTML (immutable reference for implementers). */
+  artifactPath: string | null;
+  contentSha: string | null;
+  /** The version id (same frame) or frame id (a successor frame) that replaced this approval. */
+  supersededBy: string | null;
 }
 
 export interface DesignFrame {
@@ -1300,6 +1581,8 @@ export interface DesignFrame {
   approvedBy: string | null;
   approvedAt: string | null;
   evidenceId: string | null;
+  /** Frame id whose approval replaced this one (set with status 'superseded'). */
+  supersededBy: string | null;
   createdAt: string;
   updatedAt: string;
   versions?: DesignFrameVersion[];
@@ -1310,6 +1593,8 @@ export interface DesignBoard {
   projectId: string | null;
   jobId: string | null;
   roomId: string | null;
+  /** The linked design task, when the board came from a design request. */
+  taskId: string | null;
   title: string;
   description: string | null;
   mode: DesignBoardMode;
@@ -1329,6 +1614,7 @@ export interface CreateDesignBoardInput {
   projectId?: string | null;
   jobId?: string | null;
   roomId?: string | null;
+  taskId?: string | null;
   title: string;
   description?: string | null;
   mode?: DesignBoardMode;
@@ -1370,6 +1656,33 @@ export interface UpdateDesignFrameInput {
   htmlContent?: string;
   notes?: string | null;
   authorId?: string;
+}
+
+/** An approved frame version that implementation work should follow. */
+export interface ApprovedDesignRef {
+  frameId: string;
+  title: string;
+  version: number;
+  device: DesignDeviceKind;
+  path: string | null;
+}
+
+export interface CreateDesignRequestInput {
+  jobId?: string;
+  projectId?: string;
+  brief: string;
+  deviceTargets?: DesignDeviceKind[];
+  requestedBy?: string;
+}
+
+export interface DesignRequestResult {
+  jobId: string;
+  boardId: string;
+  taskId: string;
+  assigneeId: string | null;
+  /** Why the task was assigned to this agent, or why it was left unassigned. */
+  assignmentReason: string;
+  duplicateJob: boolean;
 }
 
 export interface GenerateDesignInput {
@@ -1566,19 +1879,53 @@ export interface AiGenerateResponse {
 
 // ---------------------------------------------------------------- Strategic OKRs
 
-export interface OkrObjective {
+/** Derived fields (WP7). progress is null when UNKNOWN; progress_percent is a deprecated stored mirror. */
+export interface OkrObjectiveStrategy {
+  progress: number | null;
+  computedStatus: 'UNKNOWN' | 'on_track' | 'at_risk' | 'behind' | 'completed';
+  krCount: number;
+  unknownKrCount: number;
+}
+
+export interface OkrKeyResultStrategy {
+  kind: 'manual' | 'evidence' | 'computed';
+  source: string | null;
+  weight: number;
+  progress: number | null;
+  status: 'UNKNOWN' | 'on_track' | 'at_risk' | 'behind' | 'completed';
+  provenance: 'manual' | 'verified' | 'runtime_observed' | 'UNKNOWN';
+  reason: string | null;
+  linkedJobs: number;
+  countedJobs: number;
+}
+
+export interface OkrProgressEntry {
+  id: string;
+  keyResultId: string;
+  value: number | null;
+  progressPercent: number | null;
+  provenance: 'manual' | 'agent_reported' | 'runtime_observed' | 'verified';
+  jobId: string | null;
+  evidenceId: string | null;
+  recordedBy: string;
+  recordedAt: string;
+  note: string | null;
+}
+
+export interface OkrObjective extends OkrObjectiveStrategy {
   id: string;
   title: string;
   description: string | null;
   owner_id: string | null;
   quarter: string;
+  /** Deprecated stored mirror; 0 when UNKNOWN. Use `progress`. */
   progress_percent: number;
   status: 'on_track' | 'at_risk' | 'behind' | 'completed';
   created_at: string;
   updated_at: string;
 }
 
-export interface OkrKeyResult {
+export interface OkrKeyResult extends OkrKeyResultStrategy {
   id: string;
   objective_id: string;
   title: string;
@@ -1586,7 +1933,9 @@ export interface OkrKeyResult {
   current_value: number;
   target_value: number;
   unit: string | null;
+  /** Deprecated stored mirror; 0 when UNKNOWN. Use `progress`. */
   progress_percent: number;
+  /** Stored for reference only. It is never evaluated and is not a measurement. */
   telemetry_query: string | null;
   created_at: string;
   updated_at: string;
@@ -1610,13 +1959,35 @@ export interface SaveOkrKeyResultInput {
   target_value?: number;
   unit?: string;
   telemetry_query?: string;
+  kind?: 'manual' | 'evidence' | 'computed';
+  source?: string;
+  weight?: number;
+  actorId?: string;
 }
 
 export interface UpdateOkrProgressInput {
   current_value: number;
+  actorId?: string;
+  note?: string;
+}
+
+export interface HealthFigure {
+  /** Percent, or null (UNKNOWN) when the denominator is 0. */
+  value: number | null;
+  numerator: number;
+  denominator: number;
+  status: 'UNKNOWN' | 'measured';
+  basis: string;
 }
 
 export interface RealityAuditSummary {
+  /** Separate figures (WP7). Each is null/UNKNOWN when its denominator is 0. */
+  execution: HealthFigure;
+  evidence: HealthFigure;
+  strategy: HealthFigure & { objectives: number; objectivesWithProgress: number; unknownKeyResults: number };
+  /** Deprecated: mean of the measured figures above (0 when none is measured); never from typed-in progress. */
+  healthScoreDeprecated: true;
+  healthScoreUnknown: boolean;
   healthScore: number;
   totalObjectives: number;
   totalKeyResults: number;
@@ -1692,3 +2063,85 @@ export interface Milestone {
 
 
 
+
+// ---------------------------------------------------------------- intake (WP2)
+
+export type IntakeSource = 'home' | 'room' | 'design' | 'sessions' | 'api' | 'agent' | 'schedule';
+
+export interface IntakeRequest {
+  id: string;
+  rawText: string;
+  source: IntakeSource;
+  sourceRef: string | null;
+  projectId: string | null;
+  requestedBy: string;
+  createdAt: string;
+  jobId: string | null;
+  duplicateOfJobId: string | null;
+  dedupeReason: string | null;
+  classification: Record<string, unknown>;
+}
+
+export interface CreateIntakeInput {
+  text: string;
+  source: IntakeSource;
+  sourceRef?: string | null;
+  projectId?: string | null;
+  roomId?: string | null;
+  requestedBy: string;
+  /** Orchestrator override of the rule-based triage; recorded on the job. */
+  override?: { workflow: 'quick' | 'feature' | 'strategic' | 'incident'; reason: string; by: string };
+}
+
+export interface IntakeResult {
+  intake: IntakeRequest;
+  /** The new job, or the existing open job when `duplicate` is true. */
+  job: JobDetail;
+  duplicate: boolean;
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  leadIdentityId: string | null;
+  createdAt: string;
+  memberCount: number;
+}
+
+export interface DepartmentMappingEntry {
+  department: string;
+  seniority?: 'exec' | 'lead' | 'senior' | 'member';
+}
+
+export interface DepartmentMappingResult {
+  changed: { id: string; department: string; seniority: string; was: { department: string | null; seniority: string } }[];
+  unchanged: string[];
+  missing: string[];
+  leads: { department: string; lead: string }[];
+}
+
+export interface Blocker {
+  id: string;
+  jobId: string | null;
+  taskId: string | null;
+  raisedBy: string;
+  summary: string;
+  needs: string | null;
+  severity: 'low' | 'normal' | 'high';
+  status: 'open' | 'resolved';
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+}
+
+export type NeedsYouKind = 'approval' | 'blocker' | 'task_needs_human' | 'task_reassignment_required' | 'budget_exception' | 'delivery_approval';
+
+export interface NeedsYouItem {
+  kind: NeedsYouKind;
+  id: string;
+  jobId: string | null;
+  title: string;
+  detail: string;
+  createdAt: string;
+  severity: 'low' | 'normal' | 'high';
+}

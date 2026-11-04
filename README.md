@@ -1,6 +1,6 @@
 # CreativeSites AI Team & MyaOS
 
-> **Workflow status (2026-11-03):** The MyaOS v2 Operating Model has been unified under **Single Writer Authority** (`~/.myaos/runtime.db`). See [`AGENTS.md`](AGENTS.md), [`041_myaos_workflow_from_scratch.md`](community/threads/041_myaos_workflow_from_scratch.md), and [`MYAOS_V2_WORKFLOW_ENGINE_SPEC.md`](community/proposals/MYAOS_V2_WORKFLOW_ENGINE_SPEC.md).
+> **Workflow status (2026-11-03):** V2 is the canonical system: runtime in `runtime/`, desktop in `apps/desktop/`, store `~/.myaos/runtime.db`. The v1 desktop (`desktop/`) and Node runtime (`src/`, `bin/`) are legacy and read-only (see their `LEGACY.md`). Plan: [`MYAOS_V2_PROGRAMME_PLAN.md`](community/proposals/MYAOS_V2_PROGRAMME_PLAN.md).
 
 ---
 
@@ -14,7 +14,7 @@ Every agent session (Claude Code, Antigravity, or terminal) must execute this pr
    - **Tier 1 (Direct)**: < 1h bug fix/tweak ──> write code + un-mocked test ──> hand off to Kael.
    - **Tier 2 (Modular Task)**: Multi-agent feature ──> create thread in `community/threads/` + decompose into SQLite `tasks`.
    - **Tier 3 (Council of Planners)**: Strategic bet / new client engagement / high ruin risk ──> convene Council via [`community/skills/planner-brief`](community/skills/planner-brief/SKILL.md). Never implement alone.
-4. **Step 4 — Communication & Stand-ups**: Record non-trivial epics in `community/threads/`. Ensure daily stand-ups are compiled via `node scripts/generate_daily_standup.mjs` (08:00 CAT daemon).
+4. **Step 4 — Communication & Stand-ups**: Record non-trivial epics in `community/threads/`. Ensure daily stand-ups are compiled via `node scripts/generate_daily_standup.mjs` (legacy interim producer until the V2 stand-up pipeline lands in WP6; target time 10:00 CAT).
 5. **Step 5 — The Independent Verifier Gate**: **You are strictly forbidden from self-verifying your own work.** Transition completed tasks to `in_review` and request independent review from `@Kael` or `@Antigravity` via [`community/skills/independent-verification`](community/skills/independent-verification/SKILL.md).
 6. **Step 6 — Git & Workspace Hygiene**: Atomic conventional commits (`feat(scope): ...`, `fix(scope): ...`). Zero uncommitted drift, zero secrets, zero mock falsification.
 

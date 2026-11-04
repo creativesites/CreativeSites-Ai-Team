@@ -3,6 +3,9 @@ name: daily-standup
 description: Automated daily standup aggregation and publishing procedure, querying events and commits from the last 24h, compiling attendance, and recording to SQLite.
 version: 1.0.0
 owner: The Orchestrator
+triggers: [standup, stand-up, daily report, blockers]
+workflows: []
+roles: [lead]
 inputs:
   - period_hours: 24
 outputs:
