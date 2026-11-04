@@ -685,7 +685,7 @@ Output JSON only.`;
 export function startLiveCouncilRunner(
   repo: Repo,
   jobId: string,
-  input: T.RunCouncilInput
+  input: T.RunCouncilInput & { runMode?: 'live' | 'simulation' }
 ): { council: T.Council; sessionId: string } {
   let jobTitle = '';
   let jobBrief = '';
@@ -696,6 +696,9 @@ export function startLiveCouncilRunner(
   } catch {
     // fallback if job lookup fails
   }
+
+  const runMode: 'live' | 'simulation' = input.runMode ?? 'live';
+  const isSimulation = runMode === 'simulation';
 
   const prompt = (input.prompt?.trim() || `${jobTitle}\n\n${jobBrief}`.trim() || 'Evaluate the proposed system architecture and execution plan.').trim();
   const mode: 'quick' | 'full' = input.mode === 'quick' ? 'quick' : 'full';
@@ -759,7 +762,7 @@ export function startLiveCouncilRunner(
       { id: 'C', label: 'Alternative / Conservative Option' },
     ],
     seats: councilSeats,
-    runMode: 'live',
+    runMode,
   });
 
   stream.councilId = tempCouncil.id;
@@ -799,7 +802,7 @@ export function startLiveCouncilRunner(
           weights,
           seats: seatKeys,
           mode,
-          runMode: 'live',
+          runMode,
         },
         cid
       );
@@ -840,7 +843,7 @@ export function startLiveCouncilRunner(
         }
 
         repo.addCouncilCard(cid, {
-          sessionId: cid,
+          sessionId: isSimulation ? null : cid,
           round: 1,
           seat: s.key,
           scores: cardData.parsed.optionScores,
@@ -852,7 +855,7 @@ export function startLiveCouncilRunner(
           text: cardData.text,
           parsed: cardData.parsed,
           quotes: cardData.quotes,
-          simulated: false,
+          simulated: isSimulation,
         });
 
         emit('seat_done', { round: 1, seat: s.key, text: cardData.text, parsed: cardData.parsed, quotes: cardData.quotes, name: s.name }, cid);
@@ -899,7 +902,7 @@ export function startLiveCouncilRunner(
           for (const o of setupInfo.options) ruinMap[o.id] = 'none';
 
           repo.addCouncilCard(cid, {
-            sessionId: cid,
+            sessionId: isSimulation ? null : cid,
             round: 2,
             seat: s.key,
             scores: cardData.parsed.optionScores,
@@ -911,7 +914,7 @@ export function startLiveCouncilRunner(
             text: cardData.text,
             parsed: cardData.parsed,
             quotes: cardData.quotes,
-            simulated: false,
+            simulated: isSimulation,
           });
 
           emit('seat_done', { round: 2, seat: s.key, text: cardData.text, parsed: cardData.parsed, quotes: cardData.quotes, name: s.name }, cid);
@@ -971,7 +974,7 @@ export function startLiveCouncilRunner(
           for (const o of setupInfo.options) ruinMap[o.id] = 'none';
 
           repo.addCouncilCard(cid, {
-            sessionId: cid,
+            sessionId: isSimulation ? null : cid,
             round: 3,
             seat: s.key,
             scores: cardData.parsed.optionScores,
@@ -983,7 +986,7 @@ export function startLiveCouncilRunner(
             text: cardData.text,
             parsed: cardData.parsed,
             quotes: cardData.quotes,
-            simulated: false,
+            simulated: isSimulation,
           });
 
           emit('seat_done', { round: 3, seat: s.key, text: cardData.text, parsed: cardData.parsed, quotes: cardData.quotes, name: s.name }, cid);
@@ -1049,9 +1052,11 @@ export function startLiveCouncilRunner(
         revisit: 'Upon completion of the first build milestone or if check commands fail.',
         votes,
         seats: seatSummaries,
-        disclaimer: 'MyaOS Planning Council: Live advisor deliberation completed.',
+        disclaimer: isSimulation
+          ? 'SIMULATION: every card in this council was generated from templates with scripted scores; no agent was woken and nothing here is agent deliberation.'
+          : 'MyaOS Planning Council: Live advisor deliberation completed.',
         tasks: realTasks,
-        runMode: 'live',
+        runMode,
       };
 
       const savedVerdict = repo.createVerdict(cid, richVerdict);
@@ -1066,8 +1071,10 @@ export function startLiveCouncilRunner(
             confidence,
             support: savedVerdict.support,
             votes,
-            disclaimer: 'MyaOS Planning Council: Live advisor deliberation completed.',
-            runMode: 'live',
+            disclaimer: isSimulation
+              ? 'SIMULATION: every card in this council was generated from templates with scripted scores; no agent was woken and nothing here is agent deliberation.'
+              : 'MyaOS Planning Council: Live advisor deliberation completed.',
+            runMode,
           },
           seats: seatSummaries,
         },
@@ -1092,4 +1099,10 @@ export function startLiveCouncilRunner(
   return { council: repo.getCouncil(tempCouncil.id), sessionId: tempCouncil.id };
 }
 
-export const startSimulatedCouncil = startLiveCouncilRunner;
+export function startSimulatedCouncil(
+  repo: Repo,
+  jobId: string,
+  input: T.RunCouncilInput
+): { council: T.Council; sessionId: string } {
+  return startLiveCouncilRunner(repo, jobId, { ...input, runMode: 'simulation' });
+}

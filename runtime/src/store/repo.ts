@@ -2698,6 +2698,16 @@ export class Repo {
     ).map(toTranscript);
   }
 
+  deleteSession(id: string): void {
+    this.write(() => {
+      this.db.prepare('DELETE FROM transcript_entries WHERE session_id = ?').run(id);
+      this.db.prepare('DELETE FROM tool_calls WHERE session_id = ?').run(id);
+      this.db.prepare('DELETE FROM session_tokens WHERE session_id = ?').run(id);
+      this.db.prepare('UPDATE evidence SET session_id = NULL WHERE session_id = ?').run(id);
+      this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+    });
+  }
+
   /** After a restart, sessions whose processes are gone must show as offline, not live. */
   reconcileSessions(): number {
     let changed = 0;
@@ -3401,6 +3411,9 @@ export class Repo {
   acceptVerdict(councilId: string, input: T.AcceptVerdictInput): T.Council {
     const council = this.getCouncil(councilId);
     if (!council.verdict) throw new ConflictError('This council has no verdict to accept');
+    if (council.runMode === 'simulation') {
+      throw new ConflictError('This council is a simulation (scripted cards, no agent took part); its verdict cannot become a job plan. Run a live council.');
+    }
     const actorId = required(input.actorId, 'actorId');
     const councilResult = council.verdict.payload;
     const taskInputs = Array.isArray(input.tasks) ? input.tasks : [];
