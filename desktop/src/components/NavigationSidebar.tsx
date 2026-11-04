@@ -25,6 +25,7 @@ import {
   CheckSquare,
   Sparkles,
   Code2,
+  BookOpenCheck,
 } from 'lucide-react';
 
 export type DevViewType =
@@ -34,6 +35,7 @@ export type DevViewType =
   | 'agent_workspace'
   | 'projects'
   | 'okrs'
+  | 'knowledge'
   | 'design'
   | 'workspace'
   | 'chat'
@@ -121,6 +123,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
     },
     { id: 'projects', label: 'Project Management', icon: Kanban },
     { id: 'okrs', label: 'Strategic OKRs', icon: Target },
+    { id: 'knowledge', label: 'Knowledge & Intelligence', icon: BookOpenCheck },
     { id: 'design', label: 'Design Studio', icon: Palette },
     { id: 'team', label: 'Team & Org Chart', icon: Users },
     { id: 'workspace', label: 'Codebases & Repos', icon: FolderGit2 },

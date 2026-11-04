@@ -76,6 +76,7 @@ fn main() {
             myaos_get_evidence,
             myaos_get_observability_metrics,
             myaos_get_gemini_api_key,
+            myaos_knowledge_call,
             myaos_get_agent_working_dir,
             myaos_get_claude_latest_turn,
             myaos_log_mission_event,

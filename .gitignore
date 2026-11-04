@@ -28,3 +28,6 @@ apps/desktop/src-tauri/gen/
 
 # Local worktrees
 .claude/worktrees/
+
+# Knowledge & Intelligence layer (KI) local state
+data/ki/

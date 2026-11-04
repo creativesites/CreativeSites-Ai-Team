@@ -1,0 +1,3 @@
+# ADR-KI-004 — Commitments are separate from tasks; `overdue` is derived
+
+**Status:** Accepted. **Decision.** Many-to-many `ki_commitment_tasks`; fulfilment only through an evidence gate that consults the work system's own verification. `overdue` is computed (`deadline < now` while active) and exposed as `effectiveStatus`; a sweep emits one `commitment.overdue` event. **Why:** storing `overdue` overwrites whether work was `in_progress`/`blocked`. **Consequence:** filters accept `status:"overdue"` as a view, not a column. Extraction is rule-based by default (pluggable); everything extracted lands in `needs_confirmation`; auto-accept exists but is off and requires a trusted human source above a threshold.
