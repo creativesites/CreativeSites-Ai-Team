@@ -1347,8 +1347,10 @@ export interface RateLimitReportInput {
 }
 
 export interface ShipJobInput {
-  strategy: 'merge' | 'cherry-pick' | 'branch';
+  strategy: 'merge' | 'cherry-pick' | 'branch' | 'pr';
   targetBranch?: string;
+  /** For strategy 'pr': the git remote to push to (default origin). */
+  remote?: string;
   actorId: string;
   message?: string;
 }
@@ -1356,11 +1358,12 @@ export interface ShipJobInput {
 export interface ShipJobResult {
   ok?: boolean;
   job: JobDetail;
-  strategy: 'merge' | 'cherry-pick' | 'branch';
+  strategy: 'merge' | 'cherry-pick' | 'branch' | 'pr';
   targetBranch: string;
   branch?: string;
   commitSha: string;
   evidence: Evidence;
+  prUrl?: string;
 }
 
 // --- Session Baton Relay & Token Efficiency ---

@@ -1,4 +1,8 @@
 import fs from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { findExecutable } from './adapters.ts';
+const execFileAsync = promisify(execFile);
 import path from 'node:path';
 import type * as T from './api/types.ts';
 import { readArtifact, saveArtifact } from './artifacts.ts';
@@ -339,9 +343,12 @@ export class Checker {
       throw new ConflictError(`Cannot ship while ${pendingApprovals.length} approval(s) are still pending`);
     }
     const strategy = input.strategy ?? 'merge';
-    if (!['merge', 'cherry-pick', 'branch'].includes(strategy)) {
-      throw new InputError('strategy must be one of: merge, cherry-pick, branch');
+    if (!['merge', 'cherry-pick', 'branch', 'pr'].includes(strategy)) {
+      throw new InputError('strategy must be one of: merge, cherry-pick, branch, pr');
     }
+    // WP5 5.3: a pull request needs the GitHub CLI; fail before anything is pushed.
+    const gh = strategy === 'pr' ? findExecutable('gh') : null;
+    if (strategy === 'pr' && !gh) throw new ConflictError('Opening a pull request needs the GitHub CLI (gh) installed and signed in. Nothing was pushed.');
 
     // Ensure any dirty worktree state is committed first
     const committed = await this.commitWorktree(job.id, input.message ?? `ship ${job.title}`);
@@ -376,8 +383,39 @@ export class Checker {
       finalSha = workspaces.workspaceState(worktree.repoPath).headSha ?? committed.commitSha;
     }
 
+    let prUrl: string | null = null;
+    if (strategy === 'pr') {
+      const remote = input.remote?.trim() || 'origin';
+      const run = (cmd: string, args: string[]) => execFileAsync(cmd, args, { cwd: worktree.repoPath, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 });
+      try {
+        await run('git', ['branch', '-f', jobBranch, committed.commitSha]);
+      } catch {
+        /* the job branch is checked out in its worktree and already at this commit */
+      }
+      try {
+        await run('git', ['push', '-u', remote, `${jobBranch}:${jobBranch}`]);
+      } catch (e) {
+        throw new ConflictError(`git push to ${remote} failed: ${String((e as { stderr?: string }).stderr ?? (e as Error).message).slice(-600)}`);
+      }
+      const body = [
+        `Job #${job.number}: ${job.title}`,
+        job.brief ? `\n${job.brief}` : '',
+        job.criteria.length ? `\nAcceptance criteria:\n${job.criteria.map((c) => `- ${c.text} (${c.evidenceClass})`).join('\n')}` : '',
+        '\nOpened by the MyaOS runtime after verification and owner approval.',
+      ].join('\n');
+      try {
+        const out = await run(gh!, ['pr', 'create', '--draft', '--base', targetBranch, '--head', jobBranch, '--title', `${job.title} (job #${job.number})`, '--body', body]);
+        prUrl = String(out.stdout).trim().split('\n').filter((l) => /^https?:\/\//.test(l.trim())).pop() ?? null;
+      } catch (e) {
+        throw new ConflictError(`The branch was pushed, but gh pr create failed: ${String((e as { stderr?: string }).stderr ?? (e as Error).message).slice(-600)}`);
+      }
+      if (!prUrl) throw new ConflictError('gh pr create did not print a pull request URL');
+      commandUsed = `git push -u ${remote} ${jobBranch} && gh pr create --draft --base ${targetBranch} --head ${jobBranch}`;
+      finalSha = committed.commitSha;
+    }
+
     const shipStatus: T.ShipStatus =
-      strategy === 'merge' ? 'merged' : strategy === 'cherry-pick' ? 'cherry_picked' : 'branch_pushed';
+      strategy === 'merge' ? 'merged' : strategy === 'cherry-pick' ? 'cherry_picked' : strategy === 'pr' ? 'pr_opened' : 'branch_pushed';
     const shipPayload = {
       strategy,
       targetBranch,
@@ -385,12 +423,15 @@ export class Checker {
       commitSha: finalSha,
       shippedBy: input.actorId,
       shippedAt: new Date().toISOString(),
+      ...(prUrl ? { prUrl } : {}),
     };
     const evidence = this.repo.appendEvidence({
       jobId: job.id,
       kind: 'deploy',
       class: 'OBSERVED',
-      summary: `Shipped via ${strategy} to ${strategy === 'branch' ? jobBranch : targetBranch} at ${finalSha.slice(0, 12)}`,
+      summary: prUrl
+        ? `Pull request opened: ${prUrl} (${jobBranch} → ${targetBranch} at ${finalSha.slice(0, 12)})`
+        : `Shipped via ${strategy} to ${strategy === 'branch' ? jobBranch : targetBranch} at ${finalSha.slice(0, 12)}`,
       payload: shipPayload,
       command: commandUsed,
       exitCode: 0,
@@ -408,10 +449,11 @@ export class Checker {
       ok: true,
       job: updatedJob,
       strategy,
-      branch: strategy === 'branch' ? jobBranch : targetBranch,
+      branch: strategy === 'branch' || strategy === 'pr' ? jobBranch : targetBranch,
       targetBranch: strategy === 'branch' ? jobBranch : targetBranch,
       commitSha: finalSha,
       evidence,
+      ...(prUrl ? { prUrl } : {}),
     };
   }
 
