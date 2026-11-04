@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import type * as T from '../api/types.ts';
+import * as strategy from '../strategy/okrs.ts';
 import { loadConfig } from '../config.ts';
 import { computeCouncil } from '../council.ts';
 import {
@@ -140,6 +141,16 @@ export class Repo {
   }
 
   // ---------------------------------------------------------------- plumbing
+
+  private archiveColumns: boolean | null = null;
+
+  /** False only on a store opened below migration v19 (older-schema tests); then nothing is archived. */
+  private hasArchiveColumns(): boolean {
+    if (this.archiveColumns === null) {
+      this.archiveColumns = (this.db.prepare('PRAGMA table_info(tasks)').all() as Row[]).some((c) => c.name === 'archived_at');
+    }
+    return this.archiveColumns;
+  }
 
   private all(sql: string, ...params: SQLInputValue[]): Row[] {
     return this.db.prepare(sql).all(...params) as Row[];
@@ -978,8 +989,9 @@ export class Repo {
 
   // ---------------------------------------------------------------- jobs
 
-  listJobs(filter: { roomId?: string; projectId?: string; stage?: T.JobStage; limit?: number } = {}): T.JobSummary[] {
+  listJobs(filter: { roomId?: string; projectId?: string; stage?: T.JobStage; limit?: number; includeArchived?: boolean } = {}): T.JobSummary[] {
     const where: string[] = [];
+    if (!filter.includeArchived && this.hasArchiveColumns()) where.push('j.archived_at IS NULL');
     const params: SQLInputValue[] = [];
     if (filter.roomId) {
       where.push('j.room_id = ?');
@@ -1131,6 +1143,118 @@ export class Repo {
       this.recordEvent(events, { type: 'job.updated', subjectId: jobId, payload: { fields: fields.map(([c]) => c) }, subjectType: 'job' });
     });
     return this.getJob(jobId);
+  }
+
+  // ---------------------------------------------------------------- archive / delete (WP7)
+
+  /** Archived items drop out of lists, dispatch and key-result math. Nothing is removed. */
+  archiveJob(jobId: string, actorId: string, archive = true): T.JobDetail {
+    const job = this.getJob(jobId);
+    const actor = required(actorId, 'actorId');
+    if (archive && job.archivedAt) throw new ConflictError(`job ${jobId} is already archived`);
+    if (!archive && !job.archivedAt) throw new ConflictError(`job ${jobId} is not archived`);
+    this.write((events) => {
+      this.db.prepare('UPDATE jobs SET archived_at = ?, updated_at = ? WHERE id = ?').run(archive ? now() : null, now(), jobId);
+      this.recordEvent(events, {
+        type: archive ? 'job.archived' : 'job.unarchived',
+        subjectId: jobId,
+        subjectType: 'job',
+        payload: { krId: job.okrKrId ?? null, stage: job.stage },
+        actorId: actor,
+        actorKind: 'human',
+        jobId,
+      });
+    });
+    return this.getJob(jobId);
+  }
+
+  /** Permanent. Only an archived job, and only when `confirm` equals its id. FKs decide what cascades. */
+  deleteJob(jobId: string, confirm: string | null | undefined, actorId: string): void {
+    const job = this.getJob(jobId);
+    const actor = required(actorId, 'actorId');
+    if (!job.archivedAt) throw new ConflictError(`job ${jobId} must be archived before it can be deleted`);
+    if (confirm !== jobId) throw new ConflictError(`confirm must equal the job id (${jobId}) to delete it`);
+    try {
+      this.write((events) => {
+        this.db.prepare('DELETE FROM jobs WHERE id = ?').run(jobId);
+        this.recordEvent(events, {
+          type: 'job.deleted',
+          subjectId: jobId,
+          subjectType: 'job',
+          payload: { title: job.title, stage: job.stage, krId: job.okrKrId ?? null, number: job.number },
+          actorId: actor,
+          actorKind: 'human',
+        });
+      });
+    } catch (e) {
+      throw this.deleteRefusal(e, `job ${jobId}`);
+    }
+  }
+
+  getArchivedTask(taskId: string): T.Task {
+    const row = this.one('SELECT * FROM tasks WHERE id = ?', taskId);
+    if (!row) throw new NotFoundError(`task ${taskId} not found`);
+    return toTask(row);
+  }
+
+  archiveTask(taskId: string, actorId: string, archive = true): T.Task {
+    const task = this.getArchivedTask(taskId);
+    const actor = required(actorId, 'actorId');
+    if (archive && task.archivedAt) throw new ConflictError(`task ${taskId} is already archived`);
+    if (!archive && !task.archivedAt) throw new ConflictError(`task ${taskId} is not archived`);
+    this.write((events) => {
+      this.db.prepare('UPDATE tasks SET archived_at = ?, updated_at = ? WHERE id = ?').run(archive ? now() : null, now(), taskId);
+      this.recordEvent(events, {
+        type: archive ? 'task.archived' : 'task.unarchived',
+        subjectId: taskId,
+        subjectType: 'task',
+        payload: { status: task.status },
+        actorId: actor,
+        actorKind: 'human',
+        jobId: task.jobId,
+        taskId,
+      });
+    });
+    return this.getArchivedTask(taskId);
+  }
+
+  deleteTask(taskId: string, confirm: string | null | undefined, actorId: string): void {
+    const task = this.getArchivedTask(taskId);
+    const actor = required(actorId, 'actorId');
+    if (!task.archivedAt) throw new ConflictError(`task ${taskId} must be archived before it can be deleted`);
+    if (confirm !== taskId) throw new ConflictError(`confirm must equal the task id (${taskId}) to delete it`);
+    try {
+      this.write((events) => {
+        this.db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+        this.recordEvent(events, {
+          type: 'task.deleted',
+          subjectId: taskId,
+          subjectType: 'task',
+          payload: { title: task.title, status: task.status },
+          actorId: actor,
+          actorKind: 'human',
+          jobId: task.jobId,
+        });
+      });
+    } catch (e) {
+      throw this.deleteRefusal(e, `task ${taskId}`);
+    }
+  }
+
+  /** Evidence, sessions and messages reference jobs and tasks without a cascade; the ledger keeps them. */
+  private deleteRefusal(e: unknown, what: string): Error {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/FOREIGN KEY|constraint/i.test(msg)) {
+      return new ConflictError(
+        `${what} cannot be deleted: evidence, sessions or messages still reference it and the append-only ledger keeps them. It stays archived.`
+      );
+    }
+    return e instanceof Error ? e : new Error(msg);
+  }
+
+  /** Links a job to a key result and milestone (validated) and recomputes the affected key results. */
+  linkJobToKr(jobId: string, input: strategy.LinkInput): ReturnType<typeof strategy.linkJob> {
+    return strategy.linkJob(this.db, (e) => this.emitEvent(e), jobId, input);
   }
 
   // ---------------------------------------------------------------- intake (WP2)
@@ -1676,8 +1800,8 @@ export class Repo {
 
   // ---------------------------------------------------------------- tasks
 
-  listTasks(jobId: string): T.Task[] {
-    return this.all('SELECT * FROM tasks WHERE job_id = ? ORDER BY position, created_at', jobId).map(toTask);
+  listTasks(jobId: string, includeArchived = false): T.Task[] {
+    return this.all(`SELECT * FROM tasks WHERE job_id = ?${includeArchived || !this.hasArchiveColumns() ? '' : ' AND archived_at IS NULL'} ORDER BY position, created_at`, jobId).map(toTask);
   }
 
   createTask(jobId: string, input: T.CreateTaskInput): T.Task {
@@ -1811,9 +1935,11 @@ export class Repo {
 
   /** Pending tasks whose dependencies are all done or verified: priority high first, then position. */
   readyTasks(jobId?: string): T.Task[] {
+    const live = this.hasArchiveColumns() ? ' AND archived_at IS NULL' : '';
+    const liveJobs = this.hasArchiveColumns() ? ' AND job_id IN (SELECT id FROM jobs WHERE archived_at IS NULL)' : '';
     const pending = (jobId
-      ? this.all("SELECT * FROM tasks WHERE status = 'pending' AND job_id = ?", jobId)
-      : this.all("SELECT * FROM tasks WHERE status = 'pending'")
+      ? this.all(`SELECT * FROM tasks WHERE status = 'pending'${live} AND job_id = ?`, jobId)
+      : this.all(`SELECT * FROM tasks WHERE status = 'pending'${live}${liveJobs}`)
     ).map(toTask);
     const wanted = new Set(pending.flatMap((t) => t.dependsOn ?? []));
     const statusById = new Map<string, T.TaskStatus>();
@@ -4277,8 +4403,8 @@ export class Repo {
   }
 
   listOkrs(): { objectives: T.OkrObjective[]; keyResults: T.OkrKeyResult[] } {
-    const objectives = this.all('SELECT * FROM okr_objectives ORDER BY created_at DESC').map(toOkrObjective);
-    const keyResults = this.all('SELECT * FROM okr_key_results ORDER BY created_at ASC').map(toOkrKeyResult);
+    const objectives = this.all('SELECT * FROM okr_objectives ORDER BY created_at DESC').map((r) => this.enrichObjective(r));
+    const keyResults = this.all('SELECT * FROM okr_key_results ORDER BY created_at ASC').map((r) => this.enrichKr(r));
     return { objectives, keyResults };
   }
 
@@ -4318,7 +4444,7 @@ export class Repo {
     });
 
     const row = this.one('SELECT * FROM okr_objectives WHERE id = ?', id);
-    return toOkrObjective(row!);
+    return this.enrichObjective(row!);
   }
 
   deleteOkrObjective(id: string): void {
@@ -4334,18 +4460,36 @@ export class Repo {
     });
   }
 
+  private enrichObjective(r: Row): T.OkrObjective {
+    return { ...toOkrObjective(r), ...strategy.describeObjective(this.db, String(r.id)) };
+  }
+
+  private enrichKr(r: Row): T.OkrKeyResult {
+    return { ...toOkrKeyResult(r), ...strategy.describeKr(this.db, r) };
+  }
+
   saveOkrKeyResult(input: T.SaveOkrKeyResultInput): T.OkrKeyResult {
     const id = input.id?.trim() || `KR_${input.objective_id.replace(/^OBJ_/, '')}_${Date.now().toString(36).slice(-3).toUpperCase()}`;
     const ts = now();
     const existing = this.one('SELECT * FROM okr_key_results WHERE id = ?', id);
+    if (!this.one('SELECT 1 AS x FROM okr_objectives WHERE id = ?', input.objective_id)) {
+      throw new NotFoundError(`objective ${input.objective_id} not found`);
+    }
     const curr = Number(input.current_value ?? (existing ? existing.current_value : 0));
     const target = Number(input.target_value ?? (existing ? existing.target_value : 100));
     const progress = target > 0 ? Math.round(Math.min(100, Math.max(0, (curr / target) * 100))) : 0;
+    const kind = oneOf(input.kind, ['manual', 'evidence', 'computed'] as const, 'kind', (existing ? String(existing.kind ?? 'manual') : 'manual') as 'manual' | 'evidence' | 'computed');
+    const weight = input.weight === undefined ? (existing ? Number(existing.weight ?? 1) : 1) : Number(input.weight);
+    if (!Number.isFinite(weight) || weight <= 0) throw new InputError('weight must be a number greater than 0');
+    const source = input.source !== undefined ? input.source?.trim() || null : existing ? str(existing.source) : null;
+    const actor = input.actorId?.trim() || 'owner';
+    // A typed value is a manual entry; it is only recorded when the caller supplied one that is new.
+    const typedValue = input.current_value !== undefined && (!existing || Number(existing.current_value) !== curr || strategy.listProgressEntries(this.db, id).length === 0);
 
     this.write((events) => {
       this.db.prepare(
-        `INSERT INTO okr_key_results (id, objective_id, title, metric_type, current_value, target_value, unit, progress_percent, telemetry_query, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO okr_key_results (id, objective_id, title, metric_type, current_value, target_value, unit, progress_percent, telemetry_query, kind, source, weight, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            objective_id = excluded.objective_id,
            title = excluded.title,
@@ -4353,8 +4497,10 @@ export class Repo {
            current_value = excluded.current_value,
            target_value = excluded.target_value,
            unit = excluded.unit,
-           progress_percent = excluded.progress_percent,
            telemetry_query = excluded.telemetry_query,
+           kind = excluded.kind,
+           source = excluded.source,
+           weight = excluded.weight,
            updated_at = excluded.updated_at`
       ).run(
         id,
@@ -4364,24 +4510,30 @@ export class Repo {
         curr,
         target,
         input.unit?.trim() || (existing ? String(existing.unit || '%') : '%'),
-        progress,
+        existing ? Number(existing.progress_percent) : 0,
         input.telemetry_query?.trim() || null,
+        kind,
+        source,
+        weight,
         existing ? String(existing.created_at) : ts,
         ts
       );
-
-      this.recomputeObjectiveProgress(input.objective_id);
+      if (kind === 'manual' && typedValue) {
+        strategy.appendProgressEntry(this.db, { keyResultId: id, value: curr, progressPercent: progress, provenance: 'manual', recordedBy: actor, note: 'typed value' });
+      }
+      strategy.syncStoredProgress(this.db, id);
+      if (existing && String(existing.objective_id) !== input.objective_id) strategy.syncStoredObjective(this.db, String(existing.objective_id));
 
       this.recordEvent(events, {
         type: existing ? 'okr.key_result_updated' : 'okr.key_result_created',
         subjectId: id,
-        payload: { title: input.title, objectiveId: input.objective_id, progress },
+        payload: { title: input.title, objectiveId: input.objective_id, kind },
         subjectType: 'okr_key_result',
       });
     });
 
     const row = this.one('SELECT * FROM okr_key_results WHERE id = ?', id);
-    return toOkrKeyResult(row!);
+    return this.enrichKr(row!);
   }
 
   deleteOkrKeyResult(id: string): void {
@@ -4390,6 +4542,7 @@ export class Repo {
     const objId = String(kr.objective_id);
 
     this.write((events) => {
+      this.db.prepare('UPDATE jobs SET okr_kr_id = NULL WHERE okr_kr_id = ?').run(id);
       this.db.prepare('DELETE FROM okr_key_results WHERE id = ?').run(id);
       this.recomputeObjectiveProgress(objId);
       this.recordEvent(events, {
@@ -4401,9 +4554,14 @@ export class Repo {
     });
   }
 
-  updateOkrProgress(krId: string, currentValue: number): { keyResult: T.OkrKeyResult; objective: T.OkrObjective } {
+  /** Records a typed-in value. Allowed only for manual key results; the history row is labelled manual. */
+  updateOkrProgress(krId: string, currentValue: number, opts: { actorId?: string; note?: string } = {}): { keyResult: T.OkrKeyResult; objective: T.OkrObjective } {
     const kr = this.one('SELECT * FROM okr_key_results WHERE id = ?', krId);
     if (!kr) throw new Error(`Key result not found: ${krId}`);
+    if (String(kr.kind ?? 'manual') !== 'manual') {
+      throw new ConflictError(`Key result ${krId} is ${String(kr.kind)}: its progress comes from ${kr.kind === 'evidence' ? 'verified linked jobs' : 'no computation (reserved)'}, not typed values.`);
+    }
+    if (!Number.isFinite(currentValue)) throw new InputError('current_value must be a number');
 
     const target = Number(kr.target_value) || 100;
     const progress = target > 0 ? Math.round(Math.min(100, Math.max(0, (currentValue / target) * 100))) : 0;
@@ -4411,53 +4569,71 @@ export class Repo {
     const objId = String(kr.objective_id);
 
     this.write((events) => {
-      this.db.prepare(
-        'UPDATE okr_key_results SET current_value = ?, progress_percent = ?, updated_at = ? WHERE id = ?'
-      ).run(currentValue, progress, ts, krId);
-
-      this.recomputeObjectiveProgress(objId);
+      this.db.prepare('UPDATE okr_key_results SET current_value = ?, updated_at = ? WHERE id = ?').run(currentValue, ts, krId);
+      strategy.appendProgressEntry(this.db, {
+        keyResultId: krId,
+        value: currentValue,
+        progressPercent: progress,
+        provenance: 'manual',
+        recordedBy: opts.actorId?.trim() || 'owner',
+        note: opts.note ?? null,
+      });
+      strategy.syncStoredProgress(this.db, krId);
 
       this.recordEvent(events, {
         type: 'okr.progress_updated',
         subjectId: krId,
-        payload: { currentValue, progress, objectiveId: objId },
+        payload: { currentValue, progress, objectiveId: objId, provenance: 'manual' },
         subjectType: 'okr_key_result',
       });
     });
 
     const updatedKr = this.one('SELECT * FROM okr_key_results WHERE id = ?', krId);
     const updatedObj = this.one('SELECT * FROM okr_objectives WHERE id = ?', objId);
-    return { keyResult: toOkrKeyResult(updatedKr!), objective: toOkrObjective(updatedObj!) };
+    return { keyResult: this.enrichKr(updatedKr!), objective: this.enrichObjective(updatedObj!) };
   }
 
   recomputeObjectiveProgress(objectiveId: string): T.OkrObjective | null {
-    const row = this.one('SELECT AVG(progress_percent) AS avg_prog FROM okr_key_results WHERE objective_id = ?', objectiveId);
-    const avg = row?.avg_prog !== null && row?.avg_prog !== undefined ? Math.round(Number(row.avg_prog)) : 0;
-    const status = avg >= 80 ? 'on_track' : avg >= 40 ? 'at_risk' : 'behind';
-    const ts = now();
-
-    this.db.prepare(
-      'UPDATE okr_objectives SET progress_percent = ?, status = ?, updated_at = ? WHERE id = ?'
-    ).run(avg, status, ts, objectiveId);
-
+    strategy.syncStoredObjective(this.db, objectiveId);
     const obj = this.one('SELECT * FROM okr_objectives WHERE id = ?', objectiveId);
-    return obj ? toOkrObjective(obj) : null;
+    return obj ? this.enrichObjective(obj) : null;
+  }
+
+  listOkrProgressEntries(krId: string): T.OkrProgressEntry[] {
+    return strategy.listProgressEntries(this.db, krId);
+  }
+
+  projectHealth(projectId: string): strategy.ProjectHealth {
+    return strategy.projectHealth(this.db, projectId);
   }
 
   getRealityHealthScore(): T.RealityAuditSummary {
+    const parts = strategy.healthParts(this.db);
     const objCount = Number(this.one('SELECT COUNT(*) AS c FROM okr_objectives')?.c || 0);
     const krCount = Number(this.one('SELECT COUNT(*) AS c FROM okr_key_results')?.c || 0);
-    const avgProgRow = this.one('SELECT AVG(progress_percent) AS a FROM okr_objectives');
-    const avgOkrProgress = avgProgRow?.a ? Math.round(Number(avgProgRow.a)) : 0;
+    let known = 0;
+    let sum = 0;
+    for (const o of this.all('SELECT id FROM okr_objectives')) {
+      const p = strategy.computeObjectiveProgress(this.db, String(o.id));
+      if (p.progress !== null) {
+        known++;
+        sum += p.progress;
+      }
+    }
+    const avgOkrProgress = known > 0 ? Math.round(sum / known) : 0;
 
     const totalEvidence = Number(this.one('SELECT COUNT(*) AS c FROM evidence')?.c || 0);
-    const verifiedEvidence = Number(this.one('SELECT COUNT(*) AS c FROM evidence WHERE exit_code = 0')?.c || 0);
-    const activeJobs = Number(this.one("SELECT COUNT(*) AS c FROM jobs WHERE stage NOT IN ('done', 'cancelled')")?.c || 0);
+    const verifiedEvidence = Number(this.one("SELECT COUNT(*) AS c FROM evidence WHERE class = 'VERIFIED'")?.c || 0);
+    const activeJobs = Number(this.one("SELECT COUNT(*) AS c FROM jobs WHERE archived_at IS NULL AND stage NOT IN ('done', 'cancelled')")?.c || 0);
 
-    const evidenceRatio = totalEvidence > 0 ? (verifiedEvidence / totalEvidence) : 1;
-    const healthScore = Math.round(Math.min(100, Math.max(0, (evidenceRatio * 60) + (avgOkrProgress * 0.4))));
+    // Deprecated combined number: the mean of the measured figures only (never typed-in progress).
+    const measured = [parts.execution.value, parts.evidence.value, parts.strategy.value].filter((v): v is number => v !== null);
+    const healthScore = measured.length ? Math.round(measured.reduce((a, b) => a + b, 0) / measured.length) : 0;
 
     return {
+      ...parts,
+      healthScoreDeprecated: true,
+      healthScoreUnknown: measured.length === 0,
       healthScore,
       totalObjectives: objCount,
       totalKeyResults: krCount,
@@ -4939,6 +5115,8 @@ const toJobSummary = (r: Row): T.JobSummary => ({
   intakeId: str(r.intake_id),
   okrKrId: str(r.okr_kr_id),
   milestoneId: str(r.milestone_id),
+  krWeight: r.kr_weight == null ? 1 : num(r.kr_weight),
+  archivedAt: str(r.archived_at),
 });
 
 const toIntake = (r: Row): T.IntakeRequest => ({
@@ -4984,6 +5162,7 @@ const toTask = (r: Row): T.Task => ({
   verificationRequired: bool(r.verification_required),
   legacyProjectTaskId: str(r.legacy_project_task_id),
   lastEventAt: str(r.last_event_at),
+  archivedAt: str(r.archived_at),
 });
 
 const toEvidence = (r: Row): T.Evidence => ({
@@ -5348,7 +5527,7 @@ const toStandup = (r: Row): T.Standup => ({
   original_file_path: str(r.original_file_path),
 });
 
-const toOkrObjective = (r: Row): T.OkrObjective => ({
+const toOkrObjective = (r: Row): Omit<T.OkrObjective, keyof T.OkrObjectiveStrategy> => ({
   id: String(r.id),
   title: String(r.title),
   description: str(r.description),
@@ -5360,7 +5539,7 @@ const toOkrObjective = (r: Row): T.OkrObjective => ({
   updated_at: String(r.updated_at),
 });
 
-const toOkrKeyResult = (r: Row): T.OkrKeyResult => ({
+const toOkrKeyResult = (r: Row): Omit<T.OkrKeyResult, keyof T.OkrKeyResultStrategy> => ({
   id: String(r.id),
   objective_id: String(r.objective_id),
   title: String(r.title),
