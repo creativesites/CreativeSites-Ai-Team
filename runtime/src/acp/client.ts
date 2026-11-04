@@ -167,6 +167,7 @@ export class AcpClient {
   async newSession(timeoutMs = 60_000): Promise<string> {
     const result = (await this.request('session/new', { cwd: this.opts.worktree, mcpServers: this.offeredMcpServers() }, timeoutMs)) as { sessionId?: string };
     if (!result?.sessionId) throw new AcpError(-32002, 'session/new returned no sessionId');
+    this.newSessionResult = result as Record<string, unknown>;
     this.sessionId = result.sessionId;
     return result.sessionId;
   }
@@ -187,6 +188,9 @@ export class AcpClient {
   /** How many offered MCP servers the agent could not take (0 when all were offered). */
   mcpDropped = 0;
 
+  /** The raw `session/new` or `session/load` result, kept so the runtime can read the model id the adapter reports. */
+  newSessionResult: Record<string, unknown> | null = null;
+
   /** True when the adapter advertised `agentCapabilities.loadSession` during initialize. */
   get canLoadSession(): boolean {
     const caps = (this.initializeResult?.agentCapabilities ?? {}) as { loadSession?: boolean };
@@ -206,6 +210,7 @@ export class AcpClient {
       timeoutMs
     )) as { sessionId?: string } | undefined;
     const resolvedId = result?.sessionId || acpSessionId;
+    if (result && typeof result === 'object') this.newSessionResult = result as Record<string, unknown>;
     this.sessionId = resolvedId;
     return resolvedId;
   }

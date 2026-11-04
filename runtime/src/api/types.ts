@@ -138,6 +138,8 @@ export interface Identity {
   lastWokenAt?: string | null;
   /** K5: department id (see `departments`), set by `applyDepartmentMapping`. */
   departmentId?: string | null;
+  /** K7 per-identity override of the renewal thresholds, e.g. { renew: 80 }. */
+  renewalPolicy?: Record<string, number> | null;
   seniority?: 'exec' | 'lead' | 'senior' | 'member';
   skills?: string[];
   providers?: string[];
@@ -468,6 +470,14 @@ export interface Session {
   generation?: number;
   contextTokens?: number;
   batonCapsule?: string | null;
+  /** The real model id the adapter reported (not the ACP agent name in `model`). null when never reported. */
+  modelId?: string | null;
+  /** Context window in tokens: reported by the adapter, else the model registry. null = unknown. */
+  contextWindow?: number | null;
+  /** Highest renewal band already reported for this session (K7); each band fires once. */
+  contextBand?: string | null;
+  /** The continuation package compiled at the `prepare` band (K7). */
+  continuationPackage?: Record<string, unknown> | null;
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -506,6 +516,17 @@ export interface Usage {
   costCents: number;
   source: string | null;
   createdAt: string;
+  agentId?: string | null;
+  taskId?: string | null;
+  provider?: string | null;
+  modelId?: string | null;
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  /** How well the numbers are known. 'unavailable' rows carry zeros that are NOT measurements. */
+  measurement?: 'actual' | 'estimated' | 'unavailable';
+  contextUsed?: number | null;
+  contextSize?: number | null;
 }
 
 export interface ApprovalPolicy {
@@ -523,13 +544,27 @@ export interface ApprovalPolicy {
   createdAt: string;
 }
 
+export type BudgetScope = 'global' | 'project' | 'agent' | 'task' | 'department' | 'session';
+export type BudgetKind = 'money' | 'tokens' | 'weekly_pct' | 'session_pct' | 'requests_per_day';
+export type BudgetPeriod = 'job' | 'day' | 'week' | 'month' | 'session';
+
 export interface Budget {
   id: string;
-  scope: 'global' | 'project';
+  scope: BudgetScope;
   projectId: string | null;
-  period: 'job' | 'day' | 'month';
+  /** The agent / task / department / session id for those scopes. */
+  scopeId?: string | null;
+  period: BudgetPeriod;
+  /** Legacy money budgets only; 0 for subscription-limit budgets. */
   amountCents: number;
   currency: string;
+  /** 'money' is the legacy kind; new budgets are tokens or a share of an account's limit. */
+  kind?: BudgetKind;
+  /** The limit: a token count, a percent of the account's limit, or a request count. */
+  amount?: number | null;
+  accountId?: string | null;
+  warnPct?: number;
+  hardPct?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -1148,11 +1183,19 @@ export interface UpdatePolicyInput {
 }
 
 export interface CreateBudgetInput {
-  scope: 'global' | 'project';
+  scope: BudgetScope;
   projectId?: string | null;
-  period: 'job' | 'day' | 'month';
-  amountCents: number;
+  scopeId?: string | null;
+  period: BudgetPeriod;
+  /** Required for kind 'money' (the default). */
+  amountCents?: number;
   currency?: string;
+  kind?: BudgetKind;
+  /** Required for non-money kinds: tokens, % of the account limit, or requests. */
+  amount?: number;
+  accountId?: string | null;
+  warnPct?: number;
+  hardPct?: number;
 }
 
 export interface RegisterSessionInput {
@@ -1192,6 +1235,17 @@ export interface RecordUsageInput {
   outputTokens?: number;
   costCents?: number;
   source?: string | null;
+  agentId?: string | null;
+  taskId?: string | null;
+  provider?: string | null;
+  modelId?: string | null;
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  /** Defaults to 'actual'. Use 'unavailable' when the adapter reported nothing. */
+  measurement?: 'actual' | 'estimated' | 'unavailable';
+  contextUsed?: number | null;
+  contextSize?: number | null;
 }
 
 export interface ImportIdentitiesInput {

@@ -1075,4 +1075,93 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_task_skills_task ON task_skills(task_id);
     `,
   },
+  {
+    version: 21,
+    name: 'usage v2: token breakdown + measurement, model registry, budgets as limit shares, renewal policy (K6/K7, WP10)',
+    sql: `
+      -- 10.1 usage rows carry attribution, a token breakdown and how well each number is known.
+      ALTER TABLE usage ADD COLUMN agent_id TEXT;
+      ALTER TABLE usage ADD COLUMN task_id TEXT;
+      ALTER TABLE usage ADD COLUMN provider TEXT;
+      ALTER TABLE usage ADD COLUMN model_id TEXT;
+      ALTER TABLE usage ADD COLUMN cached_input_tokens INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE usage ADD COLUMN cache_write_tokens INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE usage ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE usage ADD COLUMN measurement TEXT NOT NULL DEFAULT 'actual'
+        CHECK (measurement IN ('actual','estimated','unavailable'));
+      ALTER TABLE usage ADD COLUMN context_used INTEGER;
+      ALTER TABLE usage ADD COLUMN context_size INTEGER;
+      CREATE INDEX IF NOT EXISTS usage_agent ON usage(agent_id);
+      CREATE INDEX IF NOT EXISTS usage_task ON usage(task_id);
+      CREATE INDEX IF NOT EXISTS usage_session ON usage(session_id);
+
+      -- sessions: the real model id, the context window (null = unknown), and K7 renewal state.
+      ALTER TABLE sessions ADD COLUMN context_window INTEGER;
+      ALTER TABLE sessions ADD COLUMN model_id TEXT;
+      ALTER TABLE sessions ADD COLUMN context_band TEXT;
+      ALTER TABLE sessions ADD COLUMN continuation_package TEXT;
+
+      -- K7: per-identity override of the renewal thresholds (JSON, e.g. {"renew":80}).
+      ALTER TABLE identities ADD COLUMN renewal_policy TEXT;
+
+      -- Model registry. No prices: the team is on subscription plans. context_window is null when unknown.
+      CREATE TABLE IF NOT EXISTS model_registry (
+        provider TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        context_window INTEGER,
+        notes TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (provider, model_id)
+      );
+      INSERT OR IGNORE INTO model_registry (provider, model_id, context_window, notes, updated_at) VALUES
+        ('anthropic', 'claude-sonnet-4-5', 200000, 'published context window; edit if your plan differs', '2026-11-03T00:00:00.000Z'),
+        ('anthropic', 'claude-opus-4-1', 200000, 'published context window; edit if your plan differs', '2026-11-03T00:00:00.000Z'),
+        ('google', 'gemini-2.5-pro', 1048576, 'published context window; edit if your plan differs', '2026-11-03T00:00:00.000Z'),
+        ('google', 'gemini-2.5-flash', 1048576, 'published context window; edit if your plan differs', '2026-11-03T00:00:00.000Z');
+
+      -- 10.4 budgets: a share of an account's limit (or a token count), not money. Rebuilt because
+      -- SQLite cannot widen a CHECK; existing money budgets are copied unchanged (kind 'money').
+      CREATE TABLE budgets_v21 (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL CHECK (scope IN ('global','project','agent','task','department','session')),
+        project_id TEXT,
+        scope_id TEXT,
+        period TEXT NOT NULL CHECK (period IN ('job','day','week','month','session')),
+        amount_cents INTEGER NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        kind TEXT NOT NULL DEFAULT 'money' CHECK (kind IN ('money','tokens','weekly_pct','session_pct','requests_per_day')),
+        amount REAL,
+        account_id TEXT,
+        warn_pct REAL NOT NULL DEFAULT 80,
+        hard_pct REAL NOT NULL DEFAULT 100,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      INSERT INTO budgets_v21 (id, scope, project_id, period, amount_cents, currency, created_at, updated_at)
+        SELECT id, scope, project_id, period, amount_cents, currency, created_at, updated_at FROM budgets;
+      DROP TABLE budgets;
+      ALTER TABLE budgets_v21 RENAME TO budgets;
+      CREATE UNIQUE INDEX budgets_unique ON budgets(
+        scope, COALESCE(project_id, ''), COALESCE(scope_id, ''), kind, COALESCE(account_id, ''), period);
+
+      -- Warnings fire once per budget per period; overrides are one-time grants from an approval.
+      CREATE TABLE IF NOT EXISTS budget_alerts (
+        budget_id TEXT NOT NULL,
+        period_key TEXT NOT NULL,
+        level TEXT NOT NULL CHECK (level IN ('warn','hard')),
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (budget_id, period_key, level)
+      );
+      CREATE TABLE IF NOT EXISTS budget_overrides (
+        id TEXT PRIMARY KEY,
+        budget_id TEXT NOT NULL,
+        period_key TEXT NOT NULL,
+        scope_key TEXT NOT NULL,
+        approval_id TEXT,
+        granted_at TEXT NOT NULL,
+        used_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_budget_overrides_budget ON budget_overrides(budget_id, period_key, scope_key);
+    `,
+  },
 ];

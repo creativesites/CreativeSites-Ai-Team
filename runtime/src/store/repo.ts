@@ -141,6 +141,11 @@ export class Repo {
 
   // ---------------------------------------------------------------- plumbing
 
+  /** The store's SQLite handle, for the usage/renewal/budget modules that own their own tables. */
+  sqlite(): DatabaseSync {
+    return this.db;
+  }
+
   private all(sql: string, ...params: SQLInputValue[]): Row[] {
     return this.db.prepare(sql).all(...params) as Row[];
   }
@@ -2205,6 +2210,19 @@ export class Repo {
         subjectType: 'job',
       });
     });
+    if (decision === 'approve' && approval.actionType === 'budget.exceed') {
+      // Approving a budget exception is a one-time override for that budget scope (K6, WP10 10.4).
+      const grant = (approval.action ?? {}) as { budgetId?: unknown; periodKey?: unknown; scopeKey?: unknown };
+      if (typeof grant.budgetId === 'string' && typeof grant.periodKey === 'string') {
+        this.db
+          .prepare(
+            `INSERT INTO budget_overrides (id, budget_id, period_key, scope_key, approval_id, granted_at)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          )
+          .run(newId('bov'), grant.budgetId, grant.periodKey, typeof grant.scopeKey === 'string' ? grant.scopeKey : '', approvalId, now());
+        this.emitEvent({ type: 'budget.override_granted', subjectId: grant.budgetId, payload: { approvalId, periodKey: grant.periodKey, decidedBy } });
+      }
+    }
     if (decision === 'approve' && approval.actionType === 'plan.accept') {
       // Approving a plan acceptance moves the job into build (S1-C). Skipped if the job has moved on.
       if (this.getJob(approval.jobId).stage === 'plan') {
@@ -2404,7 +2422,7 @@ export class Repo {
     return this.getSession(id);
   }
 
-  updateSession(id: string, input: { state?: T.SessionState; pid?: number | null; lastSeenAt?: string; exitCode?: number | null; error?: string | null; turnCount?: number; acpSessionId?: string | null; model?: string | null; supersededBySessionId?: string | null; contextTokens?: number; batonCapsule?: string | null }): T.Session {
+  updateSession(id: string, input: { state?: T.SessionState; pid?: number | null; lastSeenAt?: string; exitCode?: number | null; error?: string | null; turnCount?: number; acpSessionId?: string | null; model?: string | null; supersededBySessionId?: string | null; contextTokens?: number; batonCapsule?: string | null; modelId?: string | null; contextWindow?: number | null; contextBand?: string | null; continuationPackage?: Record<string, unknown> | null }): T.Session {
     const session = this.getSession(id);
     this.write((events) => {
       const fields: [string, SQLInputValue][] = [];
@@ -2419,6 +2437,10 @@ export class Repo {
       if (input.supersededBySessionId !== undefined) fields.push(['superseded_by_session_id', input.supersededBySessionId]);
       if (input.contextTokens !== undefined) fields.push(['context_tokens', input.contextTokens]);
       if (input.batonCapsule !== undefined) fields.push(['baton_capsule', input.batonCapsule]);
+      if (input.modelId !== undefined) fields.push(['model_id', input.modelId]);
+      if (input.contextWindow !== undefined) fields.push(['context_window', input.contextWindow]);
+      if (input.contextBand !== undefined) fields.push(['context_band', input.contextBand]);
+      if (input.continuationPackage !== undefined) fields.push(['continuation_package', input.continuationPackage == null ? null : jsonText(input.continuationPackage)]);
       if (input.state === 'stopped' || input.state === 'failed') fields.push(['ended_at', now()]);
       this.db.prepare(`UPDATE sessions SET ${fields.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...fields.map(([, v]) => v), id);
 
@@ -2562,22 +2584,47 @@ export class Repo {
     const cost = positiveInt(input.costCents, 'costCents', 0);
     const inTok = positiveInt(input.inputTokens, 'inputTokens', 0);
     const outTok = positiveInt(input.outputTokens, 'outputTokens', 0);
+    const cachedTok = positiveInt(input.cachedInputTokens, 'cachedInputTokens', 0);
+    const cacheWriteTok = positiveInt(input.cacheWriteTokens, 'cacheWriteTokens', 0);
+    const reasoningTok = positiveInt(input.reasoningTokens, 'reasoningTokens', 0);
+    const measurement = oneOf(input.measurement, ['actual', 'estimated', 'unavailable'] as const, 'measurement', 'actual');
+    const contextUsed = input.contextUsed == null ? null : positiveInt(input.contextUsed, 'contextUsed', 0);
+    const contextSize = input.contextSize == null ? null : positiveInt(input.contextSize, 'contextSize', 0);
+    const sessionRow = input.sessionId ? this.one('SELECT agent_id, task_id FROM sessions WHERE id = ?', input.sessionId) : undefined;
+    const agentId = input.agentId ?? (sessionRow ? str(sessionRow.agent_id) : null);
+    const taskId = input.taskId ?? (sessionRow ? str(sessionRow.task_id) : null);
     this.write((events) => {
       this.db
         .prepare(
-          `INSERT INTO usage (id, job_id, session_id, model, input_tokens, output_tokens, cost_cents, source, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO usage (id, job_id, session_id, model, input_tokens, output_tokens, cost_cents, source, created_at,
+             agent_id, task_id, provider, model_id, cached_input_tokens, cache_write_tokens, reasoning_tokens,
+             measurement, context_used, context_size)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
-          id, input.jobId ?? null, input.sessionId ?? null, input.model ?? null,
+          id, input.jobId ?? null, input.sessionId ?? null, input.model ?? input.modelId ?? null,
           inTok,
           outTok,
-          cost, input.source ?? null, now()
+          cost, input.source ?? null, now(),
+          agentId, taskId, input.provider ?? null, input.modelId ?? null, cachedTok, cacheWriteTok, reasoningTok,
+          measurement, contextUsed, contextSize
         );
-      if (input.sessionId && inTok > 0) {
-        this.db
-          .prepare('UPDATE sessions SET context_tokens = MAX(COALESCE(context_tokens, 0), ?) WHERE id = ?')
-          .run(inTok, input.sessionId);
+      if (input.sessionId && measurement !== 'unavailable') {
+        if (contextUsed != null) {
+          // The adapter's own figure is authoritative and may fall after a compaction, so it replaces the maximum.
+          this.db
+            .prepare('UPDATE sessions SET context_tokens = ?, context_window = COALESCE(?, context_window) WHERE id = ?')
+            .run(contextUsed, contextSize && contextSize > 0 ? contextSize : null, input.sessionId);
+        } else {
+          const live = inTok + cachedTok + cacheWriteTok;
+          if (live > 0) {
+            this.db
+              .prepare('UPDATE sessions SET context_tokens = MAX(COALESCE(context_tokens, 0), ?), context_window = COALESCE(?, context_window) WHERE id = ?')
+              .run(live, contextSize && contextSize > 0 ? contextSize : null, input.sessionId);
+          } else if (contextSize && contextSize > 0) {
+            this.db.prepare('UPDATE sessions SET context_window = ? WHERE id = ?').run(contextSize, input.sessionId);
+          }
+        }
       }
       if (input.jobId) {
         this.db.prepare('UPDATE jobs SET cost_cents = cost_cents + ?, updated_at = ? WHERE id = ?').run(cost, now(), input.jobId);
@@ -2585,7 +2632,7 @@ export class Repo {
       this.recordEvent(events, {
         type: 'usage.recorded',
         subjectId: input.jobId ?? input.sessionId ?? id,
-        payload: { usageId: id, costCents: cost, model: input.model ?? null },
+        payload: { usageId: id, costCents: cost, model: input.model ?? input.modelId ?? null, measurement },
         subjectType: 'usage',
       });
     });
@@ -2608,9 +2655,9 @@ export class Repo {
       };
     }
     const projectBudget = job.projectId
-      ? this.one("SELECT * FROM budgets WHERE scope = 'project' AND project_id = ? AND period = 'month' ORDER BY updated_at DESC LIMIT 1", job.projectId)
+      ? this.one("SELECT * FROM budgets WHERE kind = 'money' AND scope = 'project' AND project_id = ? AND period = 'month' ORDER BY updated_at DESC LIMIT 1", job.projectId)
       : undefined;
-    const globalBudget = this.one("SELECT * FROM budgets WHERE scope = 'global' AND period = 'month' ORDER BY updated_at DESC LIMIT 1");
+    const globalBudget = this.one("SELECT * FROM budgets WHERE kind = 'money' AND scope = 'global' AND period = 'month' ORDER BY updated_at DESC LIMIT 1");
     const budgetRow = projectBudget ?? globalBudget;
     if (budgetRow) {
       const limit = num(budgetRow.amount_cents);
@@ -2657,24 +2704,97 @@ export class Repo {
   }
 
   createBudget(input: T.CreateBudgetInput): T.Budget {
-    const scope = oneOf(input.scope, ['global', 'project'] as const, 'scope');
+    const scope = oneOf(input.scope, ['global', 'project', 'agent', 'task', 'department', 'session'] as const, 'scope');
     if (scope === 'project' && !input.projectId) throw new InputError('projectId is required for a project budget');
-    const period = oneOf(input.period, ['job', 'day', 'month'] as const, 'period', 'month');
+    if (['agent', 'task', 'department', 'session'].includes(scope) && !input.scopeId) {
+      throw new InputError(`scopeId is required for a ${scope} budget`);
+    }
+    const kind = oneOf(input.kind, ['money', 'tokens', 'weekly_pct', 'session_pct', 'requests_per_day'] as const, 'kind', 'money');
+    const period = oneOf(input.period, ['job', 'day', 'week', 'month', 'session'] as const, 'period', 'month');
+    let amountCents = 0;
+    let amount: number | null = null;
+    if (kind === 'money') {
+      if (scope !== 'global' && scope !== 'project') throw new InputError('money budgets are only global or project; use a tokens or limit-share budget for this scope');
+      amountCents = positiveInt(input.amountCents, 'amountCents');
+    } else {
+      amount = Number(input.amount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new InputError('amount must be a positive number');
+      if ((kind === 'weekly_pct' || kind === 'session_pct') && amount > 100) throw new InputError('a share of an account limit cannot exceed 100');
+    }
+    const warnPct = input.warnPct == null ? 80 : Number(input.warnPct);
+    const hardPct = input.hardPct == null ? 100 : Number(input.hardPct);
+    if (!Number.isFinite(warnPct) || !Number.isFinite(hardPct) || warnPct <= 0 || hardPct < warnPct) {
+      throw new InputError('warnPct must be positive and hardPct at least warnPct');
+    }
+    const scopeId = ['agent', 'task', 'department', 'session'].includes(scope) ? (input.scopeId ?? null) : null;
+    const projectId = input.projectId ?? null;
+    const accountId = input.accountId ?? null;
     const id = newId('bud');
     this.write((events) => {
       this.db
         .prepare(
-          `INSERT INTO budgets (id, scope, project_id, period, amount_cents, currency, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT DO UPDATE SET amount_cents = excluded.amount_cents, updated_at = excluded.updated_at`
+          `INSERT INTO budgets (id, scope, project_id, scope_id, period, amount_cents, currency, kind, amount, account_id, warn_pct, hard_pct, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT DO UPDATE SET amount_cents = excluded.amount_cents, amount = excluded.amount,
+             warn_pct = excluded.warn_pct, hard_pct = excluded.hard_pct, updated_at = excluded.updated_at`
         )
-        .run(
-          id, scope, input.projectId ?? null, period,
-          positiveInt(input.amountCents, 'amountCents'), input.currency ?? 'USD', now(), now()
-        );
-      this.recordEvent(events, { type: 'budget.created', subjectId: input.projectId ?? null, payload: { scope, amountCents: input.amountCents } });
+        .run(id, scope, projectId, scopeId, period, amountCents, input.currency ?? 'USD', kind, amount, accountId, warnPct, hardPct, now(), now());
+      this.recordEvent(events, { type: 'budget.created', subjectId: projectId ?? scopeId ?? null, payload: { scope, kind, amountCents, amount } });
     });
-    return toBudget(this.one('SELECT * FROM budgets WHERE id = ? OR (scope = ? AND COALESCE(project_id, \'\') = ? AND period = ?)', id, scope, input.projectId ?? '', period)!);
+    return toBudget(
+      this.one(
+        `SELECT * FROM budgets WHERE id = ? OR (scope = ? AND COALESCE(project_id, '') = ? AND COALESCE(scope_id, '') = ?
+           AND kind = ? AND COALESCE(account_id, '') = ? AND period = ?)`,
+        id, scope, projectId ?? '', scopeId ?? '', kind, accountId ?? '', period
+      )!
+    );
+  }
+
+  // ---------------------------------------------------------------- model registry (K6, no prices)
+
+  listModelRegistry(): { provider: string; modelId: string; contextWindow: number | null; notes: string; updatedAt: string }[] {
+    return this.all('SELECT * FROM model_registry ORDER BY provider, model_id').map((r) => ({
+      provider: String(r.provider),
+      modelId: String(r.model_id),
+      contextWindow: r.context_window == null ? null : num(r.context_window),
+      notes: String(r.notes ?? ''),
+      updatedAt: String(r.updated_at),
+    }));
+  }
+
+  /** The registry's context window for a model, or null when the model or its window is unknown. */
+  registryContextWindow(provider: string | null, modelId: string | null): number | null {
+    if (!modelId) return null;
+    const row = provider
+      ? this.one('SELECT context_window FROM model_registry WHERE provider = ? AND model_id = ?', provider, modelId)
+      : this.one('SELECT context_window FROM model_registry WHERE model_id = ? ORDER BY provider LIMIT 1', modelId);
+    return row && row.context_window != null ? num(row.context_window) : null;
+  }
+
+  upsertModel(input: { provider: string; modelId: string; contextWindow?: number | null; notes?: string }): void {
+    const provider = required(input.provider, 'provider');
+    const modelId = required(input.modelId, 'modelId');
+    const windowTokens = input.contextWindow == null ? null : positiveInt(input.contextWindow, 'contextWindow');
+    this.write((events) => {
+      this.db
+        .prepare(
+          `INSERT INTO model_registry (provider, model_id, context_window, notes, updated_at) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(provider, model_id) DO UPDATE SET context_window = excluded.context_window,
+             notes = excluded.notes, updated_at = excluded.updated_at`
+        )
+        .run(provider, modelId, windowTokens, input.notes ?? '', now());
+      this.recordEvent(events, { type: 'model_registry.updated', subjectId: modelId, payload: { provider, modelId, contextWindow: windowTokens } });
+    });
+  }
+
+  /** Sets (or with null clears) an identity's renewal-threshold override (K7). */
+  setIdentityRenewalPolicy(identityId: string, policy: Record<string, number> | null): T.Identity {
+    this.getIdentity(identityId);
+    this.write((events) => {
+      this.db.prepare('UPDATE identities SET renewal_policy = ? WHERE id = ?').run(policy ? jsonText(policy) : null, identityId);
+      this.recordEvent(events, { type: 'identity.renewal_policy', subjectId: identityId, payload: { policy } });
+    });
+    return this.getIdentity(identityId);
   }
 
   // ---------------------------------------------------------------- tasks (single), artifacts, worktrees
@@ -2790,7 +2910,7 @@ export class Repo {
   }
 
   /** Appends an event that is not a row change (for example dispatch.started). */
-  emitEvent(input: { type: string; subjectId: string | null; subjectType?: string | null; payload?: Record<string, unknown>; actorId?: string | null; actorKind?: T.ActorKind | null; jobId?: string | null; taskId?: string | null; sessionId?: string | null }): void {
+  emitEvent(input: { type: string; subjectId: string | null; subjectType?: string | null; payload?: Record<string, unknown>; actorId?: string | null; actorKind?: T.ActorKind | null; jobId?: string | null; taskId?: string | null; sessionId?: string | null; idempotencyKey?: string | null }): void {
     this.write((events) => {
       this.recordEvent(events, input as EventInput);
     });
@@ -4831,6 +4951,7 @@ const toIdentity = (r: Row): T.Identity => ({
   skills: parseJson<string[]>(r.skills, []),
   providers: parseJson<string[]>(r.providers, []),
   permissions: parseJson<string[]>(r.permissions, []),
+  renewalPolicy: r.renewal_policy == null ? null : parseJson<Record<string, number> | null>(r.renewal_policy, null),
 });
 
 const toTeam = (r: Row): T.Team => ({
@@ -5058,9 +5179,15 @@ const toBudget = (r: Row): T.Budget => ({
   id: String(r.id),
   scope: r.scope as T.Budget['scope'],
   projectId: str(r.project_id),
+  scopeId: str(r.scope_id),
   period: r.period as T.Budget['period'],
   amountCents: num(r.amount_cents),
   currency: String(r.currency),
+  kind: (str(r.kind) ?? 'money') as NonNullable<T.Budget['kind']>,
+  amount: r.amount == null ? null : Number(r.amount),
+  accountId: str(r.account_id),
+  warnPct: r.warn_pct == null ? 80 : Number(r.warn_pct),
+  hardPct: r.hard_pct == null ? 100 : Number(r.hard_pct),
   createdAt: String(r.created_at),
   updatedAt: String(r.updated_at),
 });
@@ -5107,6 +5234,10 @@ const toSession = (r: Row): T.Session => {
     generation: r.generation == null ? 1 : Math.max(1, num(r.generation)),
     contextTokens: Math.max(num(r.context_tokens), inputTokens),
     batonCapsule: str(r.baton_capsule),
+    modelId: str(r.model_id),
+    contextWindow: r.context_window == null ? null : num(r.context_window),
+    contextBand: str(r.context_band),
+    continuationPackage: r.continuation_package == null ? null : parseJson<Record<string, unknown> | null>(r.continuation_package, null),
     usage,
   };
 };
@@ -5134,6 +5265,16 @@ const toUsage = (r: Row): T.Usage => ({
   costCents: num(r.cost_cents),
   source: str(r.source),
   createdAt: String(r.created_at),
+  agentId: str(r.agent_id),
+  taskId: str(r.task_id),
+  provider: str(r.provider),
+  modelId: str(r.model_id),
+  cachedInputTokens: num(r.cached_input_tokens),
+  cacheWriteTokens: num(r.cache_write_tokens),
+  reasoningTokens: num(r.reasoning_tokens),
+  measurement: (str(r.measurement) ?? 'actual') as NonNullable<T.Usage['measurement']>,
+  contextUsed: r.context_used == null ? null : num(r.context_used),
+  contextSize: r.context_size == null ? null : num(r.context_size),
 });
 
 const toHistory = (r: Row): T.JobStageHistory => ({
